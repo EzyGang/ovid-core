@@ -1,0 +1,143 @@
+[project]
+name = "ovid-core"
+version = "0.1.0"
+description = "Add your description here"
+authors = [
+    { name = "Galtozzy", email = "galtozzy+git@gmail.com" }
+]
+requires-python = ">=3.14"
+dependencies = [
+    "pydantic-ai-slim[anthropic,bedrock,cohere,evals,google,groq,mistral,openai,openrouter,xai,zai]>=2.22.0",
+]
+
+[project.optional-dependencies]
+server = [
+    "mcp>=1.29.0",
+]
+
+[build-system]
+requires = ["uv_build>=0.11.16,<0.12.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "coverage[toml]>=7.15.2",
+    "pytest>=9.1.1",
+    "pytest-mock>=3.15.1",
+    "ruff>=0.16.1",
+    "taskipy>=1.14.1",
+    "ty>=0.0.65",
+    "vulture>=2.16",
+]
+
+[tool.taskipy.tasks]
+format-and-lint = "task ruff && task ty-lint"
+
+ruff = "ruff format ./src/ovid_core ./src/tests/ && ruff check ./src/ovid_core ./src/tests/ --fix --unsafe-fixes"
+tests = "PYTHONPATH=src pytest ./src/tests/ -v"
+vulture = "vulture ./src/ovid_core ./vulture/whitelist.txt --sort-by-size"
+ruff-lint = "ruff check ./src/ovid_core"
+ty-lint = "ty check ./src/ovid_core"
+
+[tool.ty.rules]
+blanket-ignore-comment = "error"
+missing-type-argument = "error"
+possibly-unresolved-reference = "warn"
+unsupported-dynamic-base = "warn"
+
+division-by-zero = "warn"
+possibly-missing-attribute = "warn"
+possibly-missing-import = "warn"
+
+[tool.ty.analysis]
+strict-literal-narrowing = true
+
+[tool.ruff]
+line-length = 120
+extend-exclude = ["site-packages", "*.pyi"]
+target-version = 'py314'
+
+[tool.ruff.lint]
+extend-select = ["ANN", "PYI", "PGH003"]
+preview = true
+fixable = ["ALL"]
+unfixable = []
+select = [
+    "E",  # pycodestyle errors
+    "W",  # pycodestyle warnings
+    "F",  # pyflakes
+    "I",  # isort
+    "C",  # flake8-comprehensions
+    "B",  # flake8-bugbear
+    "UP",  # pyupgrade
+]
+ignore = [
+    "B008",  # do not perform function calls in argument defaults
+    "C901",  # too complex
+]
+
+[tool.ruff.format]
+quote-style = 'single'
+indent-style = 'space'
+line-ending = 'auto'
+skip-magic-trailing-comma = false
+exclude = ['*.pyi']
+
+[tool.ruff.lint.mccabe]
+max-complexity = 6
+
+[tool.ruff.lint.isort]
+split-on-trailing-comma = false
+lines-after-imports = 2
+known-first-party = ["app"]
+
+[tool.ruff.lint.pyupgrade]
+# Preserve types, even if a file imports `from __future__ import annotations`.
+keep-runtime-typing = true
+
+
+[tool.pytest.ini_options]
+minversion = "6.0"
+addopts = [
+    '--strict-markers',
+    '--strict-config',
+    '--allow-unix-socket',
+    '--allow-hosts=127.0.0.1,127.0.1.1,::1',
+    '--tb=short',
+    '--cov=src/ovid_core',
+    '--cov-branch',
+    '--cov-report=term-missing:skip-covered',
+    '--cov-report=html',
+    '--cov-fail-under=100',
+]
+asyncio_mode = "auto"
+python_files = "test*.py"
+# Directories that are not visited by pytest collector:
+norecursedirs = "*.egg .eggs dist build docs .tox .git __pycache__ config docker etc"
+testpaths = [
+    "tests",
+]
+
+[tool.vulture]
+exclude = []
+min_confidence = 60
+paths = ["./src/ovid_core"]
+sort_by_size = false
+verbose = false
+
+[tool.coverage.run]
+omit = []
+concurrency = ['thread']
+
+
+[tool.coverage.report]
+omit = []
+
+exclude_lines = [
+    'pragma: no cover',
+    '@abstract',
+    'def __repr__',
+    'raise AssertionError',
+    'raise NotImplementedError',
+    'if __name__ == .__main__.:',
+]
