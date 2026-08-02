@@ -23,7 +23,10 @@ build-backend = "uv_build"
 dev = [
     "coverage[toml]>=7.15.2",
     "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
+    "pytest-cov>=7.1.0",
     "pytest-mock>=3.15.1",
+    "pytest-socket>=0.8.0",
     "ruff>=0.16.1",
     "taskipy>=1.14.1",
     "ty>=0.0.65",
@@ -34,7 +37,7 @@ dev = [
 format-and-lint = "task ruff && task ty-lint"
 
 ruff = "ruff format ./src/ovid_core ./src/tests/ && ruff check ./src/ovid_core ./src/tests/ --fix --unsafe-fixes"
-tests = "PYTHONPATH=src pytest ./src/tests/ -v"
+tests = "pytest ./src/tests/ -v"
 vulture = "vulture ./src/ovid_core ./vulture/whitelist.txt --sort-by-size"
 ruff-lint = "ruff check ./src/ovid_core"
 ty-lint = "ty check ./src/ovid_core"
