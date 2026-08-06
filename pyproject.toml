@@ -1,18 +1,18 @@
 [project]
 name = "ovid-core"
 version = "0.1.0"
-description = "Add your description here"
+description = "Shared compatibility, configuration, runtime, and extension layer for Ovid applications"
 authors = [
     { name = "Galtozzy", email = "galtozzy+git@gmail.com" }
 ]
 requires-python = ">=3.14"
 dependencies = [
-    "pydantic-ai-slim[anthropic,bedrock,cohere,evals,google,groq,mistral,openai,openrouter,xai,zai]>=2.22.0",
+    "pydantic-ai-slim>=2.22.0,<2.23.0",
 ]
 
 [project.optional-dependencies]
-server = [
-    "mcp>=1.29.0",
+openai = [
+    "pydantic-ai-slim[openai]>=2.22.0,<2.23.0",
 ]
 
 [build-system]
@@ -92,7 +92,7 @@ max-complexity = 6
 [tool.ruff.lint.isort]
 split-on-trailing-comma = false
 lines-after-imports = 2
-known-first-party = ["app"]
+known-first-party = ["ovid_core"]
 
 [tool.ruff.lint.pyupgrade]
 # Preserve types, even if a file imports `from __future__ import annotations`.
@@ -118,7 +118,7 @@ python_files = "test*.py"
 # Directories that are not visited by pytest collector:
 norecursedirs = "*.egg .eggs dist build docs .tox .git __pycache__ config docker etc"
 testpaths = [
-    "tests",
+    "src/tests",
 ]
 
 [tool.vulture]
