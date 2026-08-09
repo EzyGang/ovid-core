@@ -5,6 +5,7 @@ from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.toolsets import AbstractToolset
 
 from ovid_core.adapters.pydantic_ai._extension_validation import validate_extension_ids
+from ovid_core.adapters.pydantic_ai.integrations import adapt_integration_capability
 from ovid_core.adapters.pydantic_ai.tools import (
     PydanticAICapabilityAdapter,
     PydanticAIToolsetAdapter,
@@ -29,7 +30,9 @@ def adapt_agent_extensions[Deps](
 ) -> PydanticAIExtensions[Deps]:
     validate_extension_ids(capabilities, toolsets)
     adapted_capabilities = tuple(
-        PydanticAICapabilityAdapter(capability, hooks=hooks, include_toolset=False) for capability in capabilities
+        adapt_integration_capability(capability)
+        or PydanticAICapabilityAdapter(capability, hooks=hooks, include_toolset=False)
+        for capability in capabilities
     )
     adapted_toolsets = [
         PydanticAIToolsetAdapter(source=source, hooks=(*hooks, *capability.contributions.hooks))

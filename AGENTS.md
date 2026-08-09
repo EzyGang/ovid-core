@@ -4,7 +4,7 @@
 
 `ovid-core` is the shared Python library for the Ovid harness family. It owns stable Ovid-facing runtime values, typed domain-neutral configuration, generic model selection, and the compatibility boundary around Pydantic AI. Tools, plugins, and optional transports build on those contracts without exposing upstream runtime objects to consumers.
 
-The package includes stable runtime contracts, typed configuration and credential references, model routing, ChatGPT Codex subscription authentication, Ovid-owned tool/toolset/capability/hook contracts, the typed agent factory and runtime facade, nested usage accounting, run policy, observability, and their Pydantic AI adapters. `src/ovid_core/__init__.py` intentionally remains empty; consumers import from the module that owns each symbol.
+The package includes stable runtime contracts, typed configuration and credential references, model routing, ChatGPT Codex subscription authentication, Ovid-owned tool/toolset/capability/hook contracts, explicit provider-adaptive capabilities, bundled MCP clients and Agent Skills, the typed agent factory and runtime facade, nested usage accounting, run policy, observability, and their Pydantic AI adapters. `src/ovid_core/__init__.py` intentionally remains empty; consumers import from the module that owns each symbol.
 
 ## Architecture & Data Flow
 
@@ -24,7 +24,9 @@ Organize by domain, not by type or release stage. A domain package owns its mode
 - `src/ovid_core/persistence.py`: normalized message codec, minimal async conversation-store contract, and in-memory test implementation. Applications own durable storage and session policy.
 - `src/ovid_core/runtime/`: run identities, contexts, events, and results.
 - `src/ovid_core/tools/`: typed tool arguments/results, execution context, and tool/toolset lifecycle contracts.
-- `src/ovid_core/capabilities/`: opt-in instruction, tool, toolset, hook, and model-setting contributions.
+- `src/ovid_core/capabilities/`: opt-in instruction, tool, toolset, hook, model-setting, and provider-adaptive capability contracts.
+- `src/ovid_core/mcp/`: typed stdio/HTTP MCP configuration, credential resolution, and the bundled core-owned MCP capability contract.
+- `src/ovid_core/skills.py`: explicit trusted skill-library configuration and the bundled first-class Agent Skills capability.
 - `src/ovid_core/hooks/`: Ovid-owned lifecycle hooks limited to currently implemented tool execution points.
 - `src/ovid_core/agents.py`: explicit typed agent construction, diagnostics, and Ovid-owned run/stream facade contracts.
 - `src/ovid_core/policy.py`: retry, limit, timeout, concurrency, and fallback classification contracts; cancellation always propagates.
@@ -77,11 +79,14 @@ uv run task tests               # configured pytest command for src/tests
 - Pydantic AI models and providers normally own their HTTP-client lifecycle. The Codex subscription model is the narrow exception: it owns and closes the authenticated OpenAI client it constructs for the undocumented ChatGPT backend.
 - Provider SDK retries complete inside one candidate attempt. Pydantic AI fallback then advances through the configured candidate order after a fallback-eligible terminal failure. Concurrency limits wrap each candidate before fallback compilation.
 - The default model factory follows Pydantic AI provider authentication and environment conventions. Pydantic AI supports API keys and provider-native mechanisms such as cloud credential chains, ADC, profiles, and custom SDK clients where each provider implements them.
+- Provider-adaptive thinking, web search/fetch, image generation, X search, tool search, compaction, and instrumentation are added only through explicit caller configuration and delegated to Pydantic AI. Do not implement imitation tools for provider-native behavior.
+- MCP clients use explicit typed stdio or HTTP configuration. Secret environment variables and headers use credential references, Pydantic AI/FastMCP own connection lifecycle, and stdio transports disable process reuse for deterministic shutdown. Applications own `.mcp.json` discovery and product-facing tool presentation.
+- Agent Skills use the official `pydantic-ai-harness` `Skills` capability with explicit trusted library directories. Do not search conventional directories implicitly, parse `SKILL.md` independently, load bundled resources, execute scripts, grant filesystem access, or hide application trust and containment policy in core.
 - `CodexSubscriptionModelFactory` uses OpenAI Codex's device OAuth endpoints, refreshes rotating tokens, stores them through `CodexTokenStore`, and gives Pydantic AI's `OpenAIResponsesModel` the ChatGPT Codex base URL and authenticated HTTP client directly. It loads the authenticated Codex `/models` instruction catalog once per factory, preserves the selected model's validated base instructions as top-level Responses instructions, and maps consumer instructions to developer input. Otherwise do not rewrite Pydantic AI request bodies; core only enforces `store=false`, streaming requests, encrypted reasoning replay, and the required Codex authentication headers.
 - Codex subscription access relies on an undocumented backend contract even though the device flow and model catalog are implemented by the official Apache-licensed Codex CLI. Keep it isolated behind the dedicated factory; never hard-code a copied Codex prompt, put OAuth tokens in generic settings, serialize them, claim another client as the request originator, or silently fall back to API-key billing.
 - Usage normalization includes every request reported by Pydantic AI. A failed provider attempt that exposes no upstream usage cannot be counted; successful fallback responses and later agent-loop requests aggregate through the core `Usage` contract. `UsageTracker.create_child()` gives each subagent a local ledger while forwarding usage deltas exactly once to its parent. Aggregate limits are checked before model requests and tool calls and after usage updates, including nested runs, while each `RunResult` retains only that run's usage.
 - Pydantic AI owns OpenTelemetry instrumentation. Core only maps `ObservabilityConfig` to Pydantic AI's public `InstrumentationSettings`; applications configure their preferred OpenTelemetry or Logfire export path outside core. Prompt, completion, binary, and model-request-parameter content remains excluded unless `include_content=True` is explicitly selected.
-- OpenAI, HTTPX, and system-keyring support are required runtime dependencies. `pydantic-ai-slim[openai]` supplies the compatible OpenAI SDK; do not add a duplicate direct OpenAI version constraint. Prefer Pydantic AI provider APIs over constructing SDK clients, and import SDK wire types only inside the Pydantic AI adapter when no public Pydantic AI type exists. Keep concrete integration objects inside provider, authentication, or adapter boundaries rather than leaking them into domain contracts.
+- OpenAI, MCP, Agent Skills, HTTPX, and system-keyring support are required runtime dependencies. `pydantic-ai-slim[mcp,openai]` supplies the compatible OpenAI, MCP, and FastMCP implementations; `pydantic-ai-harness[skills]` supplies the official Skills capability. Do not add duplicate direct provider or MCP constraints. Prefer Pydantic AI provider APIs over constructing SDK clients, and import SDK wire types only inside the Pydantic AI adapter when no public Pydantic AI type exists. Keep concrete integration objects inside provider, authentication, or adapter boundaries rather than leaking them into domain contracts.
 - Minimize code as a primary design constraint. Implement only behavior required by a current contract, prefer direct data flow and upstream or standard-library capabilities, and delete speculative options, wrappers, helpers, branches, and extension points. Add an abstraction only when it removes demonstrated duplication or isolates a required boundary; fewer readable lines are better than a more flexible design.
 - Functions should stay within 40 lines and files within 250 lines. Split by responsibility before exceeding either limit; rare exceptions must be inherently indivisible.
 - Prefer guard clauses when the alternative path exits the function; handle absence or failure first, return, then leave the main operation unnested.
@@ -120,7 +125,7 @@ Meaning that code line breaks should split logical groups of code, i.e. inputs, 
 
 ## Important Files
 
-- `pyproject.toml`: package metadata, dependencies/extras, uv build backend, task commands, and all Ruff/ty/pytest/coverage/Vulture policy.
+- `pyproject.toml`: package metadata, dependencies, uv build backend, task commands, and all Ruff/ty/pytest/coverage/Vulture policy.
 - `uv.lock`: resolved runtime, optional, and development dependency graph.
 - `.python-version`: pins local Python to 3.14.
 - `src/ovid_core/models.py`: shared Pydantic model configuration.
@@ -131,6 +136,7 @@ Meaning that code line breaks should split logical groups of code, i.e. inputs, 
 - `src/ovid_core/agents.py`: typed agent factory, construction diagnostics, and run/stream facade.
 - `src/ovid_core/policy.py` and `observability.py`: run policy and Pydantic AI instrumentation configuration.
 - `src/ovid_core/persistence.py`: normalized message codec and application-facing conversation persistence seam.
+- `src/ovid_core/capabilities/integrations.py`, `mcp/`, and `skills.py`: explicit provider-native, MCP client, and Agent Skills contracts.
 - `src/ovid_core/adapters/pydantic_ai/`: upstream model, agent, tool, message, event, usage, result, fallback, concurrency, policy, and instrumentation implementations.
 - `src/ovid_core/__init__.py`: intentionally empty; no package-level re-exports.
 - `src/ovid_core/py.typed`: marks the distribution as typed.
@@ -142,8 +148,8 @@ Meaning that code line breaks should split logical groups of code, i.e. inputs, 
 - Package/environment manager: uv. Build backend: `uv_build`.
 - Task runner: taskipy through `uv run task ...`.
 - Formatting/linting: Ruff. Type checking: ty. Dead-code analysis: Vulture.
-- Runtime dependencies include `pydantic-ai-slim[openai]>=2.22,<2.23`, `httpx>=0.28.1,<0.29`, and `keyring>=25.6,<26`; Codex subscription authentication must work in a normal installation without extras.
-- Canonical upstream references: https://pydantic.dev/docs/ai/overview/ and https://github.com/openai/codex/tree/main/sdk/python. Consult them before changing upstream integration or authentication behavior.
+- Required runtime dependencies include `pydantic-ai-slim[mcp,openai]>=2.22,<2.23`, `pydantic-ai-harness[skills]>=0.18,<0.19`, `httpx>=0.28.1,<0.29`, and `keyring>=25.6,<26`; Codex, MCP client, and Agent Skills support must work in a normal installation.
+- Canonical upstream references: https://pydantic.dev/docs/ai/overview/, https://pydantic.dev/docs/ai/mcp/client/, https://pydantic.dev/docs/ai/harness/skills/, and https://github.com/openai/codex/tree/main/sdk/python. Consult them before changing upstream integration or authentication behavior.
 - There are no console scripts or CI workflows yet. Do not document or depend on an executable entry point until `[project.scripts]` is added.
 
 ## Testing & QA

@@ -1,4 +1,7 @@
 from pydantic import JsonValue, TypeAdapter, ValidationError
+from pydantic_ai._deferred_capabilities import LoadCapabilityReturn as PydanticCapabilityLoadReturn
+from pydantic_ai.messages import LoadCapabilityCallPart as PydanticCapabilityLoadCallPart
+from pydantic_ai.messages import LoadCapabilityReturnPart as PydanticCapabilityLoadReturnPart
 from pydantic_ai.messages import ModelMessage, ModelRequest, ModelRequestPart, ModelResponse, ModelResponsePart
 from pydantic_ai.messages import RetryPromptPart as PydanticRetryPromptPart
 from pydantic_ai.messages import SystemPromptPart as PydanticSystemPromptPart
@@ -12,6 +15,8 @@ from ovid_core.adapters.pydantic_ai.usage import request_usage_from_pydantic
 from ovid_core.errors import ProviderError
 from ovid_core.messages.models import (
     AgentMessage,
+    CapabilityLoadCallPart,
+    CapabilityLoadReturnPart,
     MessagePart,
     RetryPromptPart,
     SystemPromptPart,
@@ -93,6 +98,12 @@ def _request_part_from_pydantic(value: object) -> MessagePart:
         return SystemPromptPart(content=value.content)
     if isinstance(value, PydanticUserPromptPart) and isinstance(value.content, str):
         return UserPromptPart(content=value.content)
+    if isinstance(value, PydanticCapabilityLoadReturnPart):
+        return CapabilityLoadReturnPart(
+            instructions=value.instructions,
+            tool_call_id=value.tool_call_id,
+            outcome=value.outcome,
+        )
     if isinstance(value, PydanticToolReturnPart):
         return ToolReturnPart(
             tool_name=value.tool_name,
@@ -111,6 +122,11 @@ def _request_part_from_pydantic(value: object) -> MessagePart:
 def _response_part_from_pydantic(value: object) -> MessagePart:
     if isinstance(value, PydanticTextPart):
         return TextPart(content=value.content)
+    if isinstance(value, PydanticCapabilityLoadCallPart):
+        if value.capability_id is None:
+            raise ValueError('capability load call does not contain an ID')
+
+        return CapabilityLoadCallPart(capability_id=value.capability_id, tool_call_id=value.tool_call_id)
     if isinstance(value, PydanticToolCallPart):
         return ToolCallPart(tool_name=value.tool_name, arguments=value.args, tool_call_id=value.tool_call_id)
 
@@ -122,6 +138,16 @@ def _request_part_to_pydantic(value: MessagePart) -> ModelRequestPart:
         return PydanticSystemPromptPart(value.content)
     if isinstance(value, UserPromptPart):
         return PydanticUserPromptPart(value.content)
+    if isinstance(value, CapabilityLoadReturnPart):
+        content: PydanticCapabilityLoadReturn = (
+            {'instructions': value.instructions} if value.instructions is not None else {}
+        )
+
+        return PydanticCapabilityLoadReturnPart(
+            content=content,
+            tool_call_id=value.tool_call_id,
+            outcome=value.outcome,
+        )
     if isinstance(value, ToolReturnPart):
         return PydanticToolReturnPart(value.tool_name, value.content, value.tool_call_id, outcome=value.outcome)
     if isinstance(value, RetryPromptPart):
@@ -133,6 +159,11 @@ def _request_part_to_pydantic(value: MessagePart) -> ModelRequestPart:
 def _response_part_to_pydantic(value: MessagePart) -> ModelResponsePart:
     if isinstance(value, TextPart):
         return PydanticTextPart(value.content)
+    if isinstance(value, CapabilityLoadCallPart):
+        return PydanticCapabilityLoadCallPart(
+            args={'id': value.capability_id},
+            tool_call_id=value.tool_call_id,
+        )
     if isinstance(value, ToolCallPart):
         return PydanticToolCallPart(value.tool_name, value.arguments, value.tool_call_id)
 

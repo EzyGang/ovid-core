@@ -9,8 +9,10 @@ requires-python = ">=3.14"
 dependencies = [
     "httpx>=0.28.1,<0.29.0",
     "keyring>=25.6.0,<26.0.0",
-    "pydantic-ai-slim[openai]>=2.22.0,<2.23.0",
+    "pydantic-ai-harness[skills]>=0.18.0,<0.19.0",
+    "pydantic-ai-slim[mcp,openai]>=2.22.0,<2.23.0",
 ]
+
 
 [build-system]
 requires = ["uv_build>=0.11.16,<0.12.0"]
@@ -22,6 +24,7 @@ dev = [
     "pytest>=9.1.1",
     "pytest-asyncio>=1.4.0",
     "pytest-cov>=7.1.0",
+    "pydantic-ai-slim[anthropic]>=2.22.0,<2.23.0",
     "pytest-mock>=3.15.1",
     "pytest-socket>=0.8.0",
     "ruff>=0.16.1",

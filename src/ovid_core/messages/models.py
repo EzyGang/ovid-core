@@ -41,6 +41,19 @@ class ToolReturnPart(BaseModel):
     outcome: Literal['success', 'failed', 'denied', 'interrupted'] = 'success'
 
 
+class CapabilityLoadCallPart(BaseModel):
+    kind: Literal['capability_load_call'] = 'capability_load_call'
+    capability_id: str = Field(min_length=1)
+    tool_call_id: str = Field(min_length=1)
+
+
+class CapabilityLoadReturnPart(BaseModel):
+    kind: Literal['capability_load_return'] = 'capability_load_return'
+    instructions: str | None = None
+    tool_call_id: str = Field(min_length=1)
+    outcome: Literal['success', 'failed', 'denied', 'interrupted'] = 'success'
+
+
 class RetryPromptPart(BaseModel):
     kind: Literal['retry_prompt'] = 'retry_prompt'
     content: str
@@ -49,12 +62,21 @@ class RetryPromptPart(BaseModel):
 
 
 MessagePart = Annotated[
-    SystemPromptPart | UserPromptPart | TextPart | ToolCallPart | ToolReturnPart | RetryPromptPart,
+    SystemPromptPart
+    | UserPromptPart
+    | TextPart
+    | ToolCallPart
+    | ToolReturnPart
+    | CapabilityLoadCallPart
+    | CapabilityLoadReturnPart
+    | RetryPromptPart,
     Field(discriminator='kind'),
 ]
 
-_REQUEST_PART_KINDS = frozenset({'system_prompt', 'user_prompt', 'tool_return', 'retry_prompt'})
-_RESPONSE_PART_KINDS = frozenset({'text', 'tool_call'})
+_REQUEST_PART_KINDS = frozenset(
+    {'system_prompt', 'user_prompt', 'tool_return', 'capability_load_return', 'retry_prompt'}
+)
+_RESPONSE_PART_KINDS = frozenset({'text', 'tool_call', 'capability_load_call'})
 
 
 class AgentMessage(BaseModel):

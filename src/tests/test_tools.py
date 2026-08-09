@@ -48,6 +48,7 @@ def upstream_context(
 
 async def test_toolset_adapter_propagates_identity_usage_approval_hooks_and_lifecycle() -> None:
     tool = AddTool()
+    tool.defer_loading = True
     hook = RecordingHook()
     source = TrackingToolset((tool,))
     adapter = PydanticAIToolsetAdapter(source=source, hooks=(hook,))
@@ -66,6 +67,7 @@ async def test_toolset_adapter_propagates_identity_usage_approval_hooks_and_life
 
     assert result == {'content': 5, 'metadata': {'prefix': 'sum'}}
     assert definitions['add'].tool_def.kind == 'unapproved'
+    assert definitions['add'].tool_def.defer_loading is True
     assert definitions['add'].tool_def.metadata == {
         'ovid_approval': {'required': True, 'reason': 'Writes a total', 'metadata': {'risk': 'low'}}
     }

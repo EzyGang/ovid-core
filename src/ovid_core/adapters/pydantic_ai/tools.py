@@ -16,6 +16,7 @@ from pydantic_core import SchemaValidator, core_schema
 
 from ovid_core.adapters.pydantic_ai._extension_validation import validate_extension_ids
 from ovid_core.adapters.pydantic_ai._tool_context import run_context_from_pydantic, tool_context_from_pydantic
+from ovid_core.adapters.pydantic_ai.integrations import adapt_integration_capability
 from ovid_core.capabilities.base import BaseCapability
 from ovid_core.errors import ExtensionCollisionError, ToolExecutionError, ToolTimeoutError, ToolValidationError
 from ovid_core.hooks.base import BaseToolHook
@@ -116,8 +117,8 @@ class PydanticAICapabilityAdapter[Deps](AbstractCapability[Deps]):
         include_toolset: bool = True,
     ) -> None:
         self.id = source.id
-        self.description = None
-        self.defer_loading = False
+        self.description = source.description
+        self.defer_loading = source.defer_loading
         self._source = source
         self._hooks = hooks
         self._include_toolset = include_toolset
@@ -145,7 +146,11 @@ class PydanticAICapabilityAdapter[Deps](AbstractCapability[Deps]):
 
 def adapt_capabilities[Deps](capabilities: Sequence[BaseCapability[Deps]]) -> tuple[AbstractCapability[Deps], ...]:
     validate_extension_ids(capabilities)
-    return tuple(PydanticAICapabilityAdapter(capability) for capability in capabilities)
+
+    return tuple(
+        adapt_integration_capability(capability) or PydanticAICapabilityAdapter(capability)
+        for capability in capabilities
+    )
 
 
 def _unique_tools[Deps](tools: Sequence[BaseTool[Deps, Any, Any]]) -> dict[str, BaseTool[Deps, Any, Any]]:
@@ -178,6 +183,7 @@ def _tool_definition(tool: BaseTool[Any, Any, Any]) -> ToolDefinition:
         kind='unapproved' if tool.approval.required else 'function',
         metadata=metadata,
         timeout=tool.timeout_seconds,
+        defer_loading=tool.defer_loading,
     )
 
 

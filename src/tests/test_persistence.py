@@ -35,15 +35,16 @@ def test_message_codec_round_trips_normalized_adapter_values() -> None:
         restored = message_from_pydantic(message_to_pydantic(codec.decode(payload)))
 
         assert restored == normalized
-        assert b'"version":1' in payload
+        assert b'"version":2' in payload
+        assert codec.decode(payload.replace(b'"version":2', b'"version":1')) == normalized
 
-    assert codec.version == 1
+    assert codec.version == 2
 
 
 def test_message_codec_rejects_invalid_and_unsupported_payloads_safely() -> None:
     codec = MessageCodec()
     message = message_from_pydantic(ModelRequest(parts=(PydanticUserPromptPart('secret-value'),)))
-    unsupported = codec.encode(message).replace(b'"version":1', b'"version":2')
+    unsupported = codec.encode(message).replace(b'"version":2', b'"version":3')
 
     for payload in (b'{"content":"secret-value"}', unsupported):
         with pytest.raises(PersistenceError, match='invalid or uses an unsupported') as error:

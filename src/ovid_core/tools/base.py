@@ -26,6 +26,7 @@ class BaseTool[Deps, Args: BaseModel, Result: ToolResult](ABC):
     result_type: type[Result]
     approval: ToolApproval = ToolApproval()
     timeout_seconds: float | None = None
+    defer_loading: bool = False
 
     @abstractmethod
     async def execute(self, context: ToolExecutionContext[Deps], arguments: Args) -> Result: ...

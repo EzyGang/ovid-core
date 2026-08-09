@@ -21,7 +21,9 @@ class CapabilityContributions[Deps]:
     model_settings: CapabilityModelSettings = CapabilityModelSettings()
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, kw_only=True)
 class BaseCapability[Deps]:
     id: str
+    description: str | None = None
+    defer_loading: bool = False
     contributions: CapabilityContributions[Deps] = CapabilityContributions()

@@ -18,14 +18,14 @@ class ConversationStore(Protocol):
 
 
 class _EncodedMessage(BaseModel):
-    version: Literal[1] = 1
+    version: Literal[1, 2] = 2
     message: AgentMessage
 
 
 class MessageCodec:
     @property
     def version(self) -> int:
-        return 1
+        return 2
 
     def encode(self, message: AgentMessage) -> bytes:
         return _EncodedMessage(message=message).model_dump_json().encode()

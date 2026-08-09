@@ -86,3 +86,7 @@ _.wrap_run
 ConversationStore
 InMemoryConversationStore
 MessageCodec
+_.select_one_filter
+_.reject_overlapping_names
+_.validate_mode
+create_mcp_capability
