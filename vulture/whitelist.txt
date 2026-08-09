@@ -76,3 +76,10 @@ tool_events_from_messages
 AgentFactory
 PydanticAIAgentCompiler
 _.instrument
+
+_.get_ordering
+_.create_child
+_.before_model_request
+_.after_model_request
+_.before_tool_execute
+_.wrap_run

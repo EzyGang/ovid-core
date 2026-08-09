@@ -27,12 +27,6 @@ class RunPolicyConfig(BaseModel):
     timeout_seconds: float | None = Field(default=None, gt=0)
 
 
-class ObservabilityConfig(BaseModel):
-    enabled: bool = False
-    service_name: str | None = None
-    attributes: dict[str, JsonValue] = Field(default_factory=dict)
-
-
 class PluginConfig(BaseModel):
     enabled: bool = True
     config: dict[str, JsonValue] = Field(default_factory=dict)
@@ -44,5 +38,4 @@ class OvidConfig(BaseModel):
     routes: dict[ConfigName, RouteConfig] = Field(default_factory=dict)
     credentials: dict[ConfigName, CredentialRef] = Field(default_factory=dict)
     run_policy: RunPolicyConfig = Field(default_factory=RunPolicyConfig)
-    observability: ObservabilityConfig = Field(default_factory=ObservabilityConfig)
     plugins: dict[ConfigName, PluginConfig] = Field(default_factory=dict)

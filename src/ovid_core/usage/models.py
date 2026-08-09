@@ -51,6 +51,10 @@ class Usage(BaseModel):
     def total_tokens(self) -> int:
         return self.input_tokens + self.output_tokens
 
+    @property
+    def is_zero(self) -> bool:
+        return self == _ZERO_USAGE
+
     def __add__(self, other: Usage) -> Self:
         return type(self)(
             request_count=self.request_count + other.request_count,
@@ -58,6 +62,17 @@ class Usage(BaseModel):
             provider_details=_merge_provider_details((self.provider_details, other.provider_details)),
             **{field: getattr(self, field) + getattr(other, field) for field in _TOKEN_FIELDS},
         )
+
+    def delta_since(self, previous: Usage) -> Self:
+        values = {
+            field: getattr(self, field) - getattr(previous, field)
+            for field in ('request_count', 'tool_calls', *_TOKEN_FIELDS)
+        }
+        provider_details = _subtract_provider_details(self.provider_details, previous.provider_details)
+        if any(value < 0 for value in values.values()):
+            raise ValueError('usage values cannot decrease')
+
+        return type(self)(provider_details=provider_details, **values)
 
 
 def _merge_provider_details(values: Iterable[ProviderUsageDetails]) -> ProviderUsageDetails:
@@ -73,6 +88,26 @@ def _merge_provider_details(values: Iterable[ProviderUsageDetails]) -> ProviderU
     return merged
 
 
+def _subtract_provider_details(
+    current: ProviderUsageDetails,
+    previous: ProviderUsageDetails,
+) -> ProviderUsageDetails:
+    delta: ProviderUsageDetails = {}
+    for namespace in current.keys() | previous.keys():
+        current_values = current.get(namespace, {})
+        previous_values = previous.get(namespace, {})
+        values = {
+            key: current_values.get(key, 0) - previous_values.get(key, 0)
+            for key in current_values.keys() | previous_values.keys()
+        }
+        if any(value < 0 for value in values.values()):
+            raise ValueError('provider usage values cannot decrease')
+        if nonzero := {key: value for key, value in values.items() if value}:
+            delta[namespace] = nonzero
+
+    return delta
+
+
 _TOKEN_FIELDS = (
     'input_tokens',
     'output_tokens',
@@ -82,3 +117,6 @@ _TOKEN_FIELDS = (
     'output_audio_tokens',
     'cache_audio_read_tokens',
 )
+
+
+_ZERO_USAGE = Usage()

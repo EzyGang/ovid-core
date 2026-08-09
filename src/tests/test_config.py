@@ -15,7 +15,6 @@ def test_final_config_validates_without_application_policy() -> None:
             'models': {'chat': {'provider': 'openai', 'model': 'gpt-4o'}},
             'routes': {'answer': {'models': ['chat']}},
             'run_policy': {'request_limit': 4},
-            'observability': {'enabled': True, 'service_name': 'ovid-tests'},
             'plugins': {'audit': {'config': {'level': 'strict'}}},
         }
     )
@@ -23,7 +22,6 @@ def test_final_config_validates_without_application_policy() -> None:
     assert config.models['chat'].model == 'gpt-4o'
     assert config.routes['answer'].models == ('chat',)
     assert config.run_policy.request_limit == 4
-    assert config.observability.service_name == 'ovid-tests'
     assert config.plugins['audit'].config == {'level': 'strict'}
 
 

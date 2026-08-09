@@ -19,7 +19,7 @@ def validate_extension_ids[Deps](
             _add_unique(tool.id, tool_ids, 'tool')
         for toolset in capability.contributions.toolsets:
             _add_unique(toolset.id, toolset_ids, 'toolset')
-            
+
     for toolset in direct_toolsets:
         _add_unique(toolset.id, toolset_ids, 'toolset')
 

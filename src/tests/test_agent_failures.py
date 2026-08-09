@@ -12,11 +12,19 @@ from pydantic_ai.models.test import TestModel
 import tests.agent_consumer as consumer
 from ovid_core.adapters.pydantic_ai._agent_errors import normalize_run_error
 from ovid_core.adapters.pydantic_ai._agent_stream import PydanticAIStream
-from ovid_core.agents import AgentDefinition, AgentRunPolicy, AgentStream, AgentUsageLimits, OvidAgent
+from ovid_core.agents import AgentDefinition, AgentStream, OvidAgent
 from ovid_core.capabilities.base import BaseCapability, CapabilityContributions
-from ovid_core.errors import AgentConstructionError, AgentRunError, AgentTimeoutError, ExtensionCollisionError
+from ovid_core.errors import (
+    AgentConstructionError,
+    AgentRunError,
+    AgentTimeoutError,
+    ExtensionCollisionError,
+    UsageLimitError,
+)
+from ovid_core.policy import AgentRunPolicy, AgentUsageLimits
 from ovid_core.routing.models import ModelRef
 from ovid_core.runtime.events import AgentEvent
+from ovid_core.usage.tracking import UsageTracker
 from tests.agent_consumer import AddTool, AgentDependencies, ConsumerToolset, RecordingHook, WaitTool
 from tests.agent_helpers import UnsupportedRuntime, agent_factory, failing_request, structured_test_model
 from tests.helpers import CONVERSATION_ID, RUN_ID
@@ -28,12 +36,14 @@ async def test_run_cancellation_timeout_limits_and_failures_are_stable() -> None
     wait_factory = agent_factory({'primary': TestModel(call_tools=['wait'])})
     waiting_agent = await wait_factory.build(consumer.waiting_definition(tool=wait_tool))
     deps = AgentDependencies(prefix='cancel')
-    task = asyncio.create_task(waiting_agent.run('Wait.', deps=deps))
+    tracker = UsageTracker()
+    task = asyncio.create_task(waiting_agent.run('Wait.', deps=deps, usage_tracker=tracker))
     await deps.started.wait()
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
         await task
     assert wait_tool.cancelled is True
+    assert tracker.usage.request_count == 1
 
     timeout_tool = WaitTool()
     timeout_agent = await wait_factory.build(
@@ -55,7 +65,7 @@ async def test_run_cancellation_timeout_limits_and_failures_are_stable() -> None
             policy=AgentRunPolicy(limits=AgentUsageLimits(requests=1)),
         )
     )
-    with pytest.raises(AgentRunError, match='Agent run failed'):
+    with pytest.raises(UsageLimitError, match='Agent usage limit exceeded'):
         await limited_agent.run('Add.', deps=AgentDependencies(prefix='limited'))
 
     failing_factory = agent_factory({'primary': FunctionModel(failing_request, model_name='failing')})
@@ -71,13 +81,15 @@ async def test_stream_cancellation_timeout_and_failure_cleanup_are_stable() -> N
     cancelled_tool = WaitTool()
     cancelled_agent = await wait_factory.build(consumer.waiting_definition(tool=cancelled_tool))
     cancelled_deps = AgentDependencies(prefix='stream-cancel')
+    stream_tracker = UsageTracker()
 
-    owner = asyncio.create_task(_consume_agent_stream(cancelled_agent, cancelled_deps))
+    owner = asyncio.create_task(_consume_agent_stream(cancelled_agent, cancelled_deps, stream_tracker))
     await cancelled_deps.started.wait()
     owner.cancel()
     with pytest.raises(asyncio.CancelledError):
         await owner
     assert cancelled_tool.cancelled is True
+    assert stream_tracker.usage.request_count == 1
 
     timeout_tool = WaitTool()
     timeout_agent = await wait_factory.build(
@@ -179,6 +191,7 @@ async def _collect(stream: AgentStream[str]) -> list[AgentEvent]:
 async def _consume_agent_stream(
     agent: OvidAgent[AgentDependencies, str],
     deps: AgentDependencies,
+    tracker: UsageTracker | None = None,
 ) -> None:
-    async with agent.stream('Wait.', deps=deps) as stream:
+    async with agent.stream('Wait.', deps=deps, usage_tracker=tracker) as stream:
         await _collect(stream)

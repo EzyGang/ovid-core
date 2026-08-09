@@ -58,6 +58,17 @@ def test_usage_aggregates_and_merges_without_request_snapshots() -> None:
     assert merged.tool_calls == 3
     assert merged.provider_details == {'openai': {'reasoning_tokens': 3}}
     assert first.request_count == 1
+    assert merged.delta_since(first) == second
+    with pytest.raises(ValueError, match='usage values cannot decrease'):
+        Usage(input_tokens=1).delta_since(Usage(input_tokens=2))
+    with pytest.raises(ValueError, match='provider usage values cannot decrease'):
+        Usage(provider_details={}).delta_since(Usage(provider_details={'openai': {'reasoning_tokens': 1}}))
+    assert (
+        Usage(provider_details={'openai': {'reasoning_tokens': 1}}).delta_since(
+            Usage(provider_details={'openai': {'reasoning_tokens': 1}})
+        )
+        == Usage()
+    )
 
 
 def test_usage_rejects_negative_values() -> None:

@@ -34,6 +34,10 @@ class AgentTimeoutError(AgentRunError, TimeoutError):
     pass
 
 
+class UsageLimitError(AgentRunError):
+    pass
+
+
 class ToolError(OvidCoreError):
     pass
 

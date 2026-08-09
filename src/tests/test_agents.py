@@ -1,12 +1,16 @@
 from collections.abc import AsyncIterator
+from dataclasses import replace
+from unittest.mock import PropertyMock, patch
 
 import pytest
+from pydantic_ai import Agent, InstrumentationSettings
 from pydantic_ai.messages import ModelMessage
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 
 import tests.agent_consumer as consumer
-from ovid_core.agents import AgentRunPolicy
 from ovid_core.errors import AgentRunError
+from ovid_core.observability import ObservabilityConfig
+from ovid_core.policy import AgentRunPolicy
 from ovid_core.routing.models import ModelRef, ModelRouteRef
 from tests.agent_consumer import AddTool, AgentDependencies, RecordingHook
 from tests.agent_helpers import agent_factory, failing_request, structured_test_model
@@ -31,7 +35,8 @@ async def test_factory_compiles_exact_inputs_fallback_diagnostics_and_continuati
             model=ModelRouteRef(name='answer'),
             tool=tool,
             hook=hook,
-            policy=AgentRunPolicy(instrumentation=True, max_concurrency=1),
+            policy=AgentRunPolicy(max_concurrency=1),
+            observability=ObservabilityConfig(enabled=True),
         )
     )
     deps = AgentDependencies(prefix='consumer')
@@ -69,6 +74,23 @@ async def test_factory_compiles_exact_inputs_fallback_diagnostics_and_continuati
     continued = await agent.run('Continue.', deps=deps, messages=result.messages)
     assert continued.conversation_id == result.conversation_id
     assert continued.run_id != result.run_id
+
+
+@pytest.mark.asyncio
+async def test_instrumentation_preserves_global_defaults_and_supports_per_agent_settings() -> None:
+    factory = agent_factory({'primary': structured_test_model()})
+    definition = consumer.text_definition()
+
+    with patch.object(Agent, 'instrument', new_callable=PropertyMock) as instrument:
+        await factory.build(definition)
+    instrument.assert_not_called()
+
+    with patch.object(Agent, 'instrument', new_callable=PropertyMock) as instrument:
+        await factory.build(replace(definition, observability=ObservabilityConfig(enabled=True, include_content=True)))
+    settings = instrument.call_args.args[0]
+
+    assert isinstance(settings, InstrumentationSettings)
+    assert settings.include_content is True
 
 
 @pytest.mark.asyncio

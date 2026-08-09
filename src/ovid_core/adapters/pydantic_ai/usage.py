@@ -62,6 +62,19 @@ def usage_from_pydantic(value: PydanticRunUsage, requests: tuple[RequestUsage, .
     return usage
 
 
+def aggregate_usage_from_pydantic(value: PydanticRunUsage) -> Usage:
+    try:
+        return Usage.model_validate(
+            {
+                'request_count': value.requests,
+                'tool_calls': value.tool_calls,
+                **{field: getattr(value, field) for field in _TOKEN_FIELDS},
+            }
+        )
+    except ValidationError as error:
+        raise ProviderError('Provider returned invalid aggregate usage data') from error
+
+
 def usage_update_event_from_pydantic(
     value: PydanticRequestUsage,
     *,

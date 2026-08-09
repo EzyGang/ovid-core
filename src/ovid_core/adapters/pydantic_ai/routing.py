@@ -4,6 +4,7 @@ from typing import cast
 from pydantic_ai.models import Model
 from pydantic_ai.models.fallback import FallbackModel
 
+from ovid_core.adapters.pydantic_ai._provider_errors import should_fallback
 from ovid_core.routing.models import ModelCapabilities, ModelHandle
 
 
@@ -11,7 +12,7 @@ def compile_fallback_model(*, model_id: str, handles: Sequence[ModelHandle]) -> 
     if len(handles) == 1:
         return handles[0]
     native_models = tuple(cast(Model, handle._runtime) for handle in handles)
-    runtime = FallbackModel(native_models[0], *native_models[1:])
+    runtime = FallbackModel(native_models[0], *native_models[1:], fallback_on=should_fallback)
 
     return ModelHandle(
         model_id=model_id,

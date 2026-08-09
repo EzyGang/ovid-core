@@ -4,44 +4,24 @@ from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
 from typing import Literal, Protocol
 
-from pydantic import Field, NonNegativeInt, PositiveInt
+from pydantic import Field
 
 from ovid_core.capabilities.base import BaseCapability
 from ovid_core.hooks.base import BaseToolHook
 from ovid_core.messages.models import AgentMessage
 from ovid_core.models import BaseModel
+from ovid_core.observability import ObservabilityConfig
+from ovid_core.policy import AgentRunPolicy
 from ovid_core.routing.models import ModelRef, ModelRouteRef, ResolvedModel
 from ovid_core.routing.router import ModelRouter
 from ovid_core.runtime.events import AgentEvent
 from ovid_core.runtime.identifiers import ConversationId, RunId
 from ovid_core.runtime.results import RunResult
 from ovid_core.tools.base import BaseToolset
+from ovid_core.usage.tracking import UsageTracker
 
 
 type AgentModelSelector = ModelRef | ModelRouteRef
-
-
-class AgentRetryPolicy(BaseModel):
-    tools: NonNegativeInt = 0
-    output: NonNegativeInt = 0
-
-
-class AgentUsageLimits(BaseModel):
-    requests: PositiveInt | None = 50
-    tool_calls: PositiveInt | None = None
-    input_tokens: PositiveInt | None = None
-    output_tokens: PositiveInt | None = None
-    total_tokens: PositiveInt | None = None
-
-
-class AgentRunPolicy(BaseModel):
-    retries: AgentRetryPolicy = AgentRetryPolicy()
-    limits: AgentUsageLimits = AgentUsageLimits()
-    timeout_seconds: float | None = Field(default=None, gt=0)
-    tool_timeout_seconds: float | None = Field(default=None, gt=0)
-    max_concurrency: PositiveInt | None = None
-    end_strategy: Literal['early', 'graceful', 'exhaustive'] = 'graceful'
-    instrumentation: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -54,6 +34,7 @@ class AgentDefinition[Deps, Output]:
     toolsets: tuple[BaseToolset[Deps], ...] = ()
     hooks: tuple[BaseToolHook[Deps], ...] = ()
     policy: AgentRunPolicy = AgentRunPolicy()
+    observability: ObservabilityConfig = ObservabilityConfig()
 
 
 class AgentExtensionProvenance(BaseModel):
@@ -69,6 +50,7 @@ class AgentConstructionDiagnostics(BaseModel):
     selected_model: str = Field(min_length=1)
     fallback_order: tuple[str, ...] = Field(min_length=1)
     policy: AgentRunPolicy
+    observability: ObservabilityConfig
     extensions: tuple[AgentExtensionProvenance, ...]
 
 
@@ -88,6 +70,7 @@ class AgentRuntime[Deps, Output](Protocol):
         messages: tuple[AgentMessage, ...],
         run_id: RunId | None,
         conversation_id: ConversationId | None,
+        usage_tracker: UsageTracker | None,
     ) -> RunResult[Output]: ...
 
     @abstractmethod
@@ -99,6 +82,7 @@ class AgentRuntime[Deps, Output](Protocol):
         messages: tuple[AgentMessage, ...],
         run_id: RunId | None,
         conversation_id: ConversationId | None,
+        usage_tracker: UsageTracker | None,
     ) -> AbstractAsyncContextManager[AgentStream[Output]]: ...
 
 
@@ -124,6 +108,7 @@ class OvidAgent[Deps, Output]:
         messages: tuple[AgentMessage, ...] = (),
         run_id: RunId | None = None,
         conversation_id: ConversationId | None = None,
+        usage_tracker: UsageTracker | None = None,
     ) -> RunResult[Output]:
         return await self._runtime.run(
             prompt,
@@ -131,6 +116,7 @@ class OvidAgent[Deps, Output]:
             messages=messages,
             run_id=run_id,
             conversation_id=conversation_id,
+            usage_tracker=usage_tracker,
         )
 
     def stream(
@@ -141,6 +127,7 @@ class OvidAgent[Deps, Output]:
         messages: tuple[AgentMessage, ...] = (),
         run_id: RunId | None = None,
         conversation_id: ConversationId | None = None,
+        usage_tracker: UsageTracker | None = None,
     ) -> AbstractAsyncContextManager[AgentStream[Output]]:
         return self._runtime.stream(
             prompt,
@@ -148,6 +135,7 @@ class OvidAgent[Deps, Output]:
             messages=messages,
             run_id=run_id,
             conversation_id=conversation_id,
+            usage_tracker=usage_tracker,
         )
 
 
@@ -167,9 +155,10 @@ def _diagnostics[Deps, Output](
     definition: AgentDefinition[Deps, Output],
     resolved: ResolvedModel,
 ) -> AgentConstructionDiagnostics:
-    extensions = [
-        AgentExtensionProvenance(kind='instructions', id='caller', source='caller') for _ in definition.instructions[:1]
-    ]
+    extensions: list[AgentExtensionProvenance] = []
+    if definition.instructions:
+        extensions.append(AgentExtensionProvenance(kind='instructions', id='caller', source='caller'))
+
     for capability in definition.capabilities:
         extensions.append(AgentExtensionProvenance(kind='capability', id=capability.id, source='caller'))
         contributions = capability.contributions
@@ -198,5 +187,6 @@ def _diagnostics[Deps, Output](
         selected_model=resolved.selected_model,
         fallback_order=resolved.fallback_order,
         policy=definition.policy,
+        observability=definition.observability,
         extensions=tuple(extensions),
     )

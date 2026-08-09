@@ -65,6 +65,10 @@ class PydanticAIStream[Output](AgentStream[Output]):
 
         return self._result
 
+    @property
+    def complete(self) -> bool:
+        return self._result is not None
+
     def __aiter__(self) -> PydanticAIStream[Output]:
         return self
 

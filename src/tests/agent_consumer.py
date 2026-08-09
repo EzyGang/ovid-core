@@ -3,10 +3,12 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
-from ovid_core.agents import AgentDefinition, AgentRunPolicy
+from ovid_core.agents import AgentDefinition
 from ovid_core.capabilities.base import BaseCapability, CapabilityContributions
 from ovid_core.hooks.base import BaseToolHook
 from ovid_core.models import BaseModel
+from ovid_core.observability import ObservabilityConfig
+from ovid_core.policy import AgentRunPolicy
 from ovid_core.routing.models import ModelRef, ModelRouteRef
 from ovid_core.runtime.context import RunContext
 from ovid_core.tools.base import BaseTool, BaseToolset, ToolExecutionContext
@@ -114,6 +116,7 @@ def structured_definition(
     tool: AddTool,
     hook: RecordingHook,
     policy: AgentRunPolicy = AgentRunPolicy(),
+    observability: ObservabilityConfig = ObservabilityConfig(),
 ) -> AgentDefinition[AgentDependencies, StructuredAnswer]:
     capability = BaseCapability[AgentDependencies](
         id='arithmetic',
@@ -131,6 +134,7 @@ def structured_definition(
         capabilities=(capability,),
         hooks=(hook,),
         policy=policy,
+        observability=observability,
     )
 
 

@@ -43,13 +43,18 @@ def failing_request(messages: list[ModelMessage], info: AgentInfo) -> ModelRespo
     raise ModelAPIError('failing', 'provider-secret')
 
 
-def agent_factory(runtimes: dict[str, ModelRuntime], *, route: bool = False) -> AgentFactory:
+def agent_factory(
+    runtimes: dict[str, ModelRuntime],
+    *,
+    route: bool = False,
+    compiler: PydanticAIAgentCompiler | None = None,
+) -> AgentFactory:
     models = {model_id: {'provider': 'test', 'model': model_id} for model_id in runtimes}
     routes = {'answer': {'models': tuple(runtimes)}} if route else {}
     config = OvidConfig.model_validate({'models': models, 'routes': routes})
     router = ModelRouter(config=config, factory=RuntimeFactory(runtimes))
 
-    return AgentFactory(router=router, compiler=PydanticAIAgentCompiler())
+    return AgentFactory(router=router, compiler=compiler or PydanticAIAgentCompiler())
 
 
 def structured_test_model() -> TestModel:
