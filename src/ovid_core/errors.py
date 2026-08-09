@@ -30,6 +30,22 @@ class ToolError(OvidCoreError):
     pass
 
 
+class ToolValidationError(ToolError):
+    pass
+
+
+class ToolExecutionError(ToolError):
+    pass
+
+
+class ToolTimeoutError(ToolExecutionError, TimeoutError):
+    pass
+
+
+class ExtensionCollisionError(AgentConstructionError):
+    pass
+
+
 class PluginError(OvidCoreError):
     pass
 

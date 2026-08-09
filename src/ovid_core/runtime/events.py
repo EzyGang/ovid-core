@@ -2,7 +2,7 @@ from typing import Annotated, Literal
 
 from pydantic import Field, JsonValue, NonNegativeInt
 
-from ovid_core.messages.models import ToolArguments
+from ovid_core.messages.models import AgentMessage, ToolArguments, ToolCallPart, ToolReturnPart
 from ovid_core.models import BaseModel
 from ovid_core.runtime.identifiers import ConversationId, RunId
 from ovid_core.usage.models import Usage
@@ -71,3 +71,40 @@ AgentEvent = Annotated[
     | RunFailedEvent,
     Field(discriminator='kind'),
 ]
+
+
+def tool_events_from_messages(
+    messages: tuple[AgentMessage, ...],
+    *,
+    run_id: RunId,
+    conversation_id: ConversationId,
+) -> tuple[ToolCallEvent | ToolResultEvent, ...]:
+    events: list[ToolCallEvent | ToolResultEvent] = []
+
+    for message in messages:
+        for part in message.parts:
+            if isinstance(part, ToolCallPart):
+                event = ToolCallEvent(
+                    run_id=run_id,
+                    conversation_id=conversation_id,
+                    sequence=len(events),
+                    tool_name=part.tool_name,
+                    arguments=part.arguments,
+                    tool_call_id=part.tool_call_id,
+                )
+            elif isinstance(part, ToolReturnPart):
+                event = ToolResultEvent(
+                    run_id=run_id,
+                    conversation_id=conversation_id,
+                    sequence=len(events),
+                    tool_name=part.tool_name,
+                    content=part.content,
+                    tool_call_id=part.tool_call_id,
+                    outcome=part.outcome,
+                )
+            else:
+                continue
+
+            events.append(event)
+
+    return tuple(events)

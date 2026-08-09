@@ -4,7 +4,7 @@
 
 `ovid-core` is the shared Python library for the Ovid harness family. It owns stable Ovid-facing runtime values, typed domain-neutral configuration, generic model selection, and the compatibility boundary around Pydantic AI. Tools, plugins, and optional transports build on those contracts without exposing upstream runtime objects to consumers.
 
-Phases 1 through 3 are implemented: stable runtime contracts, typed configuration and credential references, Pydantic AI model-catalog discovery and inference, opaque model handles, aliases, ordered routes, fallback compilation, concurrency limits, capabilities, and ChatGPT Codex subscription authentication. `src/ovid_core/__init__.py` intentionally remains empty; consumers import from the module that owns each symbol.
+Phases 1 through 4 are implemented: stable runtime contracts, typed configuration and credential references, model routing, ChatGPT Codex subscription authentication, Ovid-owned tool/toolset/capability/hook contracts, and their Pydantic AI adapters. `src/ovid_core/__init__.py` intentionally remains empty; consumers import from the module that owns each symbol.
 
 ## Architecture & Data Flow
 
@@ -22,6 +22,9 @@ Organize by domain, not by type or implementation phase. A domain package owns i
 - `src/ovid_core/usage/`: request and aggregate usage accounting owned by core.
 - `src/ovid_core/messages/`: normalized conversation message values.
 - `src/ovid_core/runtime/`: run identities, contexts, events, and results.
+- `src/ovid_core/tools/`: typed tool arguments/results, execution context, and tool/toolset lifecycle contracts.
+- `src/ovid_core/capabilities/`: opt-in instruction, tool, toolset, hook, and model-setting contributions.
+- `src/ovid_core/hooks/`: Ovid-owned lifecycle hooks limited to currently implemented tool execution points.
 - `src/ovid_core/adapters/pydantic_ai/`: private compatibility translation from/to the supported Pydantic AI range.
 - `src/tests/`: contract, compatibility, and serialization tests matching the package domains.
 - `vulture/whitelist.txt`: intentional public contracts not yet referenced by later runtime phases.
@@ -33,7 +36,6 @@ Use uv from the repository root:
 
 ```bash
 uv sync                         # create/update the development environment
-uv sync --extra openai          # include the first declared provider SDK extra
 uv build                        # build wheel and sdist
 uv run task ruff                # format and autofix source and tests
 uv run task ruff-lint           # check package lint only

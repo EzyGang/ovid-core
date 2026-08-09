@@ -61,3 +61,15 @@ grant_type
 code
 redirect_uri
 verification_url
+defer_loading
+approved
+run
+approval_metadata
+reason
+adapt_capabilities
+_.get_instructions
+_.get_model_settings
+_.get_toolset
+_.for_run_step
+_.call_tool
+tool_events_from_messages
