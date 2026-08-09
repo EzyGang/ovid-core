@@ -10,6 +10,10 @@ class CredentialError(OvidCoreError):
     pass
 
 
+class CodexAuthError(CredentialError):
+    pass
+
+
 class ProviderError(OvidCoreError):
     pass
 

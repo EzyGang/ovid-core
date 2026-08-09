@@ -2,19 +2,23 @@
 
 ## Project Overview
 
-`ovid-core` is the shared Python library for the Ovid harness family. It owns stable Ovid-facing runtime values and the compatibility boundary around Pydantic AI. Configuration, providers, tools, plugins, and optional transports will build on those contracts without exposing upstream runtime objects to consumers.
+`ovid-core` is the shared Python library for the Ovid harness family. It owns stable Ovid-facing runtime values, typed domain-neutral configuration, generic model selection, and the compatibility boundary around Pydantic AI. Tools, plugins, and optional transports build on those contracts without exposing upstream runtime objects to consumers.
 
-Phase 1 is implemented: stable errors, identities, usage, messages, events, contexts, results, and Pydantic AI adapters. `src/ovid_core/__init__.py` intentionally remains empty; consumers import from the module that owns each symbol.
+Phases 1 through 3 are implemented: stable runtime contracts, typed configuration and credential references, Pydantic AI model-catalog discovery and inference, opaque model handles, aliases, ordered routes, fallback compilation, concurrency limits, capabilities, and ChatGPT Codex subscription authentication. `src/ovid_core/__init__.py` intentionally remains empty; consumers import from the module that owns each symbol.
 
 ## Architecture & Data Flow
 
-Flow: consumer configuration → core domain contracts → provider/tool factories → agent-facing interfaces → optional transport adapters. Domain packages are transport- and provider-independent. `ovid_core.adapters` is the only layer that translates third-party runtime values.
+Flow: final typed configuration → credential or subscription authentication → Pydantic AI model inference → generic model routing → agent-facing interfaces → optional transport adapters. Configuration and domain packages are transport-independent. `ovid_core.adapters` is the only boundary that translates or constructs third-party runtime values.
 
 Organize by domain, not by type or implementation phase. A domain package owns its models and behavior; do not duplicate the same value in a generic `schemas`, `dto`, or `interfaces` package. Adapters may translate values but must not redefine domain contracts. No dependency-injection container or global state pattern exists; use explicit typed parameters.
 
 ## Key Directories
 
 - `src/ovid_core/models.py`: shared immutable, extra-forbidding Pydantic model bases. Domain models inherit these instead of repeating configuration.
+- `src/ovid_core/config/`: typed configuration sections, explicit schema migrations, JSON/TOML loading, and source-safe validation errors. Consumers own source discovery, environment mapping, precedence, merging, and profiles.
+- `src/ovid_core/credentials/`: serializable credential references and resolver contracts. Resolved values use `SecretStr` and never enter configuration.
+- `src/ovid_core/codex/`: OpenAI Codex device authorization, token refresh, opaque token values, token-store contracts, and optional system-keyring persistence.
+- `src/ovid_core/routing/`: generic model factory and opaque handle contracts plus exact model, alias, candidate, and route resolution.
 - `src/ovid_core/usage/`: request and aggregate usage accounting owned by core.
 - `src/ovid_core/messages/`: normalized conversation message values.
 - `src/ovid_core/runtime/`: run identities, contexts, events, and results.
@@ -54,17 +58,34 @@ uv run task tests               # configured pytest command for src/tests
 - Do not use local imports unless they are required to break an unavoidable import cycle. Prefer resolving the cycle structurally.
 - Do not define `__all__` and do not re-export symbols from `__init__.py`; consumers must import from the module that owns a symbol.
 - All Pydantic DTOs inherit `ovid_core.models.BaseModel`; UUID-like root values inherit `BaseRootModel`. Do not repeat `ConfigDict(extra='forbid', frozen=True)`.
+- Use Pydantic models for validated data, not for stateful services such as factories, routers, resolvers, clients, or stores. Keep those as plain classes, and do not add `__slots__` without a measured memory requirement.
 - Keep Pydantic AI imports under `ovid_core.adapters.pydantic_ai`. Domain packages must depend only on Ovid-owned values.
 - Prefer direct validated field mapping at adapter boundaries. Do not build parallel wrapper hierarchies when a stable scalar field or namespaced mapping preserves the required semantics.
+- Every Ovid-owned structured payload, including private HTTP request bodies and persisted records, must be a typed `BaseModel`; never assemble protocol payloads as inline dictionaries. Dynamic third-party pass-through bodies are the exception and must be validated through a typed adapter at the boundary.
+- For JSON requests, serialize the request model once with `model_dump_json()`, pass the serialized body directly through HTTPX `content=`, and supply `Content-Type: application/json`; do not use HTTPX `json=` or manually call `json.dumps`. HTTPX `data=` only accepts mappings in its typed 0.28 API and is reserved here for form requests using `model_dump(mode='json')` with the explicit form content type.
+- Core accepts one final `OvidConfig`. Consuming applications own source discovery, environment mapping, precedence, merging, and profile selection; do not recreate those application policies in this library.
+- Persisted configuration passes through `migrate_config` before validation. Every schema migration is explicitly supplied by the embedding application; never mutate source mappings or add an implicit compatibility fallback.
+- Credentials in configuration are references only. Resolver implementations return `SecretStr`; never include resolved values in DTOs, exceptions, logs, or serialization.
+- Model configuration stores `provider` and `model` separately. `PydanticAIModelFactory` joins them only at the adapter boundary for `infer_model`; do not reproduce Pydantic AI's provider list, constructors, or SDK-specific configuration models in core.
+- `known_models()` delegates to Pydantic AI's public catalog and returns typed provider/model pairs. Unknown future pairs remain valid configuration and are checked at construction time.
+- Pydantic AI models and providers normally own their HTTP-client lifecycle. The Codex subscription model is the narrow exception: it owns and closes the authenticated OpenAI client it constructs for the undocumented ChatGPT backend.
+- Provider SDK retries complete inside one candidate attempt. Pydantic AI fallback then advances through the configured candidate order after a fallback-eligible terminal failure. Concurrency limits wrap each candidate before fallback compilation.
+- The default model factory follows Pydantic AI provider authentication and environment conventions. Pydantic AI supports API keys and provider-native mechanisms such as cloud credential chains, ADC, profiles, and custom SDK clients where each provider implements them.
+- `CodexSubscriptionModelFactory` uses OpenAI Codex's device OAuth endpoints, refreshes rotating tokens, stores them through `CodexTokenStore`, and gives Pydantic AI's `OpenAIResponsesModel` the ChatGPT Codex base URL and authenticated HTTP client directly. It loads the authenticated Codex `/models` instruction catalog once per factory, preserves the selected model's validated base instructions as top-level Responses instructions, and maps consumer instructions to developer input. Otherwise do not rewrite Pydantic AI request bodies; core only enforces `store=false`, streaming requests, encrypted reasoning replay, and the required Codex authentication headers.
+- Codex subscription access relies on an undocumented backend contract even though the device flow and model catalog are implemented by the official Apache-licensed Codex CLI. Keep it isolated behind the dedicated factory; never hard-code a copied Codex prompt, put OAuth tokens in generic settings, serialize them, claim another client as the request originator, or silently fall back to API-key billing.
+- Usage normalization includes every request reported by Pydantic AI. A failed provider attempt that exposes no upstream usage cannot be counted; successful fallback responses and later agent-loop requests aggregate through the Phase 1 `Usage` contract.
+- OpenAI, HTTPX, and system-keyring support are required runtime dependencies. `pydantic-ai-slim[openai]` supplies the compatible OpenAI SDK; do not add a duplicate direct OpenAI version constraint. Prefer Pydantic AI provider APIs over constructing SDK clients, and import SDK wire types only inside the Pydantic AI adapter when no public Pydantic AI type exists. Keep concrete integration objects inside provider, authentication, or adapter boundaries rather than leaking them into domain contracts.
+- Minimize code as a primary design constraint. Implement only behavior required by a current contract, prefer direct data flow and upstream or standard-library capabilities, and delete speculative options, wrappers, helpers, branches, and extension points. Add an abstraction only when it removes demonstrated duplication or isolates a required boundary; fewer readable lines are better than a more flexible design.
 - Functions should stay within 40 lines and files within 250 lines. Split by responsibility before exceeding either limit; rare exceptions must be inherently indivisible.
+- Prefer guard clauses when the alternative path exits the function; handle absence or failure first, return, then leave the main operation unnested.
 - Follow DRY strictly. Extract shared behavior instead of repeating code, schemas, validation, constants, or control flow.
 - Do not add comments, docstrings, or explanatory prose unless the behavior is critical and genuinely non-obvious, or the user explicitly requests documentation. Prefer clear names and smaller units.
 - Do not return unstructured `dict` values or `list[dict[...]]` from functions. Represent complex results with typed Pydantic `BaseModel` DTOs.
 - Keep the public surface deliberate. Stable interfaces live in their owning modules; implementation details stay private.
-- Raise narrow typed exceptions, preserve causes with `raise ... from ...`, and translate errors only at provider or transport boundaries.
+- Raise narrow typed exceptions and preserve causes unless an adapter boundary must deliberately discard a cause to prevent credential, header, or signed-URL disclosure.
 - Use async for provider, tool, and HTTP/stdio I/O; never perform blocking work in async paths.
 - Prefer dependency injection through typed constructor or factory parameters. Avoid module-level mutable state, service locators, and hidden singleton configuration.
-- Keep base functionality independent of optional dependencies. Server-only code must be import-safe when the `server` extra is absent.
+- All built-in integration dependencies are installed with the package. Keep import paths free of environment-dependent side effects; authentication and network access occur only through explicit runtime calls.
 
 ### Line breaks in code
 Here is a bad example:
@@ -96,8 +117,11 @@ Meaning that code line breaks should split logical groups of code, i.e. inputs, 
 - `uv.lock`: resolved runtime, optional, and development dependency graph.
 - `.python-version`: pins local Python to 3.14.
 - `src/ovid_core/models.py`: shared Pydantic model configuration.
-- `src/ovid_core/runtime/`, `messages/`, and `usage/`: implemented stable Phase 1 contracts.
-- `src/ovid_core/adapters/pydantic_ai/`: supported upstream compatibility boundary.
+- `src/ovid_core/runtime/`, `messages/`, and `usage/`: stable Phase 1 contracts.
+- `src/ovid_core/config/` and `credentials/`: Phase 2 final configuration and secret-reference contracts.
+- `src/ovid_core/codex/`: optional Codex subscription authentication and system-keyring persistence.
+- `src/ovid_core/routing/`: Phase 3 generic model factories, handles, and selection contracts.
+- `src/ovid_core/adapters/pydantic_ai/`: upstream model inference, message, usage, result, fallback, and concurrency implementations.
 - `src/ovid_core/__init__.py`: intentionally empty; no package-level re-exports.
 - `src/ovid_core/py.typed`: marks the distribution as typed.
 - `AGENTS.md`: repository-specific architecture and engineering guidance.
@@ -108,7 +132,8 @@ Meaning that code line breaks should split logical groups of code, i.e. inputs, 
 - Package/environment manager: uv. Build backend: `uv_build`.
 - Task runner: taskipy through `uv run task ...`.
 - Formatting/linting: Ruff. Type checking: ty. Dead-code analysis: Vulture.
-- Base AI dependency: `pydantic-ai-slim>=2.22,<2.23`. Provider SDKs are optional; the currently declared provider extra is `ovid-core[openai]`.
+- Runtime dependencies include `pydantic-ai-slim[openai]>=2.22,<2.23`, `httpx>=0.28.1,<0.29`, and `keyring>=25.6,<26`; Codex subscription authentication must work in a normal installation without extras.
+- Canonical upstream references: https://pydantic.dev/docs/ai/overview/ and https://github.com/openai/codex/tree/main/sdk/python. Consult them before changing upstream integration or authentication behavior.
 - There are no console scripts or CI workflows yet. Do not document or depend on an executable entry point until `[project.scripts]` is added.
 
 ## Testing & QA
