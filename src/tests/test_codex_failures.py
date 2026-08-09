@@ -2,6 +2,7 @@ import httpx
 import pytest
 from keyring.errors import KeyringError
 from pydantic import SecretStr
+from pytest_mock import MockerFixture
 
 from ovid_core.adapters.pydantic_ai.codex import CodexSubscriptionModelFactory, _prepare_request, _RedactingTransport
 from ovid_core.codex.device import CodexDeviceAuthClient
@@ -231,20 +232,20 @@ async def test_subscription_factory_rejects_invalid_model_catalogs(status_code: 
 
 
 @pytest.mark.asyncio
-async def test_keyring_write_delete_and_payload_failures_are_safe(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_keyring_write_delete_and_payload_failures_are_safe(mocker: MockerFixture) -> None:
     store = KeyringCodexTokenStore(service='test', account='account')
-    monkeypatch.setattr('keyring.get_password', lambda service, account: '{"id_token":"only"}')
+    get_password = mocker.patch('keyring.get_password', return_value='{"id_token":"only"}')
     with pytest.raises(CodexAuthError):
         await store.load()
 
     def fail(*args: str) -> None:
         raise KeyringError('backend-secret')
 
-    monkeypatch.setattr('keyring.set_password', fail)
+    mocker.patch('keyring.set_password', side_effect=fail)
     with pytest.raises(CodexAuthError) as save_error:
         await store.save(make_codex_tokens())
-    monkeypatch.setattr('keyring.get_password', lambda service, account: 'stored')
-    monkeypatch.setattr('keyring.delete_password', fail)
+    get_password.return_value = 'stored'
+    mocker.patch('keyring.delete_password', side_effect=fail)
     with pytest.raises(CodexAuthError) as delete_error:
         await store.delete()
     assert 'backend-secret' not in repr(save_error.value)

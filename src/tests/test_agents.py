@@ -1,11 +1,11 @@
 from collections.abc import AsyncIterator
 from dataclasses import replace
-from unittest.mock import PropertyMock, patch
 
 import pytest
 from pydantic_ai import Agent, InstrumentationSettings
 from pydantic_ai.messages import ModelMessage
 from pydantic_ai.models.function import AgentInfo, FunctionModel
+from pytest_mock import MockerFixture
 
 import tests.agent_consumer as consumer
 from ovid_core.errors import AgentRunError
@@ -77,16 +77,17 @@ async def test_factory_compiles_exact_inputs_fallback_diagnostics_and_continuati
 
 
 @pytest.mark.asyncio
-async def test_instrumentation_preserves_global_defaults_and_supports_per_agent_settings() -> None:
+async def test_instrumentation_preserves_global_defaults_and_supports_per_agent_settings(
+    mocker: MockerFixture,
+) -> None:
     factory = agent_factory({'primary': structured_test_model()})
     definition = consumer.text_definition()
+    instrument = mocker.patch.object(Agent, 'instrument', new_callable=mocker.PropertyMock)
 
-    with patch.object(Agent, 'instrument', new_callable=PropertyMock) as instrument:
-        await factory.build(definition)
+    await factory.build(definition)
     instrument.assert_not_called()
 
-    with patch.object(Agent, 'instrument', new_callable=PropertyMock) as instrument:
-        await factory.build(replace(definition, observability=ObservabilityConfig(enabled=True, include_content=True)))
+    await factory.build(replace(definition, observability=ObservabilityConfig(enabled=True, include_content=True)))
     settings = instrument.call_args.args[0]
 
     assert isinstance(settings, InstrumentationSettings)

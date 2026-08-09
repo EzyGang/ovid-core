@@ -3,6 +3,7 @@ from pathlib import Path
 
 import pytest
 from pydantic import SecretStr, TypeAdapter, ValidationError
+from pytest_mock import MockerFixture
 
 from ovid_core.credentials.models import (
     CallbackCredentialRef,
@@ -20,9 +21,8 @@ _CREDENTIAL_ADAPTER = TypeAdapter(CredentialRef)
 _SECRET_ADAPTER = TypeAdapter(SecretStr)
 
 
-def test_all_credential_references_are_typed_and_redacted(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv('HOME', str(tmp_path))
-    monkeypatch.setenv('USERPROFILE', str(tmp_path))
+def test_all_credential_references_are_typed_and_redacted(tmp_path: Path, mocker: MockerFixture) -> None:
+    mocker.patch.dict(os.environ, {'HOME': str(tmp_path), 'USERPROFILE': str(tmp_path)})
     references = (
         EnvironmentCredentialRef(variable='OVID_TOKEN'),
         NamedCredentialRef(name='shared'),
@@ -41,8 +41,8 @@ def test_all_credential_references_are_typed_and_redacted(tmp_path: Path, monkey
 
 
 @pytest.mark.asyncio
-async def test_environment_resolver_returns_secret_without_disclosing_it(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setitem(os.environ, 'OVID_TEST_TOKEN', 'secret-value')
+async def test_environment_resolver_returns_secret_without_disclosing_it(mocker: MockerFixture) -> None:
+    mocker.patch.dict(os.environ, {'OVID_TEST_TOKEN': 'secret-value'})
     resolver: CredentialResolver = EnvironmentCredentialResolver()
 
     secret = await resolver.resolve(EnvironmentCredentialRef(variable='OVID_TEST_TOKEN'))

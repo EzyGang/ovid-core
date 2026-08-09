@@ -8,7 +8,7 @@ The package includes stable runtime contracts, typed configuration and credentia
 
 ## Architecture & Data Flow
 
-Flow: final typed configuration → credential or subscription authentication → Pydantic AI model inference → generic model routing → explicit agent construction → run policy and aggregate usage enforcement → Pydantic AI instrumentation → optional transport adapters. Configuration and domain packages are transport-independent. `ovid_core.adapters` is the only boundary that translates or constructs third-party runtime values.
+Flow: final typed configuration → credential or subscription authentication → Pydantic AI model inference → generic model routing → explicit agent construction → run policy and aggregate usage enforcement → Pydantic AI instrumentation → application-owned conversation persistence → optional transport adapters. Configuration and domain packages are transport-independent. `ovid_core.adapters` is the only boundary that translates or constructs third-party runtime values.
 
 Organize by domain, not by type or release stage. A domain package owns its models and behavior; do not duplicate the same value in a generic `schemas`, `dto`, or `interfaces` package. Adapters may translate values but must not redefine domain contracts. No dependency-injection container or global state pattern exists; use explicit typed parameters.
 
@@ -21,6 +21,7 @@ Organize by domain, not by type or release stage. A domain package owns its mode
 - `src/ovid_core/routing/`: generic model factory and opaque handle contracts plus exact model, alias, candidate, and route resolution.
 - `src/ovid_core/usage/`: request, run, and nested subagent usage accounting owned by core.
 - `src/ovid_core/messages/`: normalized conversation message values.
+- `src/ovid_core/persistence.py`: normalized message codec, minimal async conversation-store contract, and in-memory test implementation. Applications own durable storage and session policy.
 - `src/ovid_core/runtime/`: run identities, contexts, events, and results.
 - `src/ovid_core/tools/`: typed tool arguments/results, execution context, and tool/toolset lifecycle contracts.
 - `src/ovid_core/capabilities/`: opt-in instruction, tool, toolset, hook, and model-setting contributions.
@@ -129,6 +130,7 @@ Meaning that code line breaks should split logical groups of code, i.e. inputs, 
 - `src/ovid_core/routing/`: generic model factories, handles, and selection contracts.
 - `src/ovid_core/agents.py`: typed agent factory, construction diagnostics, and run/stream facade.
 - `src/ovid_core/policy.py` and `observability.py`: run policy and Pydantic AI instrumentation configuration.
+- `src/ovid_core/persistence.py`: normalized message codec and application-facing conversation persistence seam.
 - `src/ovid_core/adapters/pydantic_ai/`: upstream model, agent, tool, message, event, usage, result, fallback, concurrency, policy, and instrumentation implementations.
 - `src/ovid_core/__init__.py`: intentionally empty; no package-level re-exports.
 - `src/ovid_core/py.typed`: marks the distribution as typed.
@@ -149,6 +151,8 @@ Meaning that code line breaks should split logical groups of code, i.e. inputs, 
 Pytest is configured for `test*.py`, strict markers/config, short tracebacks, automatic asyncio mode, branch coverage, HTML coverage output, and a 100% coverage threshold. New observable behavior should include focused tests covering boundaries, failures, and async transitions.
 
 Pytest discovery and the task command both use `src/tests/`. Required pytest plugins are declared in the development dependency group, and Ruff recognizes `ovid_core` as first-party.
+
+Use the `mocker: MockerFixture` fixture from `pytest-mock` for every test double, patch, spy, and environment mutation. Do not import or use `unittest.mock`, pytest's `monkeypatch` fixture, or other built-in mocking helpers.
 
 ## Validation Checklist
 

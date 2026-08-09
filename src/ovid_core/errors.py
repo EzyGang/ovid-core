@@ -18,6 +18,10 @@ class ProviderError(OvidCoreError):
     pass
 
 
+class PersistenceError(OvidCoreError):
+    pass
+
+
 class ModelResolutionError(OvidCoreError):
     pass
 

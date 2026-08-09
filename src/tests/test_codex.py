@@ -7,6 +7,7 @@ from keyring.errors import KeyringError
 from pydantic_ai import Agent
 from pydantic_ai.models import Model
 from pydantic_ai.models.openai import OpenAIResponsesModelSettings
+from pytest_mock import MockerFixture
 
 from ovid_core.adapters.pydantic_ai.codex import CodexSubscriptionModelFactory
 from ovid_core.codex.device import CodexDeviceAuthClient
@@ -225,13 +226,17 @@ async def test_factory_delegates_non_subscription_models_and_rejects_stateful_se
 
 
 @pytest.mark.asyncio
-async def test_keyring_store_round_trip_and_safe_errors(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_keyring_store_round_trip_and_safe_errors(mocker: MockerFixture) -> None:
     values: dict[tuple[str, str], str] = {}
-    monkeypatch.setattr('keyring.get_password', lambda service, account: values.get((service, account)))
-    monkeypatch.setattr(
-        'keyring.set_password', lambda service, account, value: values.__setitem__((service, account), value)
+    get_password = mocker.patch(
+        'keyring.get_password',
+        side_effect=lambda service, account: values.get((service, account)),
     )
-    monkeypatch.setattr('keyring.delete_password', lambda service, account: values.pop((service, account)))
+    mocker.patch(
+        'keyring.set_password',
+        side_effect=lambda service, account, value: values.__setitem__((service, account), value),
+    )
+    mocker.patch('keyring.delete_password', side_effect=lambda service, account: values.pop((service, account)))
     store = KeyringCodexTokenStore(service='test', account='user')
 
     assert await store.load() is None
@@ -244,7 +249,7 @@ async def test_keyring_store_round_trip_and_safe_errors(monkeypatch: pytest.Monk
     def fail_get(service: str, account: str) -> str:
         raise KeyringError('secret backend detail')
 
-    monkeypatch.setattr('keyring.get_password', fail_get)
+    get_password.side_effect = fail_get
     with pytest.raises(CodexAuthError) as captured:
         await store.load()
     assert 'secret backend detail' not in repr(captured.value)
