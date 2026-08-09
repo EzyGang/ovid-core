@@ -73,3 +73,6 @@ _.get_toolset
 _.for_run_step
 _.call_tool
 tool_events_from_messages
+AgentFactory
+PydanticAIAgentCompiler
+_.instrument

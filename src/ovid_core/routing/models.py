@@ -43,6 +43,10 @@ class ModelHandle:
     def __repr__(self) -> str:
         return f'ModelHandle(model_id={self.model_id!r}, model_name={self.model_name!r})'
 
+    @property
+    def runtime(self) -> ModelRuntime:
+        return self._runtime
+
 
 class ModelRef(BaseModel):
     kind: Literal['model'] = 'model'
@@ -65,6 +69,8 @@ type ModelSelector = Annotated[ModelRef | ModelRouteRef | CandidateModelSelector
 @dataclass(frozen=True, slots=True)
 class ResolvedModel:
     handle: ModelHandle
+    provider: str
+    model: str
     requested: ModelSelector
     selected_model: str
     fallback_order: tuple[str, ...]

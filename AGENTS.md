@@ -4,7 +4,7 @@
 
 `ovid-core` is the shared Python library for the Ovid harness family. It owns stable Ovid-facing runtime values, typed domain-neutral configuration, generic model selection, and the compatibility boundary around Pydantic AI. Tools, plugins, and optional transports build on those contracts without exposing upstream runtime objects to consumers.
 
-Phases 1 through 4 are implemented: stable runtime contracts, typed configuration and credential references, model routing, ChatGPT Codex subscription authentication, Ovid-owned tool/toolset/capability/hook contracts, and their Pydantic AI adapters. `src/ovid_core/__init__.py` intentionally remains empty; consumers import from the module that owns each symbol.
+Phases 1 through 5 are implemented: stable runtime contracts, typed configuration and credential references, model routing, ChatGPT Codex subscription authentication, Ovid-owned tool/toolset/capability/hook contracts, the typed agent factory and runtime facade, and their Pydantic AI adapters. `src/ovid_core/__init__.py` intentionally remains empty; consumers import from the module that owns each symbol.
 
 ## Architecture & Data Flow
 
@@ -25,6 +25,7 @@ Organize by domain, not by type or implementation phase. A domain package owns i
 - `src/ovid_core/tools/`: typed tool arguments/results, execution context, and tool/toolset lifecycle contracts.
 - `src/ovid_core/capabilities/`: opt-in instruction, tool, toolset, hook, and model-setting contributions.
 - `src/ovid_core/hooks/`: Ovid-owned lifecycle hooks limited to currently implemented tool execution points.
+- `src/ovid_core/agents.py`: explicit typed agent construction, run policy, diagnostics, and Ovid-owned run/stream facade contracts.
 - `src/ovid_core/adapters/pydantic_ai/`: private compatibility translation from/to the supported Pydantic AI range.
 - `src/tests/`: contract, compatibility, and serialization tests matching the package domains.
 - `vulture/whitelist.txt`: intentional public contracts not yet referenced by later runtime phases.
@@ -123,7 +124,8 @@ Meaning that code line breaks should split logical groups of code, i.e. inputs, 
 - `src/ovid_core/config/` and `credentials/`: Phase 2 final configuration and secret-reference contracts.
 - `src/ovid_core/codex/`: optional Codex subscription authentication and system-keyring persistence.
 - `src/ovid_core/routing/`: Phase 3 generic model factories, handles, and selection contracts.
-- `src/ovid_core/adapters/pydantic_ai/`: upstream model inference, message, usage, result, fallback, and concurrency implementations.
+- `src/ovid_core/agents.py`: Phase 5 typed agent factory, construction diagnostics, and run/stream facade.
+- `src/ovid_core/adapters/pydantic_ai/`: upstream model, agent, tool, message, event, usage, result, fallback, and concurrency implementations.
 - `src/ovid_core/__init__.py`: intentionally empty; no package-level re-exports.
 - `src/ovid_core/py.typed`: marks the distribution as typed.
 - `AGENTS.md`: repository-specific architecture and engineering guidance.

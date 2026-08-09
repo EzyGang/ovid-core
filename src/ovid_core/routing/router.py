@@ -14,11 +14,14 @@ class ModelRouter:
 
     async def resolve(self, selector: ModelSelector) -> ResolvedModel:
         model_ids = self._select_model_ids(selector)
+        selected_config = self._config.models[model_ids[0]]
         handles = [await self._construct_model(model_id) for model_id in model_ids]
         handle = compile_fallback_model(model_id=_selector_name(selector), handles=handles)
 
         return ResolvedModel(
             handle=handle,
+            provider=selected_config.provider,
+            model=selected_config.model,
             requested=selector,
             selected_model=model_ids[0],
             fallback_order=model_ids,

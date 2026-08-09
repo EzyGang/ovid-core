@@ -26,6 +26,14 @@ class AgentConstructionError(OvidCoreError):
     pass
 
 
+class AgentRunError(OvidCoreError):
+    pass
+
+
+class AgentTimeoutError(AgentRunError, TimeoutError):
+    pass
+
+
 class ToolError(OvidCoreError):
     pass
 

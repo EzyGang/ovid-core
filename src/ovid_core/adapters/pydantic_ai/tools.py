@@ -14,6 +14,7 @@ from pydantic_ai.toolsets import AbstractToolset, CombinedToolset
 from pydantic_ai.toolsets.abstract import ToolsetTool
 from pydantic_core import SchemaValidator, core_schema
 
+from ovid_core.adapters.pydantic_ai._extension_validation import validate_extension_ids
 from ovid_core.adapters.pydantic_ai._tool_context import run_context_from_pydantic, tool_context_from_pydantic
 from ovid_core.capabilities.base import BaseCapability
 from ovid_core.errors import ExtensionCollisionError, ToolExecutionError, ToolTimeoutError, ToolValidationError
@@ -107,11 +108,19 @@ class _CollisionCheckedToolset[Deps](CombinedToolset[Deps]):
 
 
 class PydanticAICapabilityAdapter[Deps](AbstractCapability[Deps]):
-    def __init__(self, source: BaseCapability[Deps]) -> None:
+    def __init__(
+        self,
+        source: BaseCapability[Deps],
+        *,
+        hooks: tuple[BaseToolHook[Deps], ...] = (),
+        include_toolset: bool = True,
+    ) -> None:
         self.id = source.id
         self.description = None
         self.defer_loading = False
         self._source = source
+        self._hooks = hooks
+        self._include_toolset = include_toolset
 
     def get_instructions(self) -> list[str] | None:
         instructions = self._source.contributions.instructions
@@ -122,45 +131,21 @@ class PydanticAICapabilityAdapter[Deps](AbstractCapability[Deps]):
         return cast(ModelSettings, dict(values)) if values else None
 
     def get_toolset(self) -> AbstractToolset[Deps] | None:
+        if not self._include_toolset:
+            return None
+
         contributions = self._source.contributions
+        hooks = (*self._hooks, *contributions.hooks)
         sources = list(contributions.toolsets)
         if contributions.tools:
             sources.insert(0, _StaticToolset(id=self._source.id, tools=contributions.tools))
 
-        adapters = [PydanticAIToolsetAdapter(source=source, hooks=contributions.hooks) for source in sources]
-        if not adapters:
-            return None
-        if len(adapters) == 1:
-            return adapters[0]
-
-        return _CollisionCheckedToolset(adapters)
+        return _combine_toolsets(tuple(PydanticAIToolsetAdapter(source=source, hooks=hooks) for source in sources))
 
 
 def adapt_capabilities[Deps](capabilities: Sequence[BaseCapability[Deps]]) -> tuple[AbstractCapability[Deps], ...]:
-    _validate_extension_ids(capabilities)
+    validate_extension_ids(capabilities)
     return tuple(PydanticAICapabilityAdapter(capability) for capability in capabilities)
-
-
-def _validate_extension_ids[Deps](capabilities: Sequence[BaseCapability[Deps]]) -> None:
-    capability_ids: set[str] = set()
-    tool_ids: set[str] = set()
-    toolset_ids: set[str] = set()
-
-    for capability in capabilities:
-        _add_unique(capability.id, capability_ids, 'capability')
-        for tool in capability.contributions.tools:
-            _add_unique(tool.id, tool_ids, 'tool')
-        for toolset in capability.contributions.toolsets:
-            _add_unique(toolset.id, toolset_ids, 'toolset')
-
-
-def _add_unique(value: str, seen: set[str], kind: str) -> None:
-    if not value:
-        raise ExtensionCollisionError(f'{kind.capitalize()} IDs must not be empty')
-    if value in seen:
-        raise ExtensionCollisionError(f'Duplicate {kind} ID: {value!r}')
-
-    seen.add(value)
 
 
 def _unique_tools[Deps](tools: Sequence[BaseTool[Deps, Any, Any]]) -> dict[str, BaseTool[Deps, Any, Any]]:
@@ -171,6 +156,17 @@ def _unique_tools[Deps](tools: Sequence[BaseTool[Deps, Any, Any]]) -> dict[str, 
         result[tool.id] = tool
 
     return result
+
+
+def _combine_toolsets[Deps](
+    adapters: tuple[PydanticAIToolsetAdapter[Deps], ...],
+) -> AbstractToolset[Deps] | None:
+    if not adapters:
+        return None
+    if len(adapters) == 1:
+        return adapters[0]
+
+    return _CollisionCheckedToolset(adapters)
 
 
 def _tool_definition(tool: BaseTool[Any, Any, Any]) -> ToolDefinition:
