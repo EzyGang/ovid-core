@@ -13,6 +13,16 @@ dependencies = [
     "pydantic-ai-slim[mcp,openai]>=2.22.0,<2.23.0",
 ]
 
+[project.optional-dependencies]
+server = [
+    "starlette>=0.46.2,<2.0.0",
+    "uvicorn>=0.38.0,<1.0.0",
+]
+server-ag-ui = [
+    "ovid-core[server]",
+    "pydantic-ai-slim[ag-ui]>=2.22.0,<2.23.0",
+]
+
 
 [build-system]
 requires = ["uv_build>=0.11.16,<0.12.0"]

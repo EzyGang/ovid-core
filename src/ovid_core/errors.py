@@ -68,3 +68,7 @@ class PluginError(OvidCoreError):
 
 class TransportError(OvidCoreError):
     pass
+
+
+class ServerConstructionError(TransportError):
+    pass

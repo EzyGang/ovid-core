@@ -90,3 +90,15 @@ _.select_one_filter
 _.reject_overlapping_names
 _.validate_mode
 create_mcp_capability
+principal
+scope
+receive
+send
+RequestContext.header
+create_agent_app
+serve
+create_ag_ui_app
+resource_id
+AuthorizationCallback.__call__
+CommandHandler.__call__
+create_stdio_server

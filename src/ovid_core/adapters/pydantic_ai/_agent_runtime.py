@@ -24,6 +24,14 @@ class PydanticAIAgentRuntime[Deps, Output](AgentRuntime[Deps, Output]):
         self._agent = agent
         self._policy = policy
 
+    @property
+    def upstream_agent(self) -> Agent[Deps, Output]:
+        return self._agent
+
+    @property
+    def policy(self) -> AgentRunPolicy:
+        return self._policy
+
     async def run(
         self,
         prompt: str,

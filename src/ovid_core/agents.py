@@ -138,6 +138,9 @@ class OvidAgent[Deps, Output]:
             usage_tracker=usage_tracker,
         )
 
+    def _runtime_for_adapter(self) -> AgentRuntime[Deps, Output]:
+        return self._runtime
+
 
 class AgentFactory:
     def __init__(self, *, router: ModelRouter, compiler: AgentCompiler) -> None:
