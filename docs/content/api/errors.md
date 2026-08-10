@@ -1,0 +1,70 @@
+# Errors
+
+Import the core error hierarchy from `ovid_core.errors`.
+
+Errors contain source-safe messages. Adapters remove provider response bodies, credentials, headers, signed URLs, and protocol values when necessary.
+
+Ovid Core does not convert cancellation to a normal error.
+
+```text
+OvidCoreError
+├── ConfigurationError
+├── CredentialError
+│   └── CodexAuthError
+├── ProviderError
+├── PersistenceError
+├── ModelResolutionError
+├── AgentConstructionError
+│   └── ExtensionCollisionError
+├── AgentRunError
+│   ├── AgentTimeoutError (also TimeoutError)
+│   └── UsageLimitError
+├── ToolError
+│   ├── ToolValidationError
+│   └── ToolExecutionError
+│       └── ToolTimeoutError (also TimeoutError)
+├── PluginError
+└── TransportError
+    └── ServerConstructionError
+```
+
+| Exception | Raised for |
+| --- | --- |
+| `OvidCoreError` | Common base for catch-all Ovid Core failures. |
+| `ConfigurationError` | Unsupported schema versions and invalid migration behavior. File-facing validation normally wraps this as `ConfigValidationError`. |
+| `CredentialError` | Missing, unsupported, or failed credential resolution. |
+| `CodexAuthError` | Codex device flow, token parsing, refresh, and keyring failures. |
+| `ProviderError` | Invalid or unsupported provider messages, usage, and results. |
+| `PersistenceError` | Invalid or unsupported persisted message records. |
+| `ModelResolutionError` | Unknown selectors, alias collisions, provider construction, Codex catalog, or incompatible model settings. |
+| `AgentConstructionError` | Agent or adapter extension compilation failures. |
+| `ExtensionCollisionError` | Duplicate capability, tool, or toolset IDs. |
+| `AgentRunError` | Normalized agent execution failures. |
+| `AgentTimeoutError` | Whole-run timeout. Catch this error as `AgentRunError` or built-in `TimeoutError`. |
+| `UsageLimitError` | Preflight or post-update aggregate usage limit violation. |
+| `ToolError` | Base for Ovid tool failures. |
+| `ToolValidationError` | Tool argument or result validation failure. |
+| `ToolExecutionError` | Tool implementation or hook execution failure. |
+| `ToolTimeoutError` | Tool timeout. Catch this error as `ToolExecutionError` or built-in `TimeoutError`. |
+| `PluginError` | Plugin-boundary failure for consumers implementing plugin support. |
+| `TransportError` | Normalized transport and server-runtime failure. |
+| `ServerConstructionError` | Missing optional dependencies, incompatible agent runtime, or invalid server registration. |
+
+## Configuration issue errors
+
+Import `ConfigIssue`, `ConfigPath`, and `ConfigValidationError` from `ovid_core.config.errors`. `ConfigValidationError` extends `ConfigurationError` and exposes every validation issue through its `issues` tuple. See [Models and configuration](configuration.md#validation-errors).
+
+## Catching errors
+
+Catch the narrowest useful boundary:
+
+```python
+from ovid_core.errors import ModelResolutionError
+
+try:
+    agent = await factory.build(definition)
+except ModelResolutionError as error:
+    report_configuration_problem(str(error))
+```
+
+Do not catch `BaseException`. In async code, allow `asyncio.CancelledError` to propagate.

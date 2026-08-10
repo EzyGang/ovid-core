@@ -5,10 +5,21 @@ import pytest
 from pydantic_ai import Agent, InstrumentationSettings
 from pydantic_ai.messages import ModelMessage
 from pydantic_ai.models.function import AgentInfo, FunctionModel
+from pydantic_ai.models.test import TestModel
 from pytest_mock import MockerFixture
 
 import tests.support.agent_consumer as consumer
-from ovid_core import AgentRunError, AgentRunPolicy, ObservabilityConfig
+from ovid_core import (
+    AgentDefinition,
+    AgentFactory,
+    AgentRunError,
+    AgentRunPolicy,
+    ModelResolutionError,
+    ObservabilityConfig,
+    OvidAgent,
+)
+from ovid_core.config import ModelConfig, OvidConfig
+from ovid_core.mcp import MCPHTTPTransportConfig, MCPServerConfig
 from ovid_core.routing import ModelRef, ModelRouteRef
 from tests.support.agent_consumer import AddTool, AgentDependencies, RecordingHook
 from tests.support.agent_helpers import agent_factory, failing_request, structured_test_model
@@ -19,6 +30,38 @@ async def text_stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIte
     del messages, info
     yield 'Hello'
     yield ' world'
+
+
+@pytest.mark.asyncio
+async def test_factory_builds_basic_agent_from_final_config() -> None:
+    config = OvidConfig(models={'primary': ModelConfig(provider='test', model='test')})
+    factory = AgentFactory(config=config)
+    agent = await factory.build(
+        AgentDefinition[None, str](
+            model=ModelRef(name='primary'),
+            deps_type=type(None),
+            output_type=str,
+        )
+    )
+
+    result = await agent.run('Hello.', deps=None)
+
+    assert result.output == 'success (no tool calls)'
+    assert agent.diagnostics.selected_model == 'primary'
+
+
+def test_factory_rejects_api_key_resolver_with_custom_model_factory(mocker: MockerFixture) -> None:
+    async def provider_api_key(model_id: str, provider: str) -> None:
+        del model_id, provider
+
+    config = OvidConfig(models={'primary': ModelConfig(provider='test', model='test')})
+
+    with pytest.raises(ValueError, match='default model factory'):
+        AgentFactory(
+            config=config,
+            model_factory=mocker.Mock(),
+            provider_api_key=provider_api_key,
+        )
 
 
 @pytest.mark.asyncio
@@ -72,6 +115,70 @@ async def test_factory_compiles_exact_inputs_fallback_diagnostics_and_continuati
     continued = await agent.run('Continue.', deps=deps, messages=result.messages)
     assert continued.conversation_id == result.conversation_id
     assert continued.run_id != result.run_id
+
+
+@pytest.mark.asyncio
+async def test_agent_overrides_model_for_one_run_and_stream() -> None:
+    primary = TestModel(model_name='primary')
+    alternate = TestModel(model_name='alternate')
+    factory = agent_factory({'primary': primary, 'alternate': alternate})
+    agent = await factory.build(consumer.text_definition())
+
+    await agent.run(
+        'Use the alternate model.',
+        deps=AgentDependencies(prefix='alternate'),
+        model=ModelRef(name='alternate'),
+    )
+    async with agent.stream(
+        'Use the primary model.',
+        deps=AgentDependencies(prefix='primary'),
+        model=ModelRef(name='primary'),
+    ) as stream:
+        _ = [event async for event in stream]
+
+    assert alternate.last_model_request_parameters is not None
+    assert primary.last_model_request_parameters is not None
+
+
+@pytest.mark.asyncio
+async def test_direct_agent_rejects_unavailable_model_override(mocker: MockerFixture) -> None:
+    factory = agent_factory({'primary': structured_test_model()})
+    built = await factory.build(consumer.text_definition())
+    agent = OvidAgent(runtime=mocker.Mock(), diagnostics=built.diagnostics)
+
+    with pytest.raises(ModelResolutionError, match='does not support model overrides'):
+        await agent.run(
+            'Override.',
+            deps=AgentDependencies(prefix='override'),
+            model=ModelRef(name='primary'),
+        )
+
+
+@pytest.mark.asyncio
+async def test_factory_applies_session_model_override_and_configured_mcp() -> None:
+    mcp = MCPServerConfig(
+        id='configured-mcp',
+        transport=MCPHTTPTransportConfig(url='https://mcp.example.com'),
+    )
+    factory = agent_factory(
+        {
+            'primary': structured_test_model(),
+            'alternate': structured_test_model(),
+        },
+        mcp_servers=(mcp,),
+    )
+
+    agent = await factory.build(
+        consumer.text_definition(),
+        model=ModelRef(name='alternate'),
+    )
+
+    assert agent.diagnostics.selected_model == 'alternate'
+    assert agent.diagnostics.requested == ModelRef(name='alternate')
+    assert [item.id for item in agent.diagnostics.extensions if item.kind == 'capability'] == [
+        'configured-mcp',
+        'writing',
+    ]
 
 
 @pytest.mark.asyncio

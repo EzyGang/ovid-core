@@ -3,10 +3,10 @@ from pydantic_ai.messages import ModelMessage, ModelResponse
 from pydantic_ai.models.function import AgentInfo
 from pydantic_ai.models.test import TestModel
 
-from ovid_core import AgentFactory
-from ovid_core.adapters.pydantic_ai import PydanticAIAgentCompiler
+from ovid_core import AgentFactory, DefaultAgentCompiler
 from ovid_core.config import ModelConfig, OvidConfig
-from ovid_core.routing import ModelCapabilities, ModelHandle, ModelRouter, ModelRuntime
+from ovid_core.mcp import MCPServerConfig
+from ovid_core.routing import ModelCapabilities, ModelHandle, ModelRuntime
 
 
 class RuntimeFactory:
@@ -46,14 +46,17 @@ def agent_factory(
     runtimes: dict[str, ModelRuntime],
     *,
     route: bool = False,
-    compiler: PydanticAIAgentCompiler | None = None,
+    compiler: DefaultAgentCompiler | None = None,
+    mcp_servers: tuple[MCPServerConfig, ...] = (),
 ) -> AgentFactory:
     models = {model_id: {'provider': 'test', 'model': model_id} for model_id in runtimes}
     routes = {'answer': {'models': tuple(runtimes)}} if route else {}
-    config = OvidConfig.model_validate({'models': models, 'routes': routes})
-    router = ModelRouter(config=config, factory=RuntimeFactory(runtimes))
-
-    return AgentFactory(router=router, compiler=compiler or PydanticAIAgentCompiler())
+    config = OvidConfig.model_validate({'models': models, 'routes': routes, 'mcp_servers': mcp_servers})
+    return AgentFactory(
+        config=config,
+        model_factory=RuntimeFactory(runtimes),
+        compiler=compiler or DefaultAgentCompiler(),
+    )
 
 
 def structured_test_model() -> TestModel:

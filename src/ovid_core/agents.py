@@ -1,17 +1,23 @@
+import asyncio
 from abc import abstractmethod
-from collections.abc import AsyncIterator
-from contextlib import AbstractAsyncContextManager
-from dataclasses import dataclass
-from typing import Literal, Protocol
+from collections.abc import AsyncIterator, Awaitable, Callable
+from contextlib import AbstractAsyncContextManager, asynccontextmanager
+from dataclasses import dataclass, replace
+from typing import Any, Literal, Protocol, cast
 
 from pydantic import Field
 
 from ovid_core.capabilities.base import BaseCapability
+from ovid_core.config.models import OvidConfig
+from ovid_core.credentials.resolvers import CredentialResolver, ProviderAPIKeyResolver
+from ovid_core.errors import ModelResolutionError
 from ovid_core.hooks.base import BaseToolHook
+from ovid_core.mcp.capability import create_mcp_capability
 from ovid_core.messages.models import AgentMessage
 from ovid_core.models import BaseModel
 from ovid_core.observability import ObservabilityConfig
 from ovid_core.policy import AgentRunPolicy
+from ovid_core.routing.factory import ModelFactory
 from ovid_core.routing.models import ModelRef, ModelRouteRef, ResolvedModel
 from ovid_core.routing.router import ModelRouter
 from ovid_core.runtime.events import AgentEvent
@@ -96,8 +102,15 @@ class AgentCompiler(Protocol):
 
 
 class OvidAgent[Deps, Output]:
-    def __init__(self, *, runtime: AgentRuntime[Deps, Output], diagnostics: AgentConstructionDiagnostics) -> None:
+    def __init__(
+        self,
+        *,
+        runtime: AgentRuntime[Deps, Output],
+        diagnostics: AgentConstructionDiagnostics,
+        runtime_resolver: Callable[[AgentModelSelector], Awaitable[AgentRuntime[Deps, Output]]] | None = None,
+    ) -> None:
         self._runtime = runtime
+        self._runtime_resolver = runtime_resolver
         self.diagnostics = diagnostics
 
     async def run(
@@ -109,8 +122,11 @@ class OvidAgent[Deps, Output]:
         run_id: RunId | None = None,
         conversation_id: ConversationId | None = None,
         usage_tracker: UsageTracker | None = None,
+        model: AgentModelSelector | None = None,
     ) -> RunResult[Output]:
-        return await self._runtime.run(
+        runtime = await self._resolve_runtime(model)
+
+        return await runtime.run(
             prompt,
             deps=deps,
             messages=messages,
@@ -128,30 +144,123 @@ class OvidAgent[Deps, Output]:
         run_id: RunId | None = None,
         conversation_id: ConversationId | None = None,
         usage_tracker: UsageTracker | None = None,
+        model: AgentModelSelector | None = None,
     ) -> AbstractAsyncContextManager[AgentStream[Output]]:
-        return self._runtime.stream(
+        return self._stream(
             prompt,
             deps=deps,
             messages=messages,
             run_id=run_id,
             conversation_id=conversation_id,
             usage_tracker=usage_tracker,
+            model=model,
         )
+
+    @asynccontextmanager
+    async def _stream(
+        self,
+        prompt: str,
+        *,
+        deps: Deps,
+        messages: tuple[AgentMessage, ...],
+        run_id: RunId | None,
+        conversation_id: ConversationId | None,
+        usage_tracker: UsageTracker | None,
+        model: AgentModelSelector | None,
+    ) -> AsyncIterator[AgentStream[Output]]:
+        runtime = await self._resolve_runtime(model)
+
+        async with runtime.stream(
+            prompt,
+            deps=deps,
+            messages=messages,
+            run_id=run_id,
+            conversation_id=conversation_id,
+            usage_tracker=usage_tracker,
+        ) as stream:
+            yield stream
+
+    async def _resolve_runtime(self, model: AgentModelSelector | None) -> AgentRuntime[Deps, Output]:
+        if model is None:
+            return self._runtime
+        if self._runtime_resolver is None:
+            raise ModelResolutionError('this agent does not support model overrides')
+
+        return await self._runtime_resolver(model)
 
     def _runtime_for_adapter(self) -> AgentRuntime[Deps, Output]:
         return self._runtime
 
 
 class AgentFactory:
-    def __init__(self, *, router: ModelRouter, compiler: AgentCompiler) -> None:
-        self._router = router
+    def __init__(
+        self,
+        *,
+        config: OvidConfig,
+        model_factory: ModelFactory | None = None,
+        compiler: AgentCompiler | None = None,
+        provider_api_key: ProviderAPIKeyResolver | None = None,
+        credential_resolver: CredentialResolver | None = None,
+    ) -> None:
+        if model_factory is None:
+            from ovid_core.adapters.pydantic_ai.models import DefaultModelFactory
+
+            model_factory = DefaultModelFactory(provider_api_key=provider_api_key)
+        elif provider_api_key is not None:
+            raise ValueError('provider_api_key is only valid with the default model factory')
+
+        if compiler is None:
+            from ovid_core.adapters.pydantic_ai.agents import DefaultAgentCompiler
+
+            compiler = DefaultAgentCompiler()
+
+        self._router = ModelRouter(config=config, factory=model_factory)
         self._compiler = compiler
+        self._mcp_configs = config.mcp_servers
+        self._credential_resolver = credential_resolver
+        self._mcp_capabilities: tuple[BaseCapability[Any], ...] | None = None
+        self._mcp_lock = asyncio.Lock()
 
-    async def build[Deps, Output](self, definition: AgentDefinition[Deps, Output]) -> OvidAgent[Deps, Output]:
-        resolved = await self._router.resolve(definition.model)
-        runtime = self._compiler.compile(definition, resolved)
+    async def build[Deps, Output](
+        self,
+        definition: AgentDefinition[Deps, Output],
+        *,
+        model: AgentModelSelector | None = None,
+    ) -> OvidAgent[Deps, Output]:
+        configured_capabilities = await self._configured_capabilities()
+        effective_definition = replace(
+            definition,
+            model=definition.model if model is None else model,
+            capabilities=(*configured_capabilities, *definition.capabilities),
+        )
+        resolved = await self._router.resolve(effective_definition.model)
+        runtime = self._compiler.compile(effective_definition, resolved)
 
-        return OvidAgent(runtime=runtime, diagnostics=_diagnostics(definition, resolved))
+        return OvidAgent(
+            runtime=runtime,
+            diagnostics=_diagnostics(effective_definition, resolved),
+            runtime_resolver=lambda selector: self._runtime_for_model(effective_definition, selector),
+        )
+
+    async def _runtime_for_model[Deps, Output](
+        self,
+        definition: AgentDefinition[Deps, Output],
+        model: AgentModelSelector,
+    ) -> AgentRuntime[Deps, Output]:
+        effective_definition = replace(definition, model=model)
+        resolved = await self._router.resolve(model)
+
+        return self._compiler.compile(effective_definition, resolved)
+
+    async def _configured_capabilities[Deps](self) -> tuple[BaseCapability[Deps], ...]:
+        async with self._mcp_lock:
+            if self._mcp_capabilities is None:
+                capabilities = await asyncio.gather(
+                    *(create_mcp_capability(config, resolver=self._credential_resolver) for config in self._mcp_configs)
+                )
+                self._mcp_capabilities = cast(tuple[BaseCapability[Any], ...], capabilities)
+
+        return cast(tuple[BaseCapability[Deps], ...], self._mcp_capabilities)
 
 
 def _diagnostics[Deps, Output](

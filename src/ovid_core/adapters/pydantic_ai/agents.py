@@ -11,7 +11,7 @@ from ovid_core.errors import AgentConstructionError, OvidCoreError
 from ovid_core.routing.models import ResolvedModel
 
 
-class PydanticAIAgentCompiler:
+class DefaultAgentCompiler:
     def compile[Deps, Output](
         self,
         definition: AgentDefinition[Deps, Output],

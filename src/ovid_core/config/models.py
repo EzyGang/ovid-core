@@ -3,6 +3,7 @@ from typing import Annotated, Literal
 from pydantic import Field, JsonValue, StringConstraints
 
 from ovid_core.credentials.models import CredentialRef
+from ovid_core.mcp.models import MCPServerConfig
 from ovid_core.models import BaseModel
 
 
@@ -37,5 +38,6 @@ class OvidConfig(BaseModel):
     models: dict[ConfigName, ModelConfig] = Field(default_factory=dict)
     routes: dict[ConfigName, RouteConfig] = Field(default_factory=dict)
     credentials: dict[ConfigName, CredentialRef] = Field(default_factory=dict)
+    mcp_servers: tuple[MCPServerConfig, ...] = ()
     run_policy: RunPolicyConfig = Field(default_factory=RunPolicyConfig)
     plugins: dict[ConfigName, PluginConfig] = Field(default_factory=dict)

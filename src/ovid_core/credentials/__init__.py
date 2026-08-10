@@ -6,3 +6,4 @@ from ovid_core.credentials.models import NamedCredentialRef as NamedCredentialRe
 from ovid_core.credentials.models import StoreCredentialRef as StoreCredentialRef
 from ovid_core.credentials.resolvers import CredentialResolver as CredentialResolver
 from ovid_core.credentials.resolvers import EnvironmentCredentialResolver as EnvironmentCredentialResolver
+from ovid_core.credentials.resolvers import ProviderAPIKeyResolver as ProviderAPIKeyResolver

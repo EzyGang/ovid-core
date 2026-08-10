@@ -45,6 +45,8 @@ dev = [
 
 [tool.taskipy.tasks]
 format-and-lint = "task ruff && task ty-lint"
+docs-build = "uv --directory docs run zensical build"
+docs-run = "uv --directory docs run zensical serve"
 
 ruff = "ruff format ./src/ovid_core ./src/tests/ && ruff check ./src/ovid_core ./src/tests/ --fix --unsafe-fixes"
 tests = "pytest ./src/tests/ -v"

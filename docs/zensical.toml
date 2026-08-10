@@ -1,0 +1,68 @@
+[project]
+site_name = "Ovid Core Documentation"
+site_description = "Concepts, guides, architecture, and public API documentation for building typed agent applications with Ovid Core."
+docs_dir = "content"
+site_dir = "site"
+
+nav = [
+  { "Home" = "index.md" },
+  { "Why Ovid Core" = "why-ovid-core.md" },
+  { "Core concepts" = [
+    { "Architecture" = "architecture.md" },
+    { "Components" = "components.md" },
+  ] },
+  { "Getting started" = "getting-started.md" },
+  { "Guides" = [
+    { "Build an agent" = "guides/build-an-agent.md" },
+    { "Extend an agent" = "guides/extend-an-agent.md" },
+    { "Embed and expose agents" = "guides/embed-agents.md" },
+  ] },
+  { "Public API" = [
+    { "Overview" = "api/index.md" },
+    { "Models and configuration" = "api/configuration.md" },
+    { "Credentials" = "api/credentials.md" },
+    { "Routing and agents" = "api/agents.md" },
+    { "Messages and runtime" = "api/runtime.md" },
+    { "Usage, policy, and observability" = "api/usage-policy.md" },
+    { "Tools and capabilities" = "api/extensions.md" },
+    { "Persistence" = "api/persistence.md" },
+    { "Codex subscription" = "api/codex.md" },
+    { "Servers and transports" = "api/server.md" },
+    { "Pydantic AI adapters" = "api/adapters.md" },
+    { "Errors" = "api/errors.md" },
+  ] },
+]
+
+[project.theme]
+variant = "modern"
+features = [
+  "navigation.instant",
+  "navigation.instant.prefetch",
+  "navigation.instant.progress",
+  "navigation.tabs",
+  "navigation.tabs.sticky",
+  "navigation.sections",
+  "navigation.path",
+  "navigation.tracking",
+  "navigation.top",
+  "toc.follow",
+  "search.highlight",
+  "content.code.copy",
+  "content.code.select",
+]
+
+[[project.theme.palette]]
+media = "(prefers-color-scheme: light)"
+scheme = "default"
+primary = "indigo"
+accent = "blue"
+toggle.icon = "lucide/sun"
+toggle.name = "Switch to dark mode"
+
+[[project.theme.palette]]
+media = "(prefers-color-scheme: dark)"
+scheme = "slate"
+primary = "indigo"
+accent = "blue"
+toggle.icon = "lucide/moon"
+toggle.name = "Switch to light mode"

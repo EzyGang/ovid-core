@@ -1,12 +1,15 @@
 import os
 from abc import abstractmethod
-from collections.abc import Mapping
+from collections.abc import Awaitable, Callable, Mapping
 from typing import Protocol
 
 from pydantic import SecretStr
 
 from ovid_core.credentials.models import CredentialRef, EnvironmentCredentialRef
 from ovid_core.errors import CredentialError
+
+
+type ProviderAPIKeyResolver = Callable[[str, str], Awaitable[SecretStr | None]]
 
 
 class CredentialResolver(Protocol):

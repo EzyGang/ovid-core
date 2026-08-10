@@ -16,7 +16,7 @@ from pydantic_ai.profiles.openai import OpenAIModelProfile, openai_model_profile
 from pydantic_ai.providers.openai import OpenAIProvider
 from pydantic_ai.settings import ModelSettings, merge_model_settings
 
-from ovid_core.adapters.pydantic_ai.models import PydanticAIModelFactory, _capabilities
+from ovid_core.adapters.pydantic_ai.models import DefaultModelFactory, _capabilities
 from ovid_core.codex.catalog import CodexInstructionCatalog, load_instruction_catalog
 from ovid_core.codex.models import CodexOAuthConfig, CodexTokens
 from ovid_core.codex.tokens import CodexTokenManager, codex_account_id
@@ -35,12 +35,12 @@ class CodexSubscriptionModelFactory:
         *,
         token_manager: CodexTokenManager,
         config: CodexOAuthConfig | None = None,
-        fallback: PydanticAIModelFactory | None = None,
+        fallback: DefaultModelFactory | None = None,
         backend_transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
         self._tokens = token_manager
         self._config = config or CodexOAuthConfig()
-        self._fallback = fallback or PydanticAIModelFactory()
+        self._fallback = fallback or DefaultModelFactory()
         self._backend_transport = backend_transport
         self._instruction_catalog: CodexInstructionCatalog | None = None
         self._instruction_lock = asyncio.Lock()

@@ -1,5 +1,5 @@
 message_to_pydantic
-PydanticAIModelFactory
+DefaultModelFactory
 _._settings
 known_models
 result_from_pydantic
@@ -22,6 +22,7 @@ _.expand_user_path
 callback
 store
 CredentialResolver
+ProviderAPIKeyResolver
 _.resolve
 EnvironmentCredentialResolver
 AgentConstructionError
@@ -74,7 +75,7 @@ _.for_run_step
 _.call_tool
 tool_events_from_messages
 AgentFactory
-PydanticAIAgentCompiler
+DefaultAgentCompiler
 _.instrument
 
 _.get_ordering
@@ -90,6 +91,7 @@ _.select_one_filter
 _.reject_overlapping_names
 _.validate_mode
 create_mcp_capability
+mcp_servers
 principal
 scope
 receive

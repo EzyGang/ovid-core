@@ -1,7 +1,7 @@
 from typing import cast
 
 import pytest
-from pydantic import TypeAdapter
+from pydantic import SecretStr, TypeAdapter
 from pydantic_ai import Agent
 from pydantic_ai.exceptions import ModelAPIError
 from pydantic_ai.messages import ModelMessage, ModelResponse
@@ -10,9 +10,10 @@ from pydantic_ai.models.concurrency import ConcurrencyLimitedModel
 from pydantic_ai.models.fallback import FallbackModel
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 from pydantic_ai.models.test import TestModel
+from pytest_mock import MockerFixture
 
-from ovid_core import ModelResolutionError
-from ovid_core.adapters.pydantic_ai import PydanticAIModelFactory, known_models, result_from_pydantic
+from ovid_core import DefaultModelFactory, ModelResolutionError
+from ovid_core.adapters.pydantic_ai import known_models, result_from_pydantic
 from ovid_core.config import ModelConfig, OvidConfig
 from ovid_core.routing import (
     CandidateModelSelector,
@@ -119,7 +120,7 @@ async def test_generic_pydantic_factory_applies_settings_concurrency_and_capabil
             }
         },
     )
-    factory = PydanticAIModelFactory()
+    factory = DefaultModelFactory()
     router = ModelRouter(config=config, factory=factory)
 
     resolved = await router.resolve(ModelRef(name='configured'))
@@ -134,9 +135,51 @@ async def test_generic_pydantic_factory_applies_settings_concurrency_and_capabil
 
 
 @pytest.mark.asyncio
+async def test_default_model_factory_accepts_application_api_keys(mocker: MockerFixture) -> None:
+    calls: list[tuple[str, str]] = []
+
+    async def provider_api_key(model_id: str, provider: str) -> SecretStr | None:
+        calls.append((model_id, provider))
+
+        return SecretStr('application-secret')
+
+    provider = mocker.Mock()
+    provider_class = mocker.patch(
+        'ovid_core.adapters.pydantic_ai.models.infer_provider_class',
+        return_value=mocker.Mock(return_value=provider),
+    )
+    infer_model = mocker.patch(
+        'ovid_core.adapters.pydantic_ai.models.infer_model',
+        return_value=TestModel(),
+    )
+    factory = DefaultModelFactory(provider_api_key=provider_api_key)
+
+    await factory.build(model_id='primary', config=ModelConfig(provider='openai', model='gpt-5'))
+    supplied_provider_factory = infer_model.call_args.kwargs['provider_factory']
+
+    assert supplied_provider_factory('openai') is provider
+    assert calls == [('primary', 'openai')]
+    provider_class.return_value.assert_called_once_with(api_key='application-secret')
+
+    async def no_api_key(model_id: str, provider_name: str) -> SecretStr | None:
+        del model_id, provider_name
+
+        return None
+
+    infer_model.reset_mock()
+
+    await DefaultModelFactory(provider_api_key=no_api_key).build(
+        model_id='secondary',
+        config=ModelConfig(provider='openai', model='gpt-5'),
+    )
+
+    infer_model.assert_called_once_with('openai:gpt-5')
+
+
+@pytest.mark.asyncio
 async def test_known_catalog_and_generic_construction_errors_are_safe() -> None:
     catalog = known_models()
-    factory = PydanticAIModelFactory()
+    factory = DefaultModelFactory()
 
     assert catalog
     assert all(model.provider and model.model for model in catalog)
