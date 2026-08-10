@@ -126,7 +126,7 @@ addopts = [
 asyncio_mode = "auto"
 python_files = "test*.py"
 # Directories that are not visited by pytest collector:
-norecursedirs = "*.egg .eggs dist build docs .tox .git __pycache__ config docker etc"
+norecursedirs = "*.egg .eggs dist build docs .tox .git __pycache__ docker etc"
 testpaths = [
     "src/tests",
 ]

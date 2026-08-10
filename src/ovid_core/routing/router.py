@@ -1,4 +1,3 @@
-from ovid_core.adapters.pydantic_ai.routing import compile_fallback_model
 from ovid_core.config.models import OvidConfig
 from ovid_core.errors import ModelResolutionError
 from ovid_core.routing.factory import ModelFactory
@@ -13,6 +12,8 @@ class ModelRouter:
         self._aliases = _build_aliases(config)
 
     async def resolve(self, selector: ModelSelector) -> ResolvedModel:
+        from ovid_core.adapters.pydantic_ai.routing import compile_fallback_model
+
         model_ids = self._select_model_ids(selector)
         selected_config = self._config.models[model_ids[0]]
         handles = [await self._construct_model(model_id) for model_id in model_ids]
