@@ -104,3 +104,7 @@ resource_id
 AuthorizationCallback.__call__
 CommandHandler.__call__
 create_stdio_server
+RelayConnection.set_delivery_handler
+InMemoryRelayConnection.set_delivery_handler
+RelayMessage.sent_at
+RelayReceipt.accepted_at

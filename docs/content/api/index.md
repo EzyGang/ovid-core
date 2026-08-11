@@ -12,6 +12,7 @@ This section is the exact interface reference. Start with [Why Ovid Core](../why
 | Normalized messages, identities, contexts, events, and results | `ovid_core.messages.models`, `ovid_core.runtime.*` | [Messages and runtime](runtime.md) |
 | Usage, limits, retries, and instrumentation policy | `ovid_core.usage.*`, `ovid_core.policy`, `ovid_core.observability` | [Usage, policy, and observability](usage-policy.md) |
 | Tools, toolsets, hooks, capabilities, skills, and MCP | `ovid_core.tools.*`, `ovid_core.hooks.base`, `ovid_core.capabilities.*`, `ovid_core.skills`, `ovid_core.mcp.*` | [Tools and capabilities](extensions.md) |
+| Agent-to-agent Relay messaging | `ovid_core.relay` | [Tools and capabilities](extensions.md#relay) |
 | Conversation persistence | `ovid_core.persistence` | [Persistence](persistence.md) |
 | ChatGPT Codex subscription authentication and models | `ovid_core.codex.*`, `ovid_core.adapters.pydantic_ai.codex` | [Codex subscription](codex.md) |
 | Native HTTP, SSE, stdio, and AG-UI servers | `ovid_core.server.*` | [Servers and transports](server.md) |

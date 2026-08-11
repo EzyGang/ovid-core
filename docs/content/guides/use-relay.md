@@ -1,0 +1,174 @@
+# Use Relay between agents
+
+Relay gives selected agents direct asynchronous messaging through application-owned connections. It is disabled unless you attach
+`RelayCapability` to an agent definition.
+
+Use Relay when an orchestrator must communicate with a spawned subagent, a subagent must report progress, or equal agents need a
+shared messaging path. Relay does not define parent and child roles, launch agents, or decide how incoming messages enter an agent
+conversation.
+
+## Create an in-memory network
+
+Create one `InMemoryRelay` for every group of connections that should communicate:
+
+```python
+from ovid_core.relay import InMemoryRelay, RelayAddress, RelayIdentity
+
+relay = InMemoryRelay(capacity=100)
+
+orchestrator_connection = relay.connection(
+    RelayIdentity(
+        address=RelayAddress('orchestrator'),
+        display_name='Orchestrator',
+    )
+)
+worker_connection = relay.connection(
+    RelayIdentity(
+        address=RelayAddress('worker'),
+        display_name='Worker',
+    )
+)
+```
+
+Connections from different `InMemoryRelay` instances are isolated. Each address must be unique within one network. Contacts are the
+other live connections in that network; Relay does not attach running, idle, parent, or child status to them.
+
+The in-memory backend is process-local and bounded. A full mailbox rejects a new message with `RelayCapacityError`; it never silently
+drops an accepted message.
+
+## Attach the capability
+
+Pass an already usable connection to each participating agent:
+
+```python
+from ovid_core.agents import AgentDefinition
+from ovid_core.relay import RelayCapability
+from ovid_core.routing.models import ModelRef
+
+orchestrator_definition = AgentDefinition[AppDeps, Answer](
+    model=ModelRef(name='primary'),
+    deps_type=AppDeps,
+    output_type=Answer,
+    capabilities=(
+        RelayCapability[AppDeps](connection=orchestrator_connection),
+    ),
+)
+worker_definition = AgentDefinition[AppDeps, Answer](
+    model=ModelRef(name='primary'),
+    deps_type=AppDeps,
+    output_type=Answer,
+    capabilities=(
+        RelayCapability[AppDeps](connection=worker_connection),
+    ),
+)
+```
+
+`AgentFactory` does not create, configure, start, or close Relay connections. The application keeps each connection alive for as long
+as that agent should remain addressable.
+
+## Deliver incoming messages automatically
+
+Tools capture the sending agent's intent. The recipient connection owns message arbitration and calls an application delivery handler
+when no matching `relay_wait` is active.
+
+```python
+from ovid_core.relay import RelayDisposition, RelayMessage
+
+
+async def deliver_to_worker(message: RelayMessage) -> RelayDisposition:
+    session = worker_sessions.current(message.recipient)
+    if session is None:
+        return RelayDisposition.DEFER
+
+    accepted = await session.enqueue_relay_message(message)
+
+    return RelayDisposition.ACKNOWLEDGE if accepted else RelayDisposition.DEFER
+
+
+worker_connection.set_delivery_handler(deliver_to_worker)
+```
+
+The application can use this handler to queue an aside, steer a running loop, append conversation history, start an idle turn, or
+forward the message to a remote worker.
+
+Return `ACKNOWLEDGE` after the application accepts responsibility for the message. Return `DEFER` when it must remain unread. A handler
+exception also leaves the message pending. Handler work runs independently of sender acceptance and is serialized for each in-memory
+recipient.
+
+Setting a handler later makes pending messages eligible for automatic delivery. Setting it to `None` leaves future messages pending.
+
+## Use the Relay tools
+
+Attaching the capability contributes four tools automatically:
+
+| Tool | Use |
+| --- | --- |
+| `relay_send` | Send a message to a known address and optionally identify the message being answered |
+| `relay_wait` | Wait for and consume one message, optionally filtered by sender or exact reply correlation |
+| `relay_pending` | Read outstanding messages in FIFO order; consume them unless `retain=true` |
+| `relay_contacts` | List addresses visible through the connection |
+
+A typical delegation exchange is:
+
+1. The task layer launches a worker with its Relay connection.
+2. The task result gives the orchestrator the worker address.
+3. The worker receives the orchestrator address through task instructions or dependencies.
+4. Either agent calls `relay_send` for instructions, progress, correction, or completion.
+5. A recipient already waiting receives the message as the `relay_wait` result; otherwise its application delivery handler runs.
+
+A send receipt means only that the recipient connection accepted the message. It does not mean the recipient read it, woke, ran, or
+replied.
+
+Use `reply_to` for exact correlation. After sending message `M`, the recipient answers with `reply_to=M.id`; the sender can call
+`relay_wait(reply_to=M.id)` without consuming an unrelated message from the same agent.
+
+`relay_pending(retain=true)` inspects unread messages without consuming them. Without `retain`, returned messages are atomically
+consumed. Messages already acknowledged by an application delivery handler or returned through `relay_wait` are no longer pending.
+
+## Customize model-visible tool descriptions
+
+Override only the descriptions that need application terminology:
+
+```python
+from ovid_core.relay import RelayCapability, RelayToolDescriptions
+
+relay_capability = RelayCapability[AppDeps](
+    connection=worker_connection,
+    tool_descriptions=RelayToolDescriptions(
+        send='Send instructions or progress to a known delegation contact.',
+        wait='Wait for a correlated delegation response.',
+    ),
+)
+```
+
+Unspecified descriptions keep their core defaults. Put broader collaboration and delegation policy in `AgentDefinition.instructions`.
+
+## Supply another connection implementation
+
+The capability depends only on `RelayConnection`:
+
+```python
+from ovid_core.relay import RelayCapability, RelayConnection
+
+connection: RelayConnection = application_relay.connection_for('worker')
+relay_capability = RelayCapability[AppDeps](connection=connection)
+```
+
+A consumer connection can use a broker, database, RPC service, or remote worker. It owns identity binding, contact visibility, mailbox
+storage, automatic delivery, initialization, reconnection, and shutdown. The required protocol does not impose a context manager or
+lifecycle method.
+
+The connection must preserve the public behavior documented in the [Relay API reference](../api/extensions.md#relay): waiter
+precedence, exact filters, pending-message consumption, receipt semantics, and application delivery dispositions.
+
+## Close in-memory connections
+
+`InMemoryRelayConnection.close()` unregisters that address, wakes active waiters with `RelayUnavailableError`, and rejects later
+operations through the closed connection:
+
+```python
+worker_connection.close()
+```
+
+Custom connection implementations define their own lifecycle API. The application that created the connection is responsible for
+closing it.

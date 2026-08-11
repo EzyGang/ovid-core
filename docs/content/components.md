@@ -36,6 +36,7 @@ The factory supplies `DefaultModelFactory`, `ModelRouter`, and `DefaultAgentComp
 | Provider capabilities | Reasoning, search, image generation, or compaction | Plain model requests are sufficient |
 | Agent Skills | Instructions and tools from skill directories | Instructions stay in code |
 | MCP | Tools or instructions from an MCP server | All extensions are local |
+| [Relay](guides/use-relay.md) | Direct asynchronous messaging between application-owned agent connections | Agents never communicate directly |
 | Credential references | MCP environment variables and headers | No configured extension needs a referenced secret |
 | `UsageTracker` | One budget for multiple related runs | Each result needs only local usage |
 | Conversation storage | History after a request or process ends | The caller keeps history in memory |
@@ -59,6 +60,7 @@ The base package includes these functions:
 - Provider model support through Pydantic AI.
 - Tools and capabilities.
 - Agent Skills and MCP.
+- Opt-in Relay messaging contracts, tools, and an in-memory implementation.
 - Storage interfaces.
 - Codex authentication.
 - Pydantic AI adapters.
@@ -141,11 +143,12 @@ Select the smallest extension type that satisfies the requirement:
 
 1. Use `BaseTool` for one static operation.
 2. Use one capability for multiple static operations.
-3. Use `BaseToolset` for dynamic tools or lifecycle.
-4. Use `BaseToolHook` for common tool behavior.
-5. Use `ProviderCapability` for provider model features.
-6. Use `SkillsCapability` for Agent Skills directories.
-7. Define MCP servers in `OvidConfig.mcp_servers`.
+3. Use `RelayCapability` for agent-to-agent messaging through an application-owned connection.
+4. Use `BaseToolset` for dynamic tools or lifecycle.
+5. Use `BaseToolHook` for common tool behavior.
+6. Use `ProviderCapability` for provider model features.
+7. Use `SkillsCapability` for Agent Skills directories.
+8. Define MCP servers in `OvidConfig.mcp_servers`.
 
 `AgentFactory` constructs configured MCP capabilities. Direct capabilities remain useful for session-specific or application-generated extensions.
 
@@ -199,10 +202,11 @@ Use this sequence:
 2. Make one typed agent definition.
 3. Add typed dependencies and structured output.
 4. Add only the tools that the agent needs.
-5. Add a fallback route when you have a fallback requirement.
-6. Add storage when conversations continue across calls.
-7. Add a transport when another process needs access.
-8. Add common usage tracking when runs share a budget.
-9. Enable observability after you configure an exporter.
+5. Add Relay only when agents need direct asynchronous communication.
+6. Add a fallback route when you have a fallback requirement.
+7. Add storage when conversations continue across calls.
+8. Add a transport when another process needs access.
+9. Add common usage tracking when runs share a budget.
+10. Enable observability after you configure an exporter.
 
 This sequence keeps the first configuration small. It also gives you a clear path to a larger application.

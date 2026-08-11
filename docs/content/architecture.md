@@ -137,6 +137,7 @@ Application code uses Ovid domain values. It does not require upstream runtime o
 | `usage`, `policy` | Usage data and execution policy |
 | `tools`, `hooks`, `capabilities` | Application extension interfaces |
 | `mcp`, `skills` | MCP and Agent Skills capability configuration |
+| `relay` | Explicit agent-to-agent messaging contracts and the process-local in-memory implementation |
 | `codex` | ChatGPT Codex subscription authentication |
 | `persistence` | Message codec and conversation store interface |
 | `server` | Registration, authorization, dependency, and transport data |
@@ -145,6 +146,10 @@ Application code uses Ovid domain values. It does not require upstream runtime o
 Ovid Core does not use a dependency-injection container. It also does not use mutable global service state.
 
 Constructors, factories, run arguments, and server callbacks receive all dependencies.
+
+Relay is also application-owned state. Ovid Core defines the connection seam and an explicit in-memory network, but the application
+creates agent-bound connections, installs delivery handlers, and manages their lifecycle. `AgentFactory` does not create Relay
+connections or enable Relay tools.
 
 ## Model routing
 

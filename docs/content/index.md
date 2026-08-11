@@ -12,6 +12,7 @@ These interfaces give you:
 - Immutable agent definitions with typed dependencies and typed output.
 - Normalized messages, events, results, and usage data.
 - Typed tools, toolsets, capabilities, hooks, Agent Skills, and MCP.
+- Opt-in Relay messaging between application-owned agent connections.
 - Common usage limits for parent agents and subagents.
 - Interfaces for conversation storage and transports.
 - Optional HTTP, SSE, stdio, AG-UI, and Codex subscription support.
@@ -30,6 +31,7 @@ Your application controls authentication, storage, dependency construction, depl
 | Run a small agent | [Getting started](getting-started.md) |
 | Make a typed agent for an application | [Build an agent](guides/build-an-agent.md) |
 | Add tools, hooks, Agent Skills, provider features, or MCP | [Extend an agent](guides/extend-an-agent.md) |
+| Connect orchestrators, subagents, or peers through Relay | [Use Relay between agents](guides/use-relay.md) |
 | Connect an agent to a worker, service, stdio, or AG-UI | [Embed and expose agents](guides/embed-agents.md) |
 | Find exact types, fields, and signatures | [Public API](api/index.md) |
 
@@ -121,6 +123,7 @@ Your application controls these functions:
 | Dependency construction | Each request can need different repositories and clients |
 | Durable storage and retention | The application owns database and session rules |
 | Deployment and process control | Ovid Core can operate in a process or through a transport |
+| Relay connection lifecycle and incoming delivery | The application decides whether a message steers, wakes, starts, or remains pending for an agent |
 | Telemetry export | The operator selects the destination and content policy |
 
 These limits help you connect Ovid Core to an existing application. You do not have to change the application structure.

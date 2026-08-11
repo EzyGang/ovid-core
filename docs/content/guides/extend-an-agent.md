@@ -96,6 +96,81 @@ AgentDefinition[AppDeps, Answer](
 
 A capability is an explicit composition unit. It does not discover plugins or mutate a global registry. Diagnostics record its ID and the tools, hooks, and instructions it contributes.
 
+## Add explicit Relay messaging
+For complete setup, automatic delivery, delegation, custom descriptions, and alternative connections, see
+[Use Relay between agents](use-relay.md).
+
+Relay is structurally opt-in. Create one application-owned network, bind one connection to each agent identity, and attach the
+capability only to agents that should receive the four Relay tools:
+
+```python
+from ovid_core.relay import (
+    InMemoryRelay,
+    RelayAddress,
+    RelayCapability,
+    RelayDisposition,
+    RelayIdentity,
+    RelayToolDescriptions,
+    RelayMessage,
+)
+
+relay = InMemoryRelay(capacity=100)
+
+
+async def deliver_to_application(message: RelayMessage) -> RelayDisposition:
+    accepted = await application_inbox.offer(message)
+    return RelayDisposition.ACKNOWLEDGE if accepted else RelayDisposition.DEFER
+
+
+worker_connection = relay.connection(
+    RelayIdentity(
+        address=RelayAddress('worker'),
+        display_name='Worker',
+    ),
+    delivery_handler=deliver_to_application,
+)
+worker_relay = RelayCapability[AppDeps](
+    connection=worker_connection,
+    tool_descriptions=RelayToolDescriptions(
+        send='Send messages and progress updates to a known collaborator.',
+        wait='Wait for a reply from a collaborator.',
+    ),
+)
+
+definition = AgentDefinition[AppDeps, Answer](
+    model=ModelRef(name='primary'),
+    deps_type=AppDeps,
+    output_type=Answer,
+    capabilities=(worker_relay,),
+)
+```
+
+Share that `InMemoryRelay` instance when another bound connection should appear in `relay_contacts` and exchange messages.
+Separate instances are isolated. `relay_send` returns once the recipient connection accepts the message; it does not wait for the
+handler. The connection serializes automatic handler calls. `ACKNOWLEDGE` consumes that message, while `DEFER` or an exception leaves
+it pending. Calling `set_delivery_handler()` later makes pending messages eligible; setting it to `None` leaves future messages
+pending.
+
+The tools are `relay_send`, `relay_wait`, `relay_pending`, and `relay_contacts`. Use the received message ID as `reply_to` when
+answering, and filter `relay_wait` by `reply_to` for exact correlation. A receipt means only backend acceptance, never that an agent
+read, woke for, or replied to a message.
+Override model-visible tool descriptions through `RelayToolDescriptions`; unspecified descriptions keep their core defaults. Use
+`AgentDefinition.instructions` for application-wide delegation or collaboration policy.
+
+
+A distributed transport can implement the same structural seam without changing factory configuration:
+
+```python
+from ovid_core.relay import RelayCapability, RelayConnection
+
+connection: RelayConnection = application_relay.connection_for('worker')
+worker_relay = RelayCapability[AppDeps](connection=connection)
+```
+
+Core owns the values, protocol, capability, tools, and explicit process-local implementation. The application owns network selection,
+identity assignment, delivery into its agent loop, handler policy, startup, and shutdown. `AgentFactory` remains unaware of Relay;
+`RelayConnection` requires neither a context manager nor any lifecycle method.
+
 ## Use a toolset for dynamic tools
 
 A toolset can derive available tools from run dependencies and owns optional lifecycle transitions:

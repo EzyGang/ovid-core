@@ -15,6 +15,7 @@ nav = [
   { "Guides" = [
     { "Build an agent" = "guides/build-an-agent.md" },
     { "Extend an agent" = "guides/extend-an-agent.md" },
+    { "Use Relay between agents" = "guides/use-relay.md" },
     { "Embed and expose agents" = "guides/embed-agents.md" },
   ] },
   { "Public API" = [
@@ -35,6 +36,8 @@ nav = [
 
 [project.theme]
 variant = "modern"
+font.text = "Inter"
+font.code = "IBM Plex Mono"
 features = [
   "navigation.instant",
   "navigation.instant.prefetch",

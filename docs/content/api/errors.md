@@ -1,6 +1,6 @@
 # Errors
 
-Import the core error hierarchy from `ovid_core.errors`.
+Import the general core error hierarchy from `ovid_core.errors`. Import Relay-specific errors from `ovid_core.relay`.
 
 Errors contain source-safe messages. Adapters remove provider response bodies, credentials, headers, signed URLs, and protocol values when necessary.
 
@@ -24,6 +24,11 @@ OvidCoreError
 │   └── ToolExecutionError
 │       └── ToolTimeoutError (also TimeoutError)
 ├── PluginError
+├── RelayError
+│   ├── UnknownRelayRecipientError
+│   ├── RelayCapacityError
+│   ├── RelayUnavailableError
+│   └── RelayAddressInUseError
 └── TransportError
     └── ServerConstructionError
 ```
@@ -47,6 +52,11 @@ OvidCoreError
 | `ToolExecutionError` | Tool implementation or hook execution failure. |
 | `ToolTimeoutError` | Tool timeout. Catch this error as `ToolExecutionError` or built-in `TimeoutError`. |
 | `PluginError` | Plugin-boundary failure for consumers implementing plugin support. |
+| `RelayError` | Base for Relay connection and mailbox failures. |
+| `UnknownRelayRecipientError` | Relay send to an address unavailable on the connection. |
+| `RelayCapacityError` | Relay mailbox capacity rejection; accepted messages are never silently dropped. |
+| `RelayUnavailableError` | Operation attempted through a closed or otherwise unavailable Relay connection. |
+| `RelayAddressInUseError` | Duplicate live address registration in a Relay network. |
 | `TransportError` | Normalized transport and server-runtime failure. |
 | `ServerConstructionError` | Missing optional dependencies, incompatible agent runtime, or invalid server registration. |
 

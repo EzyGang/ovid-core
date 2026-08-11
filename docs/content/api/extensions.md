@@ -92,6 +92,75 @@ Import from `ovid_core.capabilities.base`.
 
 All capability and toolset IDs must be unique. ID collisions raise `ExtensionCollisionError`.
 
+## Relay
+
+Import Relay contracts and implementations from `ovid_core.relay`. Relay is off by default: only
+`RelayCapability(connection=connection)` contributes Relay tools, and `AgentFactory` does not create or configure a connection.
+For a task-oriented walkthrough, see [Use Relay between agents](../guides/use-relay.md).
+
+### Values and connection
+
+- `RelayAddress` is a validated opaque non-empty string root.
+- `RelayIdentity` contains `address` and `display_name`.
+- `RelayMessageId` is a UUID root with `new()`.
+- `RelayMessage` contains `id`, `sender`, `recipient`, `content`, timezone-aware `sent_at`, and optional `reply_to`.
+- `RelayReceipt` contains `message_id`, `recipient`, and timezone-aware `accepted_at`. It records backend acceptance, not reading or delivery.
+- `RelayContact` contains `address` and `display_name`; Relay does not expose presence or lifecycle status.
+
+`RelayConnection` is structurally typed and bound to one `identity`. It defines:
+
+```python
+identity: RelayIdentity
+set_delivery_handler(handler: RelayDeliveryHandler | None) -> None
+await send(recipient, content, reply_to=None) -> RelayReceipt
+await wait(sender=None, reply_to=None, timeout_seconds=None) -> RelayMessage | None
+await pending(retain=False) -> tuple[RelayMessage, ...]
+await contacts() -> tuple[RelayContact, ...]
+```
+
+`RelayDeliveryHandler` is an async callable from `RelayMessage` to `RelayDisposition.ACKNOWLEDGE` or
+`RelayDisposition.DEFER`. Acknowledgement consumes the message. Defer, a handler exception, or no handler retains it.
+An active matching `wait` takes precedence. Handler work is asynchronous to sender acceptance.
+
+`InMemoryRelay(capacity=100)` is an explicit process-local network. Call synchronous
+`connection(identity, delivery_handler=None)` for each unique identity. Connections from the same instance can communicate;
+connections from separate instances cannot. Each mailbox is bounded and rejects overflow with `RelayCapacityError`.
+Unknown recipients raise `UnknownRelayRecipientError`; duplicate live addresses raise `RelayAddressInUseError`; full mailboxes raise
+`RelayCapacityError`; closed connections raise `RelayUnavailableError`.
+
+### Automatic tools
+
+`RelayCapability[Deps](connection=connection)` has the fixed capability ID `relay` and contributes:
+
+| Tool | Arguments | Result |
+| --- | --- | --- |
+| `relay_send` | `to`, `message`, optional `reply_to` | accepted `receipt` |
+| `relay_wait` | optional `sender`, `reply_to`, `timeout_seconds` | one consumed `message` or `None` |
+| `relay_pending` | `retain=False` | FIFO `messages`; consumed unless retained |
+| `relay_contacts` | none | registered `contacts` other than self |
+
+When supplied, `reply_to` is matched exactly. A wait timeout returns `None`, including an immediate check with zero; cancellation
+continues to the caller.
+Consumer applications can replace the model-visible description of each built-in tool without replacing its implementation:
+
+```python
+from ovid_core.relay import RelayCapability, RelayToolDescriptions
+
+relay_capability = RelayCapability[AppDeps](
+    connection=connection,
+    tool_descriptions=RelayToolDescriptions(
+        send='Send delegation updates to a known contact.',
+        wait='Wait for a correlated delegation response.',
+        pending='Read delegation messages not delivered automatically.',
+        contacts='List Relay contacts visible to this agent.',
+    ),
+)
+```
+
+These values change only the tool definitions presented to the model. Put broader workflow instructions in
+`AgentDefinition.instructions`.
+
+
 ## Provider capabilities
 
 Import from `ovid_core.capabilities.integrations`.
