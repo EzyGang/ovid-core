@@ -18,6 +18,10 @@ nav = [
     { "Use Relay between agents" = "guides/use-relay.md" },
     { "Embed and expose agents" = "guides/embed-agents.md" },
   ] },
+  { "Ovid Native" = [
+    { "Overview" = "native/index.md" },
+    { "AST search and rewrites" = "native/ast.md" },
+  ] },
   { "Public API" = [
     { "Overview" = "api/index.md" },
     { "Models and configuration" = "api/configuration.md" },
