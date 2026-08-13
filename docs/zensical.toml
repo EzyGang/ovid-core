@@ -20,6 +20,8 @@ nav = [
   ] },
   { "Ovid Native" = [
     { "Overview" = "native/index.md" },
+    { "Workspace search" = "native/search.md" },
+    { "Warm indexed FFF search" = "native/fff.md" },
     { "AST search and rewrites" = "native/ast.md" },
   ] },
   { "Public API" = [
