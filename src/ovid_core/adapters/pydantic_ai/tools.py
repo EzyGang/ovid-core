@@ -1,6 +1,6 @@
 import asyncio
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from types import TracebackType
 from typing import Any, cast
 
@@ -31,7 +31,11 @@ _ANY_VALIDATOR = SchemaValidator(core_schema.any_schema())
 class PydanticAIToolsetAdapter[Deps](AbstractToolset[Deps]):
     source: BaseToolset[Deps]
     hooks: tuple[BaseToolHook[Deps], ...] = ()
-    _tools: dict[str, BaseTool[Deps, Any, Any]] | None = None
+    _bindings: dict[int, tuple[ToolsetTool[Deps], BaseTool[Deps, Any, Any]]] = field(
+        default_factory=dict,
+        init=False,
+        repr=False,
+    )
 
     @property
     def id(self) -> str:
@@ -62,18 +66,18 @@ class PydanticAIToolsetAdapter[Deps](AbstractToolset[Deps]):
 
     async def get_tools(self, ctx: PydanticRunContext[Deps]) -> dict[str, ToolsetTool[Deps]]:
         discovered = await self.source.get_tools(run_context_from_pydantic(ctx))
-        tools = _unique_tools(discovered)
-        self._tools = tools
-
-        return {
-            name: ToolsetTool(
+        tools: dict[str, ToolsetTool[Deps]] = {}
+        for name, source_tool in _unique_tools(discovered).items():
+            tool = ToolsetTool[Deps](
                 toolset=self,
-                tool_def=_tool_definition(tool),
+                tool_def=_tool_definition(source_tool),
                 max_retries=0,
                 args_validator=_ANY_VALIDATOR,
             )
-            for name, tool in tools.items()
-        }
+            self._bindings[id(tool)] = (tool, source_tool)
+            tools[name] = tool
+
+        return tools
 
     async def call_tool(
         self,
@@ -82,12 +86,11 @@ class PydanticAIToolsetAdapter[Deps](AbstractToolset[Deps]):
         ctx: PydanticRunContext[Deps],
         tool: ToolsetTool[Deps],
     ) -> JsonValue:
-        del tool
-        source_tool = self._tools[name] if self._tools is not None else None
-        if source_tool is None:
+        binding = self._bindings.get(id(tool))
+        if binding is None or binding[0] is not tool:
             raise ToolExecutionError(f'Tool {name!r} is not available')
 
-        return await _execute_tool(source_tool, tool_args, ctx, self.hooks)
+        return await _execute_tool(binding[1], tool_args, ctx, self.hooks)
 
 
 class _StaticToolset[Deps](BaseToolset[Deps]):
@@ -105,7 +108,7 @@ class _CollisionCheckedToolset[Deps](CombinedToolset[Deps]):
         try:
             return await super().get_tools(ctx)
         except UserError as error:
-            raise ExtensionCollisionError('Capabilities contribute conflicting tool IDs') from error
+            raise ExtensionCollisionError('Capabilities contribute conflicting effective tool names') from error
 
 
 class PydanticAICapabilityAdapter[Deps](AbstractCapability[Deps]):
@@ -156,9 +159,10 @@ def adapt_capabilities[Deps](capabilities: Sequence[BaseCapability[Deps]]) -> tu
 def _unique_tools[Deps](tools: Sequence[BaseTool[Deps, Any, Any]]) -> dict[str, BaseTool[Deps, Any, Any]]:
     result: dict[str, BaseTool[Deps, Any, Any]] = {}
     for tool in tools:
-        if not tool.id or tool.id in result:
-            raise ExtensionCollisionError(f'Duplicate or empty tool ID: {tool.id!r}')
-        result[tool.id] = tool
+        name = _wire_name(tool)
+        if not name or name in result:
+            raise ExtensionCollisionError(f'Duplicate or empty effective tool name: {name!r}')
+        result[name] = tool
 
     return result
 
@@ -176,15 +180,37 @@ def _combine_toolsets[Deps](
 
 def _tool_definition(tool: BaseTool[Any, Any, Any]) -> ToolDefinition:
     metadata = {'ovid_approval': tool.approval.model_dump(mode='json')}
+    schema = (
+        {
+            'type': 'object',
+            'properties': {'input': {'type': 'string'}},
+            'required': ['input'],
+            'additionalProperties': False,
+        }
+        if tool.presentation.input_format == 'text'
+        else tool.args_type.model_json_schema()
+    )
+
     return ToolDefinition(
-        name=tool.id,
+        name=_wire_name(tool),
         description=tool.description,
-        parameters_json_schema=tool.args_type.model_json_schema(),
+        parameters_json_schema=schema,
         kind='unapproved' if tool.approval.required else 'function',
         metadata=metadata,
         timeout=tool.timeout_seconds,
         defer_loading=tool.defer_loading,
     )
+
+
+def _wire_name(tool: BaseTool[Any, Any, Any]) -> str:
+    return tool.presentation.wire_name or tool.id
+
+
+def _validation_input(tool: BaseTool[Any, Any, Any], raw_arguments: dict[str, Any]) -> str | dict[str, Any]:
+    if tool.presentation.input_format == 'text' and set(raw_arguments) == {'input'}:
+        return cast(str, raw_arguments['input'])
+
+    return raw_arguments
 
 
 async def _execute_tool[Deps](
@@ -195,7 +221,7 @@ async def _execute_tool[Deps](
 ) -> dict[str, JsonValue]:
     context = tool_context_from_pydantic(ctx)
     try:
-        arguments = tool.args_type.model_validate(raw_arguments)
+        arguments = tool.args_type.model_validate(_validation_input(tool, raw_arguments))
     except ValidationError as error:
         raise ToolValidationError(f'Invalid arguments for tool {tool.id!r}') from error
 

@@ -11,12 +11,14 @@ def validate_extension_ids[Deps](
 ) -> None:
     capability_ids: set[str] = set()
     tool_ids: set[str] = set()
+    tool_wire_names: set[str] = set()
     toolset_ids: set[str] = set()
 
     for capability in capabilities:
         _add_unique(capability.id, capability_ids, 'capability')
         for tool in capability.contributions.tools:
             _add_unique(tool.id, tool_ids, 'tool')
+            _add_unique(tool.presentation.wire_name or tool.id, tool_wire_names, 'tool wire name')
         for toolset in capability.contributions.toolsets:
             _add_unique(toolset.id, toolset_ids, 'toolset')
 

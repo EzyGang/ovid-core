@@ -7,6 +7,7 @@ from ovid_core.agents import AgentExtensionProvenance as AgentExtensionProvenanc
 from ovid_core.agents import AgentFactory as AgentFactory
 from ovid_core.agents import AgentModelSelector as AgentModelSelector
 from ovid_core.agents import AgentRuntime as AgentRuntime
+from ovid_core.agents import AgentServiceDiagnostic as AgentServiceDiagnostic
 from ovid_core.agents import AgentStream as AgentStream
 from ovid_core.agents import OvidAgent as OvidAgent
 from ovid_core.credentials.resolvers import ProviderAPIKeyResolver as ProviderAPIKeyResolver
@@ -39,5 +40,14 @@ from ovid_core.policy import AgentRetryPolicy as AgentRetryPolicy
 from ovid_core.policy import AgentRunPolicy as AgentRunPolicy
 from ovid_core.policy import AgentUsageLimits as AgentUsageLimits
 from ovid_core.policy import ProviderFailureKind as ProviderFailureKind
+from ovid_core.services import AgentServiceBinding as AgentServiceBinding
+from ovid_core.services import AgentServiceCollisionError as AgentServiceCollisionError
+from ovid_core.services import AgentServiceCompatibilityError as AgentServiceCompatibilityError
+from ovid_core.services import AgentServiceError as AgentServiceError
+from ovid_core.services import AgentServiceKey as AgentServiceKey
+from ovid_core.services import AgentServiceMissingError as AgentServiceMissingError
+from ovid_core.services import AgentServiceRef as AgentServiceRef
+from ovid_core.services import AgentServiceRequirement as AgentServiceRequirement
+from ovid_core.services import AgentServices as AgentServices
 from ovid_core.skills import SkillLibraryConfig as SkillLibraryConfig
 from ovid_core.skills import SkillsCapability as SkillsCapability

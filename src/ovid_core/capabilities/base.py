@@ -1,10 +1,11 @@
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Self
 
 from pydantic import Field, JsonValue
 
 from ovid_core.hooks.base import BaseToolHook
 from ovid_core.models import BaseModel
+from ovid_core.services import AgentServiceRequirement, AgentServices
 from ovid_core.tools.base import BaseTool, BaseToolset
 
 
@@ -25,5 +26,12 @@ class CapabilityContributions[Deps]:
 class BaseCapability[Deps]:
     id: str
     description: str | None = None
+    requirements: tuple[AgentServiceRequirement, ...] = ()
     defer_loading: bool = False
     contributions: CapabilityContributions[Deps] = CapabilityContributions()
+
+    def bind(self, services: AgentServices) -> Self:
+        for requirement in self.requirements:
+            services.validate_requirement(requirement, consumer=self.id)
+
+        return self

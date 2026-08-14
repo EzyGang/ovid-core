@@ -1,8 +1,8 @@
 import asyncio
 from abc import abstractmethod
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from typing import Any, Literal, Protocol, cast
 
 from pydantic import Field
@@ -23,6 +23,7 @@ from ovid_core.routing.router import ModelRouter
 from ovid_core.runtime.events import AgentEvent
 from ovid_core.runtime.identifiers import ConversationId, RunId
 from ovid_core.runtime.results import RunResult
+from ovid_core.services import AgentServices
 from ovid_core.tools.base import BaseToolset
 from ovid_core.usage.tracking import UsageTracker
 
@@ -41,12 +42,23 @@ class AgentDefinition[Deps, Output]:
     hooks: tuple[BaseToolHook[Deps], ...] = ()
     policy: AgentRunPolicy = AgentRunPolicy()
     observability: ObservabilityConfig = ObservabilityConfig()
+    services: AgentServices = field(default_factory=AgentServices)
 
 
 class AgentExtensionProvenance(BaseModel):
     kind: Literal['capability', 'tool', 'toolset', 'hook', 'instructions']
     id: str = Field(min_length=1)
     source: str = Field(min_length=1)
+
+
+class AgentServiceDiagnostic(BaseModel):
+    id: str = Field(min_length=1)
+    api_version: int = Field(gt=0)
+    name: str = Field(min_length=1)
+    provider: str = Field(min_length=1)
+    features: tuple[str, ...]
+    identity: str | None = None
+    consumers: tuple[str, ...]
 
 
 class AgentConstructionDiagnostics(BaseModel):
@@ -58,6 +70,7 @@ class AgentConstructionDiagnostics(BaseModel):
     policy: AgentRunPolicy
     observability: ObservabilityConfig
     extensions: tuple[AgentExtensionProvenance, ...]
+    services: tuple[AgentServiceDiagnostic, ...] = ()
 
 
 class AgentStream[Output](AsyncIterator[AgentEvent], Protocol):
@@ -228,10 +241,14 @@ class AgentFactory:
         model: AgentModelSelector | None = None,
     ) -> OvidAgent[Deps, Output]:
         configured_capabilities = await self._configured_capabilities()
-        effective_definition = replace(
+        unbound_definition = replace(
             definition,
             model=definition.model if model is None else model,
             capabilities=(*configured_capabilities, *definition.capabilities),
+        )
+        effective_definition = replace(
+            unbound_definition,
+            capabilities=_bind_capabilities(unbound_definition.capabilities, unbound_definition.services),
         )
         resolved = await self._router.resolve(effective_definition.model)
         runtime = self._compiler.compile(effective_definition, resolved)
@@ -263,6 +280,17 @@ class AgentFactory:
         return cast(tuple[BaseCapability[Deps], ...], self._mcp_capabilities)
 
 
+def _bind_capabilities[Deps](
+    capabilities: Sequence[BaseCapability[Deps]],
+    services: AgentServices,
+) -> tuple[BaseCapability[Deps], ...]:
+    for capability in capabilities:
+        for requirement in capability.requirements:
+            services.validate_requirement(requirement, consumer=capability.id)
+
+    return tuple(capability.bind(services) for capability in capabilities)
+
+
 def _diagnostics[Deps, Output](
     definition: AgentDefinition[Deps, Output],
     resolved: ResolvedModel,
@@ -292,6 +320,8 @@ def _diagnostics[Deps, Output](
         AgentExtensionProvenance(kind='hook', id=type(hook).__qualname__, source='caller') for hook in definition.hooks
     )
 
+    services = _service_diagnostics(definition)
+
     return AgentConstructionDiagnostics(
         provider=resolved.provider,
         model=resolved.model,
@@ -301,4 +331,33 @@ def _diagnostics[Deps, Output](
         policy=definition.policy,
         observability=definition.observability,
         extensions=tuple(extensions),
+        services=services,
+    )
+
+
+def _service_diagnostics[Deps, Output](
+    definition: AgentDefinition[Deps, Output],
+) -> tuple[AgentServiceDiagnostic, ...]:
+    consumers_by_service: dict[tuple[str, int, str], dict[str, None]] = {}
+    for capability in definition.capabilities:
+        for requirement in capability.requirements:
+            key = (requirement.service_id, requirement.api_version, requirement.name)
+            consumers_by_service.setdefault(key, {})[capability.id] = None
+
+    return tuple(
+        AgentServiceDiagnostic(
+            id=binding.ref.key.id,
+            api_version=binding.ref.key.api_version,
+            name=binding.ref.name,
+            provider=binding.provider,
+            features=tuple(sorted(binding.features)),
+            identity=binding.identity,
+            consumers=tuple(
+                consumers_by_service.get(
+                    (binding.ref.key.id, binding.ref.key.api_version, binding.ref.name),
+                    (),
+                )
+            ),
+        )
+        for binding in definition.services.bindings
     )

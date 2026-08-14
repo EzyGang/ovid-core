@@ -14,6 +14,29 @@
 
 `ast_edit_apply` accepts only a proposal ID. Pattern, replacement, and path selection stay fixed after preview.
 
+Bind the capability to the same named workspace service used by search and FFF:
+
+```python
+from pathlib import Path
+
+from ovid_core.agents import AgentDefinition
+from ovid_core.routing.models import ModelRef
+from ovid_core.services import AgentServices
+from ovid_native.ast import AstCapability
+from ovid_native.workspace import NativeWorkspaceSession, workspace_binding
+
+
+workspace = NativeWorkspaceSession(root=Path('/workspace/project'))
+
+definition = AgentDefinition[AppDependencies, str](
+    model=ModelRef(name='primary'),
+    deps_type=AppDependencies,
+    output_type=str,
+    services=AgentServices((workspace_binding(workspace),)),
+    capabilities=(AstCapability(),),
+)
+```
+
 ## Construct an engine
 
 ```python

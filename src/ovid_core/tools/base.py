@@ -8,7 +8,7 @@ from pydantic import JsonValue
 
 from ovid_core.models import BaseModel
 from ovid_core.runtime.context import RunContext
-from ovid_core.tools.models import ToolApproval, ToolResult
+from ovid_core.tools.models import ToolApproval, ToolPresentation, ToolResult
 
 
 @dataclass(frozen=True, slots=True)
@@ -25,6 +25,7 @@ class BaseTool[Deps, Args: BaseModel, Result: ToolResult](ABC):
     args_type: type[Args]
     result_type: type[Result]
     approval: ToolApproval = ToolApproval()
+    presentation: ToolPresentation = ToolPresentation()
     timeout_seconds: float | None = None
     defer_loading: bool = False
 

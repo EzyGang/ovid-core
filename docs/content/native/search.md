@@ -13,23 +13,27 @@ dependencies = [
 ]
 ```
 
-Installation exposes the module. It does not add tools to an agent. Construct one engine for the workspace and explicitly add its capability:
+Installation exposes the module. It does not add tools to an agent. Bind one workspace session and select the
+capability explicitly:
 
 ```python
 from pathlib import Path
 
 from ovid_core.agents import AgentDefinition
 from ovid_core.routing.models import ModelRef
-from ovid_native.search import SearchCapability, SearchEngine
+from ovid_core.services import AgentServices
+from ovid_native.search import SearchCapability
+from ovid_native.workspace import NativeWorkspaceSession, workspace_binding
 
 
-search = SearchEngine(root=Path('/workspace/project'))
+workspace = NativeWorkspaceSession(root=Path('/workspace/project'))
 
 definition = AgentDefinition[AppDependencies, str](
     model=ModelRef(name='primary'),
     deps_type=AppDependencies,
     output_type=str,
-    capabilities=(SearchCapability(engine=search),),
+    services=AgentServices((workspace_binding(workspace),)),
+    capabilities=(SearchCapability(),),
 )
 ```
 
@@ -41,6 +45,15 @@ definition = AgentDefinition[AppDependencies, str](
 | `grep` | 30 seconds | Search UTF-8 file content with literal, Rust regex, or PCRE2 matching |
 
 Both tools use normal read approval metadata. Omitting `SearchCapability` contributes neither tool.
+
+Direct application calls can use an independently owned engine:
+
+```python
+from ovid_native.search import SearchEngine
+
+
+search = SearchEngine(root=Path('/workspace/project'))
+```
 
 ## Discover paths
 

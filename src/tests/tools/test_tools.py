@@ -9,12 +9,20 @@ from pydantic_ai.models.test import TestModel
 from pydantic_ai.usage import RunUsage
 
 import tests.tools.tool_consumer as consumer_module
-from ovid_core import ExtensionCollisionError, ToolExecutionError, ToolTimeoutError, ToolValidationError
+from ovid_core import BaseRootModel, ExtensionCollisionError, ToolExecutionError, ToolTimeoutError, ToolValidationError
 from ovid_core.adapters.pydantic_ai import PydanticAIToolsetAdapter, adapt_capabilities, result_from_pydantic
 from ovid_core.capabilities import BaseCapability, CapabilityContributions
 from ovid_core.hooks import BaseToolHook
-from ovid_core.runtime import tool_events_from_messages
-from ovid_core.tools import ToolApproval, ToolResult
+from ovid_core.runtime import RunContext, tool_events_from_messages
+from ovid_core.tools import (
+    BaseTool,
+    BaseToolset,
+    ToolApproval,
+    ToolExecutionContext,
+    ToolGrammar,
+    ToolPresentation,
+    ToolResult,
+)
 from tests.tools.tool_consumer import (
     AddTool,
     ControlledTool,
@@ -43,6 +51,45 @@ def upstream_context(
         run_id=str(uuid4()),
         conversation_id=str(uuid4()),
     )
+
+
+class TextArguments(BaseRootModel[str]):
+    pass
+
+
+class TextTool(BaseTool[Dependencies, TextArguments, ToolResult]):
+    id = 'text'
+    description = 'Accept text'
+    args_type = TextArguments
+    result_type = ToolResult
+    presentation = ToolPresentation(
+        wire_name='dynamic',
+        input_format='text',
+        grammar=ToolGrammar(syntax='lark', definition='start: /.+/'),
+    )
+
+    async def execute(
+        self,
+        context: ToolExecutionContext[Dependencies],
+        arguments: TextArguments,
+    ) -> ToolResult:
+        del context
+        return ToolResult(content=f'text:{arguments.root}')
+
+
+class DynamicToolset(BaseToolset[Dependencies]):
+    id = 'dynamic'
+
+    def __init__(self) -> None:
+        self.calls = 0
+        self.add = AddTool()
+        self.add.presentation = ToolPresentation(wire_name='dynamic')
+        self.text = TextTool()
+
+    async def get_tools(self, context: RunContext[Dependencies]) -> tuple[AddTool | TextTool, ...]:
+        del context
+        self.calls += 1
+        return (self.add,) if self.calls == 1 else (self.text,)
 
 
 async def test_toolset_adapter_propagates_identity_usage_approval_hooks_and_lifecycle() -> None:
@@ -183,6 +230,36 @@ async def test_capabilities_compile_contributions_and_execute_through_real_agent
     assert hook.events == ['before:fast_add', 'after:fast_add']
 
 
+async def test_dynamic_schemas_and_dispatch_are_bound_to_the_advertising_step() -> None:
+    context = upstream_context()
+    adapter = PydanticAIToolsetAdapter(source=DynamicToolset())
+
+    first = await adapter.get_tools(context)
+    second = await adapter.get_tools(context)
+
+    assert first['dynamic'].tool_def.parameters_json_schema['properties'] == {
+        'left': {'title': 'Left', 'type': 'integer'},
+        'right': {'title': 'Right', 'type': 'integer'},
+    }
+    assert second['dynamic'].tool_def.parameters_json_schema == {
+        'type': 'object',
+        'properties': {'input': {'type': 'string'}},
+        'required': ['input'],
+        'additionalProperties': False,
+    }
+    assert await adapter.call_tool('dynamic', {'left': 2, 'right': 3}, context, first['dynamic']) == {
+        'content': 5,
+        'metadata': {'prefix': 'sum'},
+    }
+    assert await adapter.call_tool('dynamic', {'input': 'source text'}, context, second['dynamic']) == {
+        'content': 'text:source text',
+        'metadata': {},
+    }
+
+    with pytest.raises(ToolValidationError, match="Invalid arguments for tool 'text'"):
+        await adapter.call_tool('dynamic', {'wrong': 'source text'}, context, second['dynamic'])
+
+
 def test_extension_ids_collide_deterministically() -> None:
     tool = FastAddTool()
     duplicate_tools = BaseCapability(
@@ -203,11 +280,21 @@ def test_extension_ids_collide_deterministically() -> None:
         with pytest.raises(ExtensionCollisionError, match=message):
             adapt_capabilities(capabilities)
 
+    conflicting_wire_names = BaseCapability(
+        id='wire-names',
+        contributions=CapabilityContributions(
+            tools=(AddTool(), TextTool()),
+        ),
+    )
+    conflicting_wire_names.contributions.tools[0].presentation = ToolPresentation(wire_name='dynamic')
+    with pytest.raises(ExtensionCollisionError, match="Duplicate tool wire name ID: 'dynamic'"):
+        adapt_capabilities((conflicting_wire_names,))
+
 
 async def test_dynamic_tool_collisions_and_empty_capabilities_are_stable() -> None:
     context = upstream_context()
     duplicate_adapter = PydanticAIToolsetAdapter(source=TrackingToolset((AddTool(), AddTool())))
-    with pytest.raises(ExtensionCollisionError, match="Duplicate or empty tool ID: 'add'"):
+    with pytest.raises(ExtensionCollisionError, match="Duplicate or empty effective tool name: 'add'"):
         await duplicate_adapter.get_tools(context)
 
     replacement = PydanticAIToolsetAdapter(source=TrackingToolset((AddTool(),), replace_on_step=True))
@@ -230,7 +317,7 @@ async def test_dynamic_tool_collisions_and_empty_capabilities_are_stable() -> No
         )
     )[0].get_toolset()
     assert conflicting is not None
-    with pytest.raises(ExtensionCollisionError, match='conflicting tool IDs'):
+    with pytest.raises(ExtensionCollisionError, match='conflicting effective tool names'):
         await conflicting.get_tools(context)
 
     empty = adapt_capabilities((BaseCapability(id='empty'),))[0]

@@ -99,11 +99,27 @@ class AgentDefinition[Deps, Output]:
     hooks: tuple[BaseToolHook[Deps], ...] = ()
     policy: AgentRunPolicy = AgentRunPolicy()
     observability: ObservabilityConfig = ObservabilityConfig()
+    services: AgentServices = AgentServices()
 ```
 
-The definition contains all immutable construction input.
-
+The definition contains immutable construction input. `services` retains named stateful values by reference in an immutable registry.
 Capabilities can add instructions, tools, toolsets, hooks, and model settings. The compiler also adds direct toolsets and hooks.
+
+## Agent services
+
+Import service contracts from `ovid_core.services`.
+
+`AgentServiceKey(id, api_version, value_type=None)` identifies a versioned, globally namespaced contract. Key equality uses only
+`id` and `api_version`. `AgentServiceRef(key, name='default')` selects one named instance. An `AgentServiceBinding` stores the
+reference, value, provider ID, advertised features, and optional safe identity.
+
+Construct `AgentServices` from a sequence of bindings. Duplicate references and incompatible runtime values fail immediately.
+`resolve(ref)` returns the retained value. `binding(ref)` returns its metadata. Missing services raise
+`AgentServiceMissingError`.
+
+Capabilities expose `requirements: tuple[AgentServiceRequirement, ...]` before construction. `AgentFactory.build` validates
+requirements, calls each capability's `bind(services)` once, and compiles the returned contributions. Run-level model selection
+and fallback reuse that bound definition.
 
 ## Compiler and runtime protocols
 
@@ -158,6 +174,7 @@ agent = await factory.build(definition, model=None)
 The factory creates `DefaultModelFactory`, `ModelRouter`, and `DefaultAgentCompiler` when their arguments are absent.
 
 It also converts `config.mcp_servers` to capabilities. `credential_resolver` resolves credential references inside MCP environment variables and headers.
+Service validation and capability binding complete before model resolution and compilation.
 
 The optional `model` argument overrides the definition model for the constructed agent.
 
@@ -185,5 +202,8 @@ The public `diagnostics` value describes the model selected when the factory bui
 - `fallback_order`: canonical attempt order.
 - `policy`, `observability`: effective definition values.
 - `extensions`: ordered `AgentExtensionProvenance` entries.
+- `services`: ordered `AgentServiceDiagnostic` entries with the service key, name, provider, sorted features, safe identity, and consuming capability IDs.
 
-Each provenance entry has `kind` (`capability`, `tool`, `toolset`, `hook`, or `instructions`), a non-empty `id`, and a non-empty `source`. Diagnostics contain configuration and source names, not credentials or upstream runtime objects.
+Each extension entry has `kind` (`capability`, `tool`, `toolset`, `hook`, or `instructions`), a non-empty `id`, and a non-empty
+`source`. Service diagnostics may contain opaque session identities. They must not contain credentials, absolute workspace roots,
+or provider runtime objects.

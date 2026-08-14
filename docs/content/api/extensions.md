@@ -15,6 +15,16 @@ Import from `ovid_core.tools.models`.
 - `content: JsonValue` contains the required result content.
 - `metadata: dict[str, JsonValue] = {}` contains non-secret result metadata.
 
+### Tool presentation
+
+`ToolPresentation` separates stable Ovid identity from model-visible syntax:
+
+- `wire_name: str | None = None` overrides the name advertised to the model.
+- `input_format: Literal['json', 'text'] = 'json'` selects structured input or one complete string.
+- `grammar: ToolGrammar | None = None` carries a Lark grammar for adapters that support constrained text tools.
+
+`ToolGrammar` has `syntax='lark'` and a non-empty `definition`.
+
 ## Tool contracts
 
 Import from `ovid_core.tools.base`.
@@ -39,6 +49,7 @@ class MyTool(BaseTool[Deps, ArgsModel, ResultModel]):
     args_type: type[ArgsModel]
     result_type: type[ResultModel]
     approval: ToolApproval = ToolApproval()
+    presentation: ToolPresentation = ToolPresentation()
     timeout_seconds: float | None = None
     defer_loading: bool = False
 
@@ -49,9 +60,12 @@ class MyTool(BaseTool[Deps, ArgsModel, ResultModel]):
     ) -> ResultModel: ...
 ```
 
-`Args` must inherit Ovid `BaseModel`. `Result` must inherit `ToolResult`.
+`Args` must inherit Ovid `BaseModel`. `Result` must inherit `ToolResult`. Text-input tools use a root model that validates one
+complete string. The Pydantic AI adapter exposes those tools as `{"input": "..."}` JSON when the provider API has no public
+grammar-constrained custom-tool contract.
 
-The adapter validates tool input and output. It also applies approval policy, timeouts, hooks, and typed tool errors.
+The adapter validates tool input and output. It also applies approval policy, timeouts, hooks, and typed tool errors. Dispatch is
+pinned to the `ToolsetTool` definition from the advertising model step, so a later dynamic schema cannot redirect an earlier call.
 
 ### `BaseToolset[Deps]`
 
@@ -61,6 +75,8 @@ Define `id` and implement `async get_tools(context) -> Sequence[BaseTool[Deps, A
 - `for_step(context) -> Self`
 - `__aenter__() -> Self`
 - `__aexit__(exception_type, exception, traceback) -> bool | None`
+
+`for_step` may return another toolset with different definitions. Effective wire-name collisions fail during each discovery step.
 
 ## Tool hooks
 
@@ -88,9 +104,22 @@ Import from `ovid_core.capabilities.base`.
 - `hooks: tuple[BaseToolHook[Deps], ...] = ()`
 - `model_settings: CapabilityModelSettings = CapabilityModelSettings()`
 
-`BaseCapability[Deps]` is an immutable, keyword-only dataclass. It contains `id`, optional `description`, `defer_loading`, and `contributions`.
+`BaseCapability[Deps]` is an immutable, keyword-only dataclass. It contains `id`, optional `description`, inspectable service
+`requirements`, `defer_loading`, and `contributions`. Its default `bind(services)` validates every requirement and returns the
+same capability. Stateful capabilities return a frozen bound capability with provider-backed contributions.
 
-All capability and toolset IDs must be unique. ID collisions raise `ExtensionCollisionError`.
+Capability IDs, tool IDs, effective tool wire names, and toolset IDs must be unique in their namespaces. Collisions raise
+`ExtensionCollisionError`.
+
+## Plugin factory contracts
+
+Import generic plugin contracts from `ovid_core.plugins`. `PluginActivationContext.services` exposes the explicitly constructed
+service registry. `AgentServiceProviderFactory`, `AgentServiceConfiguratorFactory`, and `CapabilityFactory` register factories,
+never process-global service instances.
+
+`PluginFactories` rejects empty or duplicate contribution IDs. Applications select provider, configurator, and capability IDs
+explicitly. `binding(...)` applies selected configurators in order and rejects a configurator that targets or replaces another
+provider. Discovery and installation do not call factories or alter an agent definition.
 
 ## Relay
 
