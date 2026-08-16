@@ -108,3 +108,12 @@ RelayConnection.set_delivery_handler
 InMemoryRelayConnection.set_delivery_handler
 RelayMessage.sent_at
 RelayReceipt.accepted_at
+syntax
+input_format
+grammar
+_.contains
+_.validate_service_id
+_.validate_name
+_.validate_features
+_.create
+_.configure

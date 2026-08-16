@@ -14,8 +14,9 @@ from ovid_core.adapters.pydantic_ai import PydanticAIToolsetAdapter, adapt_capab
 from ovid_core.capabilities import BaseCapability, CapabilityContributions
 from ovid_core.hooks import BaseToolHook
 from ovid_core.runtime import tool_events_from_messages
-from ovid_core.tools import ToolApproval, ToolResult
+from ovid_core.tools import ToolApproval, ToolExecutionContext, ToolGrammar, ToolPresentation, ToolResult
 from tests.tools.tool_consumer import (
+    AddArguments,
     AddTool,
     ControlledTool,
     Dependencies,
@@ -24,6 +25,30 @@ from tests.tools.tool_consumer import (
     TrackingToolset,
     arithmetic_capability,
 )
+
+
+class PinnedAddTool(AddTool):
+    id = 'pinned_add'
+    presentation = ToolPresentation(wire_name='calculate')
+
+    def __init__(self, value: str) -> None:
+        super().__init__()
+        self.value = value
+
+    async def execute(
+        self,
+        context: ToolExecutionContext[Dependencies],
+        arguments: AddArguments,
+    ) -> ToolResult:
+        del context, arguments
+        return ToolResult(content=self.value)
+
+
+class TextAddTool(AddTool):
+    presentation = ToolPresentation(
+        input_format='text',
+        grammar=ToolGrammar(syntax='lark', definition='start: INT "+" INT'),
+    )
 
 
 def upstream_context(
@@ -207,12 +232,25 @@ def test_extension_ids_collide_deterministically() -> None:
 async def test_dynamic_tool_collisions_and_empty_capabilities_are_stable() -> None:
     context = upstream_context()
     duplicate_adapter = PydanticAIToolsetAdapter(source=TrackingToolset((AddTool(), AddTool())))
-    with pytest.raises(ExtensionCollisionError, match="Duplicate or empty tool ID: 'add'"):
+    with pytest.raises(ExtensionCollisionError, match="Duplicate or empty effective tool name: 'add'"):
         await duplicate_adapter.get_tools(context)
 
     replacement = PydanticAIToolsetAdapter(source=TrackingToolset((AddTool(),), replace_on_step=True))
     assert await replacement.for_run_step(context) is not replacement
 
+    source = TrackingToolset((PinnedAddTool('old'),))
+    pinned = PydanticAIToolsetAdapter(source=source)
+    old_definitions = await pinned.get_tools(context)
+    source.tools = (PinnedAddTool('new'),)
+    new_definitions = await pinned.get_tools(context)
+    old_result = await pinned.call_tool('calculate', {'left': 1, 'right': 2}, context, old_definitions['calculate'])
+    new_result = await pinned.call_tool('calculate', {'left': 1, 'right': 2}, context, new_definitions['calculate'])
+    assert old_result['content'] == 'old'
+    assert new_result['content'] == 'new'
+
+    text_adapter = PydanticAIToolsetAdapter(source=TrackingToolset((TextAddTool(),)))
+    text_definitions = await text_adapter.get_tools(context)
+    assert text_definitions['add'].tool_def.parameters_json_schema['properties'].keys() == {'left', 'right'}
     one_toolset = adapt_capabilities(
         (BaseCapability(id='one', contributions=CapabilityContributions(toolsets=(TrackingToolset(()),))),)
     )[0].get_toolset()

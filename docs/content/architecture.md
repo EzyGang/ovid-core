@@ -43,29 +43,43 @@ This separation makes provider setup, model selection, and extension setup expli
 graph LR
     C[Final OvidConfig] --> A[AgentFactory]
     D[AgentDefinition] --> A
+    S[AgentServices] --> D
     A --> M[Configured MCP capabilities]
-    A --> R[ModelRouter.resolve]
+    A --> B[Requirement validation and capability binding]
+    B --> R[ModelRouter.resolve]
     R --> H[ResolvedModel and ModelHandle]
     H --> F[AgentCompiler.compile]
-    D --> F
-    M --> F
+    B --> F
     F --> O[OvidAgent]
 ```
 
 The construction phase has these steps:
 
 1. The application makes one final `OvidConfig`.
-2. The application makes one typed `AgentDefinition`.
+2. The application makes one typed `AgentDefinition` with an immutable named service registry.
 3. `AgentFactory` constructs configured MCP capabilities.
-4. The router resolves the selected model, alias, or route.
-5. The model factory constructs and caches each model handle.
-6. The routing adapter combines fallback candidates.
-7. The compiler adapts extensions and constructs the agent runtime.
+4. The factory validates every capability service requirement and binds each capability exactly once.
+5. The router resolves the selected model, alias, or route.
+6. The model factory constructs and caches each model handle.
+7. The compiler adapts the bound extensions and constructs the agent runtime.
 8. The factory returns an `OvidAgent`.
 
 `AgentFactory(config=config)` supplies the default model factory, router, and compiler.
 
 The router caches model handles. Run and stream calls can select another configured model without changing the definition.
+
+## Named agent services
+
+`AgentServices` contains immutable `(service key, API version, name)` bindings. A capability publishes inspectable
+`AgentServiceRequirement` values and resolves its provider during construction. Missing services, incompatible value
+types, missing features, duplicate bindings, and effective tool-name collisions fail before a model call.
+
+Service values remain stateful application-owned objects retained by reference. The registry does not start or stop
+them. `AgentConstructionDiagnostics.services` reports safe provider, feature, consumer, and opaque identity metadata;
+it does not serialize provider state or workspace roots.
+
+Capabilities advertise bound contributions only after requirement validation. Model fallback and per-run model
+selection compile from the same bound definition and never recreate services or bind capabilities again.
 
 Construction errors occur before a run. Ovid Core converts these errors to configuration or construction errors.
 
@@ -135,7 +149,8 @@ Application code uses Ovid domain values. It does not require upstream runtime o
 | `agents` | Agent definitions, runtime interfaces, and diagnostics |
 | `messages`, `runtime` | Messages, events, identities, contexts, and results |
 | `usage`, `policy` | Usage data and execution policy |
-| `tools`, `hooks`, `capabilities` | Application extension interfaces |
+| `tools`, `hooks`, `capabilities` | Application extension interfaces and dynamic tool presentation |
+| `services`, `plugins` | Named service bindings, capability requirements, and explicit plugin service factories |
 | `mcp`, `skills` | MCP and Agent Skills capability configuration |
 | `relay` | Explicit agent-to-agent messaging contracts and the process-local in-memory implementation |
 | `codex` | ChatGPT Codex subscription authentication |

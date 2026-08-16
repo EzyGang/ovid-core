@@ -14,6 +14,9 @@
 
 `ast_edit_apply` accepts only a proposal ID. Pattern, replacement, and path selection stay fixed after preview.
 
+`AstCapability(workspace='default')` resolves the AST provider from that named `NativeWorkspaceSession` during agent
+construction. It does not accept an independently rooted engine.
+
 ## Construct an engine
 
 ```python

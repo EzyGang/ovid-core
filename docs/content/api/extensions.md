@@ -41,6 +41,7 @@ class MyTool(BaseTool[Deps, ArgsModel, ResultModel]):
     approval: ToolApproval = ToolApproval()
     timeout_seconds: float | None = None
     defer_loading: bool = False
+    presentation: ToolPresentation = ToolPresentation()
 
     async def execute(
         self,
@@ -50,6 +51,11 @@ class MyTool(BaseTool[Deps, ArgsModel, ResultModel]):
 ```
 
 `Args` must inherit Ovid `BaseModel`. `Result` must inherit `ToolResult`.
+
+`ToolPresentation` optionally supplies an effective `wire_name`, `input_format`, and Lark `ToolGrammar`. `id` remains
+the stable Ovid identity. Effective wire-name collisions fail deterministically. Each advertised `ToolsetTool` retains
+the exact bound Ovid tool instance, so a call from an earlier model step cannot dispatch to a later dynamic definition.
+JSON schema input remains the fallback when the provider or supported Pydantic AI API cannot advertise text grammar.
 
 The adapter validates tool input and output. It also applies approval policy, timeouts, hooks, and typed tool errors.
 
@@ -88,9 +94,23 @@ Import from `ovid_core.capabilities.base`.
 - `hooks: tuple[BaseToolHook[Deps], ...] = ()`
 - `model_settings: CapabilityModelSettings = CapabilityModelSettings()`
 
-`BaseCapability[Deps]` is an immutable, keyword-only dataclass. It contains `id`, optional `description`, `defer_loading`, and `contributions`.
+`BaseCapability[Deps]` is an immutable, keyword-only dataclass. It contains `id`, optional `description`,
+`defer_loading`, `contributions`, and inspectable `AgentServiceRequirement` values. Its default `bind(services)`
+validates requirements and returns itself. Stateful capabilities return a frozen bound value whose contributions use
+the resolved service providers.
 
-All capability and toolset IDs must be unique. ID collisions raise `ExtensionCollisionError`.
+All capability IDs, toolset IDs, and effective tool wire names must be unique. Collisions raise
+`ExtensionCollisionError`.
+
+## Agent service contracts
+
+Import `AgentServiceKey`, `AgentServiceRef`, `AgentServiceBinding`, `AgentServiceRequirement`, and `AgentServices` from
+`ovid_core.services`. Keys are identified by namespaced ID and positive API version; references add an identifier name.
+The immutable registry rejects duplicate bindings and validates declared runtime value types. Requirements can also
+name mandatory provider features.
+
+`AgentDefinition.services` defaults to an empty registry. `AgentFactory` validates and binds capabilities once before
+compilation. Missing or incompatible services raise narrow `AgentServiceError` subclasses during construction.
 
 ## Relay
 
