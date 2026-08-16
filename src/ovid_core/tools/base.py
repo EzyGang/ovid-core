@@ -2,13 +2,24 @@ from abc import ABC, abstractmethod
 from collections.abc import Sequence
 from dataclasses import dataclass
 from types import TracebackType
-from typing import Any, Self
+from typing import Any, Literal, Self
 
 from pydantic import JsonValue
 
 from ovid_core.models import BaseModel
 from ovid_core.runtime.context import RunContext
 from ovid_core.tools.models import ToolApproval, ToolResult
+
+
+class ToolGrammar(BaseModel):
+    syntax: Literal['lark']
+    definition: str
+
+
+class ToolPresentation(BaseModel):
+    wire_name: str | None = None
+    input_format: Literal['json', 'text'] = 'json'
+    grammar: ToolGrammar | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -27,6 +38,7 @@ class BaseTool[Deps, Args: BaseModel, Result: ToolResult](ABC):
     approval: ToolApproval = ToolApproval()
     timeout_seconds: float | None = None
     defer_loading: bool = False
+    presentation: ToolPresentation = ToolPresentation()
 
     @abstractmethod
     async def execute(self, context: ToolExecutionContext[Deps], arguments: Args) -> Result: ...

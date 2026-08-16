@@ -13,23 +13,27 @@ dependencies = [
 ]
 ```
 
-Installation exposes the module. It does not add tools to an agent. Construct one engine for the workspace and explicitly add its capability:
+Installation exposes the module. It does not add tools to an agent. Bind the search capability to an explicitly named
+workspace service:
 
 ```python
 from pathlib import Path
 
 from ovid_core.agents import AgentDefinition
 from ovid_core.routing.models import ModelRef
-from ovid_native.search import SearchCapability, SearchEngine
+from ovid_core.services import AgentServices
+from ovid_native.search import SearchCapability
+from ovid_native.workspace.service import NativeWorkspaceSession, workspace_binding
 
 
-search = SearchEngine(root=Path('/workspace/project'))
+workspace = NativeWorkspaceSession(root=Path('/workspace/project'))
 
 definition = AgentDefinition[AppDependencies, str](
     model=ModelRef(name='primary'),
     deps_type=AppDependencies,
     output_type=str,
-    capabilities=(SearchCapability(engine=search),),
+    services=AgentServices((workspace_binding(workspace),)),
+    capabilities=(SearchCapability(),),
 )
 ```
 
@@ -40,12 +44,19 @@ definition = AgentDefinition[AppDependencies, str](
 | `glob` | 5 seconds | Find files and directories through exact paths, directories, or glob patterns |
 | `grep` | 30 seconds | Search UTF-8 file content with literal, Rust regex, or PCRE2 matching |
 
+`SearchCapability(workspace='default')` selects the named binding. Its constructor does not accept a root or provider.
+
 Both tools use normal read approval metadata. Omitting `SearchCapability` contributes neither tool.
 
 ## Discover paths
 
 ```python
-from ovid_native.search import GlobRequest
+from pathlib import Path
+
+from ovid_native.search import GlobRequest, SearchEngine
+
+
+search = SearchEngine(root=Path('/workspace/project'))
 
 
 result = await search.glob(

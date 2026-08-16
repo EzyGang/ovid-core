@@ -31,7 +31,7 @@ _ANY_VALIDATOR = SchemaValidator(core_schema.any_schema())
 class PydanticAIToolsetAdapter[Deps](AbstractToolset[Deps]):
     source: BaseToolset[Deps]
     hooks: tuple[BaseToolHook[Deps], ...] = ()
-    _tools: dict[str, BaseTool[Deps, Any, Any]] | None = None
+    _bound_tools: dict[int, BaseTool[Deps, Any, Any]] | None = None
 
     @property
     def id(self) -> str:
@@ -63,17 +63,23 @@ class PydanticAIToolsetAdapter[Deps](AbstractToolset[Deps]):
     async def get_tools(self, ctx: PydanticRunContext[Deps]) -> dict[str, ToolsetTool[Deps]]:
         discovered = await self.source.get_tools(run_context_from_pydantic(ctx))
         tools = _unique_tools(discovered)
-        self._tools = tools
+        advertised: dict[str, ToolsetTool[Deps]] = {}
+        bound_tools: dict[int, BaseTool[Deps, Any, Any]] = {}
 
-        return {
-            name: ToolsetTool(
+        for name, source_tool in tools.items():
+            advertised_tool = ToolsetTool[Deps](
                 toolset=self,
-                tool_def=_tool_definition(tool),
+                tool_def=_tool_definition(source_tool),
                 max_retries=0,
                 args_validator=_ANY_VALIDATOR,
             )
-            for name, tool in tools.items()
-        }
+            advertised[name] = advertised_tool
+            bound_tools[id(advertised_tool)] = source_tool
+
+        if self._bound_tools is None:
+            self._bound_tools = {}
+        self._bound_tools.update(bound_tools)
+        return advertised
 
     async def call_tool(
         self,
@@ -82,10 +88,9 @@ class PydanticAIToolsetAdapter[Deps](AbstractToolset[Deps]):
         ctx: PydanticRunContext[Deps],
         tool: ToolsetTool[Deps],
     ) -> JsonValue:
-        del tool
-        source_tool = self._tools[name] if self._tools is not None else None
+        source_tool = self._bound_tools.get(id(tool)) if self._bound_tools is not None else None
         if source_tool is None:
-            raise ToolExecutionError(f'Tool {name!r} is not available')
+            raise ToolExecutionError(f'Tool {name!r} is not available for this model step')
 
         return await _execute_tool(source_tool, tool_args, ctx, self.hooks)
 
@@ -156,9 +161,10 @@ def adapt_capabilities[Deps](capabilities: Sequence[BaseCapability[Deps]]) -> tu
 def _unique_tools[Deps](tools: Sequence[BaseTool[Deps, Any, Any]]) -> dict[str, BaseTool[Deps, Any, Any]]:
     result: dict[str, BaseTool[Deps, Any, Any]] = {}
     for tool in tools:
-        if not tool.id or tool.id in result:
-            raise ExtensionCollisionError(f'Duplicate or empty tool ID: {tool.id!r}')
-        result[tool.id] = tool
+        name = _wire_name(tool)
+        if not name or name in result:
+            raise ExtensionCollisionError(f'Duplicate or empty effective tool name: {name!r}')
+        result[name] = tool
 
     return result
 
@@ -177,7 +183,7 @@ def _combine_toolsets[Deps](
 def _tool_definition(tool: BaseTool[Any, Any, Any]) -> ToolDefinition:
     metadata = {'ovid_approval': tool.approval.model_dump(mode='json')}
     return ToolDefinition(
-        name=tool.id,
+        name=_wire_name(tool),
         description=tool.description,
         parameters_json_schema=tool.args_type.model_json_schema(),
         kind='unapproved' if tool.approval.required else 'function',
@@ -185,6 +191,10 @@ def _tool_definition(tool: BaseTool[Any, Any, Any]) -> ToolDefinition:
         timeout=tool.timeout_seconds,
         defer_loading=tool.defer_loading,
     )
+
+
+def _wire_name(tool: BaseTool[Any, Any, Any]) -> str:
+    return tool.presentation.wire_name or tool.id
 
 
 async def _execute_tool[Deps](
