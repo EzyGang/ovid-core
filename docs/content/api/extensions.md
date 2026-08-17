@@ -196,6 +196,14 @@ These values change only the tool definitions presented to the model. Put broade
 `AgentDefinition.instructions`.
 
 
+## Todo
+
+`TodoCapability[Deps](service=service)` has the fixed capability ID `todo` and contributes one instruction and one `todo` tool.
+The application injects a `TodoService`; capability construction does not create storage or acquire resources. Results contain the
+complete committed state, counts, and active task. See [Todo state and capability](todo.md) for the operation, service, and store
+contracts, or [Track phased work with Todo](../guides/use-todos.md) for setup.
+
+
 ## Provider capabilities
 
 Import from `ovid_core.capabilities.integrations`.

@@ -37,6 +37,7 @@ The factory supplies `DefaultModelFactory`, `ModelRouter`, and `DefaultAgentComp
 | Agent Skills | Instructions and tools from skill directories | Instructions stay in code |
 | MCP | Tools or instructions from an MCP server | All extensions are local |
 | [Relay](guides/use-relay.md) | Direct asynchronous messaging between application-owned agent connections | Agents never communicate directly |
+| [Todo](guides/use-todos.md) | Persisted phased work shared by agents and applications | Work never needs structured progress state |
 | Credential references | MCP environment variables and headers | No configured extension needs a referenced secret |
 | `UsageTracker` | One budget for multiple related runs | Each result needs only local usage |
 | Conversation storage | History after a request or process ends | The caller keeps history in memory |
@@ -61,6 +62,7 @@ The base package includes these functions:
 - Tools and capabilities.
 - Agent Skills and MCP.
 - Opt-in Relay messaging contracts, tools, and an in-memory implementation.
+- Opt-in Todo state, capability, and process-local store.
 - Storage interfaces.
 - Codex authentication.
 - Pydantic AI adapters.

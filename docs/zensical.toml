@@ -16,6 +16,7 @@ nav = [
     { "Build an agent" = "guides/build-an-agent.md" },
     { "Extend an agent" = "guides/extend-an-agent.md" },
     { "Use Relay between agents" = "guides/use-relay.md" },
+    { "Track phased work with Todo" = "guides/use-todos.md" },
     { "Embed and expose agents" = "guides/embed-agents.md" },
   ] },
   { "Ovid Native" = [
@@ -33,6 +34,7 @@ nav = [
     { "Messages and runtime" = "api/runtime.md" },
     { "Usage, policy, and observability" = "api/usage-policy.md" },
     { "Tools and capabilities" = "api/extensions.md" },
+    { "Todo state and capability" = "api/todo.md" },
     { "Persistence" = "api/persistence.md" },
     { "Codex subscription" = "api/codex.md" },
     { "Servers and transports" = "api/server.md" },

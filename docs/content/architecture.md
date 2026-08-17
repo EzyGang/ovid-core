@@ -158,6 +158,7 @@ Application code uses Ovid domain values. It does not require upstream runtime o
 | `services`, `plugins` | Named service bindings, capability requirements, and explicit plugin service factories |
 | `mcp`, `skills` | MCP and Agent Skills capability configuration |
 | `relay` | Explicit agent-to-agent messaging contracts and the process-local in-memory implementation |
+| `todo` | Phased todo state, pure reduction, replaceable persistence, and the opt-in capability |
 | `codex` | ChatGPT Codex subscription authentication |
 | `persistence` | Message codec and conversation store interface |
 | `server` | Registration, authorization, dependency, and transport data |
@@ -170,6 +171,10 @@ Constructors, factories, run arguments, and server callbacks receive all depende
 Relay is also application-owned state. Ovid Core defines the connection seam and an explicit in-memory network, but the application
 creates agent-bound connections, installs delivery handlers, and manages their lifecycle. `AgentFactory` does not create Relay
 connections or enable Relay tools.
+
+Todo storage is application-owned state keyed by `ConversationId`. Ovid Core supplies a compare-and-set store protocol and an
+in-memory implementation, while applications own durable backend lifecycle, branch identity, rendering, reminders, and continuation
+policy. `AgentFactory` does not create todo storage or enable the capability.
 
 ## Model routing
 
