@@ -28,16 +28,20 @@ Python installers do not retain the requested extra as runtime state. Code canno
 
 ## Import from the owning module
 
-`ovid_native.__init__` stays empty. Import public values from the domain that owns them:
+`ovid_native.__init__` and `ovid_native.workspace.__init__` stay empty. Import public values from the module that owns
+them:
 
 ```python
 from ovid_native.ast import AstCapability, AstEngine
 from ovid_native.fff import FffCapability, FffEngine
 from ovid_native.files import WorkspaceFilesCapability
 from ovid_native.search import SearchCapability, SearchEngine, SearchLimits
+from ovid_native.workspace.builder import WorkspaceSessionBuilder
+from ovid_native.workspace.service import NativeWorkspaceSession, workspace_binding
 ```
 
-Each domain module exports its requests, results, exceptions, tool classes, capability, engine, and public metadata types.
+The direct engine classes remain available for application calls. Agent capabilities resolve providers from one named
+workspace service instead of accepting independently rooted engines.
 
 ## Add native tools to an agent
 
@@ -46,20 +50,39 @@ from pathlib import Path
 
 from ovid_core.agents import AgentDefinition
 from ovid_core.routing.models import ModelRef
-from ovid_native.search import SearchCapability, SearchEngine
+from ovid_core.services import AgentServices
+from ovid_native.ast import AstCapability
+from ovid_native.fff import FffCapability
+from ovid_native.search import SearchCapability
+from ovid_native.workspace.service import NativeWorkspaceSession, workspace_binding
 
 
-engine = SearchEngine(root=Path('/workspace/project'))
+workspace = NativeWorkspaceSession(root=Path('/workspace/project'))
 
 definition = AgentDefinition[AppDependencies, str](
     model=ModelRef(name='primary'),
     deps_type=AppDependencies,
     output_type=str,
-    capabilities=(SearchCapability(engine=engine),),
+    services=AgentServices((workspace_binding(workspace),)),
+    capabilities=(
+        SearchCapability(),
+        AstCapability(),
+        FffCapability(include_grep=False),
+    ),
 )
 ```
 
 The application owns the workspace root and engine lifetime. `WorkspaceFilesCapability` contributes bounded `read` and guarded `write` tools plus one dynamically selected edit tool; `SearchCapability` contributes `glob` and `grep`; `FffCapability` contributes `find_files`, indexed `grep`, and `multi_grep`, with optional native `glob`; `AstCapability` contributes `ast_grep`, `ast_edit_preview`, and `ast_edit_apply`. `AgentFactory` uses the existing capability adapter and needs no native-specific configuration.
+
+The capabilities resolve the same canonical root, native handle, session identity, revision domain, and lifecycle. FFF disables its `grep` tool here because search already owns that wire name; `find_files` and `multi_grep` remain available. Use distinct binding names only for deliberate multi-workspace agents. Missing services or operations fail during agent construction. Call `await workspace.close()` when the agent lifetime ends; close is idempotent and stops the lazily started FFF provider before closing the shared native handle.
+
+## Build and override a workspace
+
+`WorkspaceSessionBuilder.native(root=...)` creates native defaults. `with_search_provider`, `with_ast_provider`, and `with_fff_provider` replace one provider before `build()`. Each slot can be selected once, required methods are validated immediately, and one builder creates one session.
+
+Provider protocols use Ovid request and result models only. `WorkspaceViewProvider.acquire_view()` describes stable, contained local views for future non-native providers; a view carries a revision, root, and read-only flag for its entire context lifetime. The native session uses its shared Rust handle directly.
+
+Direct `SearchEngine`, `AstEngine`, and `FffEngine` construction remains supported for application calls. Migrate agent definitions by moving the root to one `NativeWorkspaceSession`, binding it in `AgentServices`, and removing engine arguments from capability constructors.
 
 ## Runtime compatibility
 

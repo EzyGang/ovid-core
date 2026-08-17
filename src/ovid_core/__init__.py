@@ -36,6 +36,10 @@ from ovid_core.observability import ObservabilityConfig as ObservabilityConfig
 from ovid_core.persistence import ConversationStore as ConversationStore
 from ovid_core.persistence import InMemoryConversationStore as InMemoryConversationStore
 from ovid_core.persistence import MessageCodec as MessageCodec
+from ovid_core.plugins import AgentServiceConfiguratorFactory as AgentServiceConfiguratorFactory
+from ovid_core.plugins import AgentServiceProviderFactory as AgentServiceProviderFactory
+from ovid_core.plugins import PluginActivationContext as PluginActivationContext
+from ovid_core.plugins import PluginServiceFactories as PluginServiceFactories
 from ovid_core.policy import AgentRetryPolicy as AgentRetryPolicy
 from ovid_core.policy import AgentRunPolicy as AgentRunPolicy
 from ovid_core.policy import AgentUsageLimits as AgentUsageLimits
@@ -45,7 +49,7 @@ from ovid_core.services import AgentServiceCollisionError as AgentServiceCollisi
 from ovid_core.services import AgentServiceCompatibilityError as AgentServiceCompatibilityError
 from ovid_core.services import AgentServiceError as AgentServiceError
 from ovid_core.services import AgentServiceKey as AgentServiceKey
-from ovid_core.services import AgentServiceNotFoundError as AgentServiceNotFoundError
+from ovid_core.services import AgentServiceMissingError as AgentServiceMissingError
 from ovid_core.services import AgentServiceRef as AgentServiceRef
 from ovid_core.services import AgentServiceRequirement as AgentServiceRequirement
 from ovid_core.services import AgentServices as AgentServices

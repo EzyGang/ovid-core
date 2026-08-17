@@ -31,5 +31,7 @@ class BaseCapability[Deps]:
     requirements: tuple[AgentServiceRequirement, ...] = ()
 
     def bind(self, services: AgentServices) -> Self:
-        services.validate(self.requirements, consumer=self.id)
+        for requirement in self.requirements:
+            services.validate(requirement, consumer=self.id)
+
         return self

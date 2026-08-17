@@ -11,25 +11,23 @@ from ovid_core.runtime.context import RunContext
 from ovid_core.tools.models import ToolApproval, ToolResult
 
 
+class ToolGrammar(BaseModel):
+    syntax: Literal['lark']
+    definition: str
+
+
+class ToolPresentation(BaseModel):
+    wire_name: str | None = None
+    input_format: Literal['json', 'text'] = 'json'
+    grammar: ToolGrammar | None = None
+
+
 @dataclass(frozen=True, slots=True)
 class ToolExecutionContext[Deps]:
     run: RunContext[Deps]
     tool_call_id: str
     approved: bool = False
     approval_metadata: JsonValue = None
-
-
-@dataclass(frozen=True, slots=True)
-class ToolGrammar:
-    syntax: Literal['lark']
-    definition: str
-
-
-@dataclass(frozen=True, slots=True)
-class ToolPresentation:
-    wire_name: str
-    input_format: Literal['json', 'text'] = 'json'
-    grammar: ToolGrammar | None = None
 
 
 class BaseTool[Deps, Args: BaseModel, Result: ToolResult](ABC):
@@ -40,7 +38,7 @@ class BaseTool[Deps, Args: BaseModel, Result: ToolResult](ABC):
     approval: ToolApproval = ToolApproval()
     timeout_seconds: float | None = None
     defer_loading: bool = False
-    presentation: ToolPresentation | None = None
+    presentation: ToolPresentation = ToolPresentation()
 
     @abstractmethod
     async def execute(self, context: ToolExecutionContext[Deps], arguments: Args) -> Result: ...

@@ -13,24 +13,27 @@ dependencies = [
 ]
 ```
 
-Installation exposes the module. It does not add tools to an agent. Create one engine for the workspace, wait for its initial index, and add the capability explicitly:
+Installation exposes the module. It does not add tools to an agent. FFF initializes lazily from the shared workspace
+when a selected tool first needs the index:
 
 ```python
 from pathlib import Path
 
 from ovid_core.agents import AgentDefinition
 from ovid_core.routing.models import ModelRef
-from ovid_native.fff import FffCapability, FffEngine
+from ovid_core.services import AgentServices
+from ovid_native.fff import FffCapability
+from ovid_native.workspace.service import NativeWorkspaceSession, workspace_binding
 
 
-fff = FffEngine(root=Path('/workspace/project'))
-await fff.wait_ready()
+workspace = NativeWorkspaceSession(root=Path('/workspace/project'))
 
 definition = AgentDefinition[AppDependencies, str](
     model=ModelRef(name='primary'),
     deps_type=AppDependencies,
     output_type=str,
-    capabilities=(FffCapability(engine=fff),),
+    services=AgentServices((workspace_binding(workspace),)),
+    capabilities=(FffCapability(),),
 )
 ```
 
@@ -42,7 +45,16 @@ definition = AgentDefinition[AppDependencies, str](
 | `grep` | 10 seconds | Search indexed content with plain, regex, fuzzy, or automatic matching |
 | `multi_grep` | 10 seconds | Search several literal naming variants with OR semantics |
 
-Omitting `FffCapability` contributes no FFF tools. Call `await fff.close()` when the agent lifetime ends. Closing stops the watcher and rejects later operations.
+Omitting `FffCapability` contributes no FFF tools. Call `await workspace.close()` when the agent lifetime ends.
+Applications using the direct provider API can construct and own an engine separately:
+
+```python
+from ovid_native.fff import FffEngine
+
+
+fff = FffEngine(root=Path('/workspace/project'))
+await fff.wait_ready()
+```
 
 ## Find approximate paths
 
@@ -157,34 +169,31 @@ FFF uses the canonical workspace root, relative model-facing paths, repository i
 
 ## Keep exact glob with FFF
 
-FFF does not implement exact glob discovery. Supply a native search engine when the same capability should contribute `glob`:
+FFF does not implement exact glob discovery. Request the shared workspace search provider when the same capability should
+also contribute `glob`:
 
 ```python
 from ovid_native.fff import FffCapability
-from ovid_native.search import SearchEngine
 
 
-native = SearchEngine(root=Path('/workspace/project'))
-capability = FffCapability(engine=fff, glob_engine=native, include_glob=True)
+capability = FffCapability(include_glob=True)
 ```
 
-The resulting tool set is `glob`, `find_files`, `grep`, and `multi_grep`. Avoid adding a separate `SearchCapability` with FFF `grep` enabled because both capabilities use the `grep` tool ID. To keep native grep, construct `FffCapability(engine=fff, include_grep=False)` alongside `SearchCapability(engine=native)`.
+The resulting tool set is `glob`, `find_files`, `grep`, and `multi_grep`. Avoid adding a separate `SearchCapability`
+with FFF `grep` enabled because both capabilities use the `grep` wire name. To keep native grep, use
+`FffCapability(include_grep=False)` alongside `SearchCapability()`; both resolve the same named workspace.
 
 ## Select a startup fallback
 
 Choose the backend before constructing the agent when FFF startup should fall back to native search:
 
 ```python
-from ovid_native.fff import FffEngine, select_fff_search_backend
-from ovid_native.search import SearchEngine
+from ovid_native.fff import select_fff_search_backend
 
 
-fff = FffEngine(root=Path('/workspace/project'))
-native = SearchEngine(root=Path('/workspace/project'))
-capability = await select_fff_search_backend(
-    fff_engine=fff,
-    native_engine=native,
-)
+capability = await select_fff_search_backend(workspace=workspace)
 ```
 
-Successful startup returns `FffCapability` with native `glob`. An FFF startup failure or readiness timeout closes FFF and returns `SearchCapability`. The selection remains fixed for the agent lifetime. Search failures after successful selection remain visible and do not switch the tool schema.
+Successful startup returns `FffCapability` with native `glob`. An FFF startup failure or readiness timeout returns
+`SearchCapability`. The selection remains fixed for the agent lifetime, while the workspace retains lifecycle ownership.
+Search failures after successful selection remain visible and do not switch the tool schema.

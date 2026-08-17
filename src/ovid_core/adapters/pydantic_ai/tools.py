@@ -1,6 +1,6 @@
 import asyncio
 from collections.abc import Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from types import TracebackType
 from typing import Any, cast
 
@@ -31,7 +31,7 @@ _ANY_VALIDATOR = SchemaValidator(core_schema.any_schema())
 class PydanticAIToolsetAdapter[Deps](AbstractToolset[Deps]):
     source: BaseToolset[Deps]
     hooks: tuple[BaseToolHook[Deps], ...] = ()
-    _advertised: dict[int, BaseTool[Deps, Any, Any]] = field(default_factory=dict)
+    _bound_tools: dict[int, BaseTool[Deps, Any, Any]] | None = None
 
     @property
     def id(self) -> str:
@@ -64,17 +64,21 @@ class PydanticAIToolsetAdapter[Deps](AbstractToolset[Deps]):
         discovered = await self.source.get_tools(run_context_from_pydantic(ctx))
         tools = _unique_tools(discovered)
         advertised: dict[str, ToolsetTool[Deps]] = {}
+        bound_tools: dict[int, BaseTool[Deps, Any, Any]] = {}
 
         for name, source_tool in tools.items():
-            tool: ToolsetTool[Deps] = ToolsetTool(
+            advertised_tool = ToolsetTool[Deps](
                 toolset=self,
                 tool_def=_tool_definition(source_tool),
                 max_retries=0,
                 args_validator=_ANY_VALIDATOR,
             )
-            advertised[name] = tool
-            self._advertised[id(tool)] = source_tool
+            advertised[name] = advertised_tool
+            bound_tools[id(advertised_tool)] = source_tool
 
+        if self._bound_tools is None:
+            self._bound_tools = {}
+        self._bound_tools.update(bound_tools)
         return advertised
 
     async def call_tool(
@@ -84,9 +88,9 @@ class PydanticAIToolsetAdapter[Deps](AbstractToolset[Deps]):
         ctx: PydanticRunContext[Deps],
         tool: ToolsetTool[Deps],
     ) -> JsonValue:
-        source_tool = self._advertised.get(id(tool))
+        source_tool = self._bound_tools.get(id(tool)) if self._bound_tools is not None else None
         if source_tool is None:
-            raise ToolExecutionError(f'Tool {name!r} is not available')
+            raise ToolExecutionError(f'Tool {name!r} is not available for this model step')
 
         return await _execute_tool(source_tool, tool_args, ctx, self.hooks)
 
@@ -157,9 +161,9 @@ def adapt_capabilities[Deps](capabilities: Sequence[BaseCapability[Deps]]) -> tu
 def _unique_tools[Deps](tools: Sequence[BaseTool[Deps, Any, Any]]) -> dict[str, BaseTool[Deps, Any, Any]]:
     result: dict[str, BaseTool[Deps, Any, Any]] = {}
     for tool in tools:
-        name = tool.presentation.wire_name if tool.presentation is not None else tool.id
+        name = _wire_name(tool)
         if not name or name in result:
-            raise ExtensionCollisionError(f'Duplicate or empty tool ID: {name!r}')
+            raise ExtensionCollisionError(f'Duplicate or empty effective tool name: {name!r}')
         result[name] = tool
 
     return result
@@ -178,18 +182,17 @@ def _combine_toolsets[Deps](
 
 def _tool_definition(tool: BaseTool[Any, Any, Any]) -> ToolDefinition:
     presentation = tool.presentation
-    name = presentation.wire_name if presentation is not None else tool.id
     metadata: dict[str, JsonValue] = {'ovid_approval': tool.approval.model_dump(mode='json')}
-    if presentation is not None:
+    if presentation.input_format != 'json' or presentation.grammar is not None:
         metadata['ovid_input_format'] = presentation.input_format
-        if presentation.grammar is not None:
-            metadata['ovid_grammar'] = {
-                'syntax': presentation.grammar.syntax,
-                'definition': presentation.grammar.definition,
-            }
+    if presentation.grammar is not None:
+        metadata['ovid_grammar'] = {
+            'syntax': presentation.grammar.syntax,
+            'definition': presentation.grammar.definition,
+        }
 
     return ToolDefinition(
-        name=name,
+        name=_wire_name(tool),
         description=tool.description,
         parameters_json_schema=tool.args_type.model_json_schema(),
         kind='unapproved' if tool.approval.required else 'function',
@@ -197,6 +200,10 @@ def _tool_definition(tool: BaseTool[Any, Any, Any]) -> ToolDefinition:
         timeout=tool.timeout_seconds,
         defer_loading=tool.defer_loading,
     )
+
+
+def _wire_name(tool: BaseTool[Any, Any, Any]) -> str:
+    return tool.presentation.wire_name or tool.id
 
 
 async def _execute_tool[Deps](

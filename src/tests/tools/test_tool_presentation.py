@@ -71,5 +71,5 @@ async def test_effective_wire_name_collisions_fail_before_advertisement() -> Non
     second.presentation = ToolPresentation(wire_name='edit')
     adapter = PydanticAIToolsetAdapter(source=TrackingToolset((first, second)))
 
-    with pytest.raises(ExtensionCollisionError, match="Duplicate or empty tool ID: 'edit'"):
+    with pytest.raises(ExtensionCollisionError, match="Duplicate or empty effective tool name: 'edit'"):
         await adapter.get_tools(upstream_context())
