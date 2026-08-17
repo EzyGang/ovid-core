@@ -68,6 +68,8 @@ Set `language` to apply one language to every selected file. Omit it to infer th
 
 Strictness accepts `cst`, `smart`, `ast`, `relaxed`, `signature`, and `template`. The default is `smart`.
 
+In Hashline mode, the agent-facing `ast_grep` tool validates the exact current source lines covering each match and capture, then renders shared Hashline locators. Those lines authorize direct edits; parse issues and path-only metadata do not.
+
 ## Select workspace files
 
 ```python

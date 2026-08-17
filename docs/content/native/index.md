@@ -78,11 +78,11 @@ The capabilities resolve the same canonical root, native handle, session identit
 
 ## Build and override a workspace
 
-`WorkspaceSessionBuilder.native(root=...)` creates native defaults. `with_search_provider`, `with_ast_provider`, and `with_fff_provider` replace one provider before `build()`. Each slot can be selected once, required methods are validated immediately, and one builder creates one session.
+`WorkspaceSessionBuilder.native(root=..., ast_limits=AstLimits(...))` creates native defaults with explicit AST search and proposal-retention limits. `with_native_ast(limits=...)` applies the same immutable limits to view-backed AST. Provider selectors cover files, observations, search, AST, FFF, and stable local views; every slot can be selected once and required methods are validated immediately. A rootless workspace requires explicit providers.
 
-Provider protocols use Ovid request and result models only. `WorkspaceViewProvider.acquire_view()` describes stable, contained local views for future non-native providers; a view carries a revision, root, and read-only flag for its entire context lifetime. The native session uses its shared Rust handle directly.
+Provider protocols use Ovid request and result models only. `WorkspaceViewProvider.acquire_view()` supplies an absolute, contained, read-only local view with one stable revision for the context lifetime. Native search and AST use bounded view contexts. FFF retains one view through indexing and closes it with the session. View-backed AST proposals use the configured maximum count and monotonic TTL, revalidate the view revision and current files, then commit through the files provider.
 
-Direct `SearchEngine`, `AstEngine`, and `FffEngine` construction remains supported for application calls. Migrate agent definitions by moving the root to one `NativeWorkspaceSession`, binding it in `AgentServices`, and removing engine arguments from capability constructors.
+Plugins register namespaced service, capability, and custom edit-mode factories explicitly. Installation alone changes no agent. `ovid_native.workspace.plugins.activate_workspace_services()` applies selected workspace configurators to an unfrozen `WorkspaceSessionBuilder`, then publishes the completed binding and owns reverse-order shutdown. Direct `SearchEngine`, `AstEngine`, and `FffEngine` construction remains supported for application calls.
 
 ## Runtime compatibility
 

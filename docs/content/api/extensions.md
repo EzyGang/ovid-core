@@ -112,6 +112,21 @@ name mandatory provider features.
 `AgentDefinition.services` defaults to an empty registry. `AgentFactory` validates and binds capabilities once before
 compilation. Missing or incompatible services raise narrow `AgentServiceError` subclasses during construction.
 
+## Explicit plugin factories
+
+`PluginRegistrar` records namespaced service-provider, service-configurator, and capability factories. Registration has
+no activation side effect. Applications select IDs explicitly with `select_service_factories(...)` and
+`select_capability_factories(...)`; unknown, empty, duplicate, or incompatible selections raise `PluginError`.
+
+Provider factories receive `PluginActivationContext` plus application-selected JSON configuration and return one
+`AgentServiceBinding`. Configurators target one selected provider ID and return a configured binding; they cannot
+silently replace an unselected provider. Capability factories declare `AgentServiceRequirement` values before
+activation and resolve the already assembled `AgentServices` from their activation context. Requested order is
+preserved, so applications can start selected providers deterministically and close owned services in reverse order.
+
+Plugin code is trusted executable code. Installing or discovering it does not register a provider, configure a
+service, contribute a capability, or change an agent.
+
 ## Relay
 
 Import Relay contracts and implementations from `ovid_core.relay`. Relay is off by default: only

@@ -101,6 +101,8 @@ for file in result.files:
 
 Direct calls default to strict `mode='regex'`. The `grep` agent tool defaults to `mode='auto'`, which retries the complete pattern as literal text only when Rust regex and PCRE2 both reject it. Results set `interpreted_as_literal=True` after that fallback.
 
+When the shared workspace is in Hashline mode, the agent-facing `grep` tool validates exact matched and context lines through the workspace observation service and renders `[path#tag]` plus `LINE:hash|text`. Those lines can be edited directly. Truncated lines and incomplete source claims remain uneditable. `glob` is path-only and creates no observation.
+
 Pattern modes:
 
 - `regex` tries Rust regex first, then PCRE2 for features such as lookaround and backreferences. Invalid patterns raise `SearchPatternError`.

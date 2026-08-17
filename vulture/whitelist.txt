@@ -117,3 +117,11 @@ _.validate_name
 _.validate_features
 _.create
 _.configure
+configuration
+PluginRegistrar.service_factories
+PluginRegistrar.capability_factories
+PluginRegistrar.register_service_provider_factory
+PluginRegistrar.register_service_configurator_factory
+PluginRegistrar.register_capability_factory
+PluginRegistrar.select_service_factories
+PluginRegistrar.select_capability_factories

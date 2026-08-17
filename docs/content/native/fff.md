@@ -109,6 +109,8 @@ Modes:
 
 `actual_mode`, `fallback_from`, and `approximate` report how the query ran. Matches use one-based line and column values. `match_ranges` contains zero-based byte ranges within the matched line.
 
+In Hashline mode, agent-facing FFF content tools pass exact indexed lines and the stable view revision through the shared observation service before rendering editable locators. A stale revision or changed current line yields no misleading tag. Fuzzy and auto-fallback approximate matches are explicitly uneditable. `find_files` remains path-only.
+
 ## Search naming variants together
 
 ```python

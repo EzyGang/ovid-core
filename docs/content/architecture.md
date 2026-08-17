@@ -81,6 +81,11 @@ it does not serialize provider state or workspace roots.
 Capabilities advertise bound contributions only after requirement validation. Model fallback and per-run model
 selection compile from the same bound definition and never recreate services or bind capabilities again.
 
+Plugin installation is inert. Applications register trusted provider, configurator, and capability factories, select
+their namespaced IDs explicitly, and assemble service bindings before `AgentFactory` runs. Configurators can target
+only selected providers; capabilities retain inspectable service requirements. Selection order is deterministic, and
+the application closes services it owns in reverse startup order.
+
 Construction errors occur before a run. Ovid Core converts these errors to configuration or construction errors.
 
 ## Execution phase

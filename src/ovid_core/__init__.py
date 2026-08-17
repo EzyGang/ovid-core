@@ -38,7 +38,9 @@ from ovid_core.persistence import InMemoryConversationStore as InMemoryConversat
 from ovid_core.persistence import MessageCodec as MessageCodec
 from ovid_core.plugins import AgentServiceConfiguratorFactory as AgentServiceConfiguratorFactory
 from ovid_core.plugins import AgentServiceProviderFactory as AgentServiceProviderFactory
+from ovid_core.plugins import CapabilityFactory as CapabilityFactory
 from ovid_core.plugins import PluginActivationContext as PluginActivationContext
+from ovid_core.plugins import PluginRegistrar as PluginRegistrar
 from ovid_core.plugins import PluginServiceFactories as PluginServiceFactories
 from ovid_core.policy import AgentRetryPolicy as AgentRetryPolicy
 from ovid_core.policy import AgentRunPolicy as AgentRunPolicy
