@@ -1,6 +1,6 @@
 import asyncio
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from types import TracebackType
 from typing import Any, cast
 
@@ -31,7 +31,7 @@ _ANY_VALIDATOR = SchemaValidator(core_schema.any_schema())
 class PydanticAIToolsetAdapter[Deps](AbstractToolset[Deps]):
     source: BaseToolset[Deps]
     hooks: tuple[BaseToolHook[Deps], ...] = ()
-    _tools: dict[str, BaseTool[Deps, Any, Any]] | None = None
+    _advertised: dict[int, BaseTool[Deps, Any, Any]] = field(default_factory=dict)
 
     @property
     def id(self) -> str:
@@ -63,17 +63,19 @@ class PydanticAIToolsetAdapter[Deps](AbstractToolset[Deps]):
     async def get_tools(self, ctx: PydanticRunContext[Deps]) -> dict[str, ToolsetTool[Deps]]:
         discovered = await self.source.get_tools(run_context_from_pydantic(ctx))
         tools = _unique_tools(discovered)
-        self._tools = tools
+        advertised: dict[str, ToolsetTool[Deps]] = {}
 
-        return {
-            name: ToolsetTool(
+        for name, source_tool in tools.items():
+            tool: ToolsetTool[Deps] = ToolsetTool(
                 toolset=self,
-                tool_def=_tool_definition(tool),
+                tool_def=_tool_definition(source_tool),
                 max_retries=0,
                 args_validator=_ANY_VALIDATOR,
             )
-            for name, tool in tools.items()
-        }
+            advertised[name] = tool
+            self._advertised[id(tool)] = source_tool
+
+        return advertised
 
     async def call_tool(
         self,
@@ -82,8 +84,7 @@ class PydanticAIToolsetAdapter[Deps](AbstractToolset[Deps]):
         ctx: PydanticRunContext[Deps],
         tool: ToolsetTool[Deps],
     ) -> JsonValue:
-        del tool
-        source_tool = self._tools[name] if self._tools is not None else None
+        source_tool = self._advertised.get(id(tool))
         if source_tool is None:
             raise ToolExecutionError(f'Tool {name!r} is not available')
 
@@ -156,9 +157,10 @@ def adapt_capabilities[Deps](capabilities: Sequence[BaseCapability[Deps]]) -> tu
 def _unique_tools[Deps](tools: Sequence[BaseTool[Deps, Any, Any]]) -> dict[str, BaseTool[Deps, Any, Any]]:
     result: dict[str, BaseTool[Deps, Any, Any]] = {}
     for tool in tools:
-        if not tool.id or tool.id in result:
-            raise ExtensionCollisionError(f'Duplicate or empty tool ID: {tool.id!r}')
-        result[tool.id] = tool
+        name = tool.presentation.wire_name if tool.presentation is not None else tool.id
+        if not name or name in result:
+            raise ExtensionCollisionError(f'Duplicate or empty tool ID: {name!r}')
+        result[name] = tool
 
     return result
 
@@ -175,9 +177,19 @@ def _combine_toolsets[Deps](
 
 
 def _tool_definition(tool: BaseTool[Any, Any, Any]) -> ToolDefinition:
-    metadata = {'ovid_approval': tool.approval.model_dump(mode='json')}
+    presentation = tool.presentation
+    name = presentation.wire_name if presentation is not None else tool.id
+    metadata: dict[str, JsonValue] = {'ovid_approval': tool.approval.model_dump(mode='json')}
+    if presentation is not None:
+        metadata['ovid_input_format'] = presentation.input_format
+        if presentation.grammar is not None:
+            metadata['ovid_grammar'] = {
+                'syntax': presentation.grammar.syntax,
+                'definition': presentation.grammar.definition,
+            }
+
     return ToolDefinition(
-        name=tool.id,
+        name=name,
         description=tool.description,
         parameters_json_schema=tool.args_type.model_json_schema(),
         kind='unapproved' if tool.approval.required else 'function',

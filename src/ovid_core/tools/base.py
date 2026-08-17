@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 from collections.abc import Sequence
 from dataclasses import dataclass
 from types import TracebackType
-from typing import Any, Self
+from typing import Any, Literal, Self
 
 from pydantic import JsonValue
 
@@ -19,6 +19,19 @@ class ToolExecutionContext[Deps]:
     approval_metadata: JsonValue = None
 
 
+@dataclass(frozen=True, slots=True)
+class ToolGrammar:
+    syntax: Literal['lark']
+    definition: str
+
+
+@dataclass(frozen=True, slots=True)
+class ToolPresentation:
+    wire_name: str
+    input_format: Literal['json', 'text'] = 'json'
+    grammar: ToolGrammar | None = None
+
+
 class BaseTool[Deps, Args: BaseModel, Result: ToolResult](ABC):
     id: str
     description: str
@@ -27,6 +40,7 @@ class BaseTool[Deps, Args: BaseModel, Result: ToolResult](ABC):
     approval: ToolApproval = ToolApproval()
     timeout_seconds: float | None = None
     defer_loading: bool = False
+    presentation: ToolPresentation | None = None
 
     @abstractmethod
     async def execute(self, context: ToolExecutionContext[Deps], arguments: Args) -> Result: ...

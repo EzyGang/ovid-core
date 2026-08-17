@@ -23,6 +23,7 @@ from ovid_core.routing.router import ModelRouter
 from ovid_core.runtime.events import AgentEvent
 from ovid_core.runtime.identifiers import ConversationId, RunId
 from ovid_core.runtime.results import RunResult
+from ovid_core.services import AgentServices
 from ovid_core.tools.base import BaseToolset
 from ovid_core.usage.tracking import UsageTracker
 
@@ -41,12 +42,22 @@ class AgentDefinition[Deps, Output]:
     hooks: tuple[BaseToolHook[Deps], ...] = ()
     policy: AgentRunPolicy = AgentRunPolicy()
     observability: ObservabilityConfig = ObservabilityConfig()
+    services: AgentServices = AgentServices()
 
 
 class AgentExtensionProvenance(BaseModel):
     kind: Literal['capability', 'tool', 'toolset', 'hook', 'instructions']
     id: str = Field(min_length=1)
     source: str = Field(min_length=1)
+
+
+class AgentServiceDiagnostic(BaseModel):
+    id: str = Field(min_length=1)
+    name: str = Field(min_length=1)
+    provider: str = Field(min_length=1)
+    features: tuple[str, ...]
+    identity: str | None
+    consumers: tuple[str, ...]
 
 
 class AgentConstructionDiagnostics(BaseModel):
@@ -58,6 +69,7 @@ class AgentConstructionDiagnostics(BaseModel):
     policy: AgentRunPolicy
     observability: ObservabilityConfig
     extensions: tuple[AgentExtensionProvenance, ...]
+    services: tuple[AgentServiceDiagnostic, ...]
 
 
 class AgentStream[Output](AsyncIterator[AgentEvent], Protocol):
@@ -228,10 +240,12 @@ class AgentFactory:
         model: AgentModelSelector | None = None,
     ) -> OvidAgent[Deps, Output]:
         configured_capabilities = await self._configured_capabilities()
+        capabilities = (*configured_capabilities, *definition.capabilities)
+        bound_capabilities = tuple(capability.bind(definition.services) for capability in capabilities)
         effective_definition = replace(
             definition,
             model=definition.model if model is None else model,
-            capabilities=(*configured_capabilities, *definition.capabilities),
+            capabilities=bound_capabilities,
         )
         resolved = await self._router.resolve(effective_definition.model)
         runtime = self._compiler.compile(effective_definition, resolved)
@@ -301,4 +315,15 @@ def _diagnostics[Deps, Output](
         policy=definition.policy,
         observability=definition.observability,
         extensions=tuple(extensions),
+        services=tuple(
+            AgentServiceDiagnostic(
+                id=binding.ref.key.id,
+                name=binding.ref.name,
+                provider=binding.provider,
+                features=tuple(sorted(binding.features)),
+                identity=binding.identity,
+                consumers=definition.services.consumers(binding),
+            )
+            for binding in definition.services.bindings
+        ),
     )
