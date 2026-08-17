@@ -181,7 +181,16 @@ def _combine_toolsets[Deps](
 
 
 def _tool_definition(tool: BaseTool[Any, Any, Any]) -> ToolDefinition:
-    metadata = {'ovid_approval': tool.approval.model_dump(mode='json')}
+    presentation = tool.presentation
+    metadata: dict[str, JsonValue] = {'ovid_approval': tool.approval.model_dump(mode='json')}
+    if presentation.input_format != 'json' or presentation.grammar is not None:
+        metadata['ovid_input_format'] = presentation.input_format
+    if presentation.grammar is not None:
+        metadata['ovid_grammar'] = {
+            'syntax': presentation.grammar.syntax,
+            'definition': presentation.grammar.definition,
+        }
+
     return ToolDefinition(
         name=_wire_name(tool),
         description=tool.description,
