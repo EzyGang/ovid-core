@@ -13,81 +13,75 @@
 
 ---
 
-**Ovid Core is built on top of [Pydantic AI](https://ai.pydantic.dev/).** Pydantic AI runs the model, agent loop, tools, structured output, streaming, and provider integrations.
+Ovid Core uses [Pydantic AI](https://ai.pydantic.dev/) for model calls, the agent loop, tools, structured output, streaming, and provider support.
 
-Ovid Core adds a typed application layer around that runtime. It gives the rest of your application one set of contracts for configuration, messages, results, usage, tools, storage, and transports. It does not replace or fork Pydantic AI.
+Ovid Core adds stable types for application code. These types cover configuration, messages, results, usage, tools, storage, and transports. Ovid Core does not replace or fork Pydantic AI.
 
-Installing Ovid Core does not start a server or add tools to an agent. Your application chooses every optional feature.
+Installing the package does not start a server or add tools to an agent. Your application enables each optional feature.
 
 **Documentation:** [docs/content/index.md](docs/content/index.md)  
-**Source code:** https://github.com/EzyGang/ovid-core  
+**Source:** https://github.com/EzyGang/ovid-core  
 **Native tools:** https://github.com/EzyGang/ovid-native
 
 ---
 
-## Table of contents
+## Contents
 
-- [Why Ovid Core?](#why-ovid-core)
+- [When to use Ovid Core](#when-to-use-ovid-core)
 - [Installation](#installation)
 - [Quick start](#quick-start)
-- [Core features](#core-features)
-- [Pydantic AI and Harness compatibility](#pydantic-ai-and-harness-compatibility)
-- [Optional server support](#optional-server-support)
+- [Features](#features)
+- [Pydantic AI capabilities](#pydantic-ai-capabilities)
+- [Server support](#server-support)
 - [Application ownership](#application-ownership)
 - [Development](#development)
 - [Contributing](#contributing)
 - [License](#license)
 
----
+## When to use Ovid Core
 
-## Why Ovid Core?
+Use Pydantic AI directly when one small process owns the agent and upstream types can stay in that process.
 
-Use Pydantic AI directly when one small process owns the agent. It is the simpler choice when upstream types can stay inside that process.
-
-Use Ovid Core when the agent is a shared application component. A worker, service, database, command-line program, and user interface can then use the same agent definition and data contracts.
+Use Ovid Core when an agent is a shared application component. Workers, services, databases, command-line programs, and user interfaces can use the same agent definition and data contracts.
 
 ```mermaid
 graph LR
-    APP[Your application] --> CORE[Ovid Core contracts]
-    CORE --> PAI[Pydantic AI runtime]
+    APP[Application] --> CORE[Ovid Core contracts]
+    CORE --> PAI[Pydantic AI]
     PAI --> PROVIDER[Model provider]
 ```
 
-Ovid Core adds the boundary between application code and the Pydantic AI runtime:
-
 | Need | Direct Pydantic AI | Ovid Core |
 | --- | --- | --- |
-| Model selection | Use a model string or provider object | Use configured names, aliases, routes, and fallbacks |
-| Messages and results | Use Pydantic AI runtime values | Use frozen Ovid models |
-| Tools | Use Pydantic AI tools and toolsets | Use typed Ovid tools, approval data, timeouts, and hooks |
-| Usage limits | Limit one upstream run | Share one budget across parent and child agents |
-| Storage | Store upstream messages or convert them yourself | Use normalized messages and a versioned codec |
-| Transports | Build an application transport | Use optional HTTP, SSE, stdio, and AG-UI adapters |
+| Model selection | Model string or provider object | Names, aliases, routes, and fallbacks |
+| Messages and results | Pydantic AI runtime values | Frozen Ovid models |
+| Tools | Pydantic AI tools and toolsets | Typed tools, approvals, timeouts, and hooks |
+| Usage limits | One upstream run | One budget across parent and child agents |
+| Storage | Upstream messages or custom conversion | Normalized messages and a versioned codec |
+| Transports | Application-built transport | Optional HTTP, SSE, stdio, and AG-UI adapters |
 | Upstream changes | Update each caller | Update the Ovid adapter boundary |
 
-This extra layer has a cost. Do not add Ovid Core to a small script that does not need these contracts. Add it when agent data must cross process, storage, transport, or team boundaries.
+This layer adds structure and another dependency. Do not use it for a small script that does not need shared contracts. Use it when agent data crosses a process, storage, transport, or team boundary.
 
-Read [Why Ovid Core](docs/content/why-ovid-core.md) for the full comparison.
-
----
+Read [Why Ovid Core](docs/content/why-ovid-core.md) for a longer comparison.
 
 ## Installation
 
 Ovid Core requires Python 3.14 or newer.
 
-### uv
+With uv:
 
 ```bash
 uv add ovid-core
 ```
 
-### pip
+With pip:
 
 ```bash
 pip install ovid-core
 ```
 
-Add server support only when you need it:
+Add native HTTP and SSE support only when needed:
 
 ```bash
 uv add 'ovid-core[server]'
@@ -98,8 +92,6 @@ Add AG-UI support with:
 ```bash
 uv add 'ovid-core[server-ag-ui]'
 ```
-
----
 
 ## Quick start
 
@@ -123,7 +115,7 @@ On Windows PowerShell:
 $env:OPENAI_API_KEY = '...'
 ```
 
-Create and run the agent:
+Create and run an agent:
 
 ```python
 import asyncio
@@ -158,15 +150,13 @@ asyncio.run(main())
 
 The result uses Ovid types. It contains the validated output, messages, usage, run ID, and conversation ID.
 
-Read the [getting started guide](docs/content/getting-started.md) for provider keys, routes, streaming, and error handling.
+Read the [getting started guide](docs/content/getting-started.md) for provider keys, routes, streaming, and errors.
 
----
-
-## Core features
+## Features
 
 ### Configuration and model routes
 
-Give models local names such as `primary` or `fast`. Agent definitions use these names instead of provider strings. A route can try another model after an eligible provider failure.
+Give models local names such as `primary` or `fast`. Agent definitions use those names instead of provider strings. Routes can try another model after an eligible provider failure.
 
 ### Typed agent definitions
 
@@ -178,27 +168,23 @@ Runs return Ovid-owned messages, events, results, usage values, and identifiers.
 
 ### Tools and capabilities
 
-Add only the tools an agent needs. Capabilities can contribute instructions, tools, toolsets, model settings, and service requirements. Duplicate IDs are errors.
+Add only the tools an agent needs. Capabilities can add instructions, tools, toolsets, model settings, and service requirements. Duplicate IDs are errors.
 
 ### Usage and policy
 
-Apply request, token, and tool-call limits to one run or a complete nested workflow. Configure retries, timeouts, concurrency, and end behavior in one run policy.
+Apply request, token, and tool-call limits to one run or a nested workflow. Run policy also controls retries, timeouts, concurrency, and end behavior.
 
 ### Relay and Todo
 
-Relay gives application-owned agents a typed message channel. Todo provides optional phased work state with replaceable storage. Neither feature starts or changes an agent unless the application adds its capability.
+Relay gives application-owned agents a typed message channel. Todo stores phased work state through a replaceable backend. Applications must enable each capability.
 
 ### Storage and transports
 
-Use the conversation store protocol with your own database. Optional adapters can expose registered agents over HTTP, SSE, stdio, or AG-UI.
+Use the conversation store protocol with your database. Optional adapters expose registered agents over HTTP, SSE, stdio, or AG-UI.
 
----
+## Pydantic AI capabilities
 
-## Pydantic AI and Harness compatibility
-
-Every default Ovid agent runs on Pydantic AI. `ovid-native` does not create a different agent type. It contributes Ovid capabilities to a normal Ovid Core agent.
-
-Use `pydantic_ai_capability()` to add a Pydantic AI or Pydantic AI Harness capability beside Ovid capabilities:
+A normal Ovid agent can also use a Pydantic AI or Pydantic AI Harness capability:
 
 ```python
 from pydantic_ai_harness.planning import Planning
@@ -213,36 +199,30 @@ capabilities = (
 )
 ```
 
-The default compiler passes the exact capability instance to Pydantic AI. Its instructions, tools, deferred loading, ordering, per-run state, and lifecycle hooks keep their upstream behavior. Deferred capabilities must have an explicit ID.
+The adapter passes the same capability instance to Pydantic AI. Upstream instructions, tools, ordering, deferred loading, run state, and lifecycle hooks keep their normal behavior. A deferred capability needs an explicit ID.
 
-Passthrough tools remain Pydantic AI tools. They do not gain Ovid approval metadata, `BaseToolHook` hooks, Ovid result validation, service binding, or Ovid tool timeouts. Capabilities that change model selection, messages, events, or durable execution can also conflict with Ovid routing and normalized runtime contracts. Test those combinations through the public Ovid run and stream APIs.
+Upstream tools remain Pydantic AI tools. They do not gain Ovid approvals, Ovid hooks, Ovid result validation, service binding, or Ovid timeouts. Test any capability that changes models, messages, events, or durable execution through Ovid's public run and stream APIs.
 
-Use Ovid-owned capability types when you need the complete Ovid contract. See [Tools and capabilities](docs/content/api/extensions.md#pydantic-ai-capability-passthrough) for the exact boundary.
+Use Ovid capability types when you need the complete Ovid contract. See [Tools and capabilities](docs/content/api/extensions.md#pydantic-ai-capability-passthrough) for the boundary details.
 
----
+## Server support
 
-## Optional server support
+Ovid Core can expose registered agents, but it is not a full web framework. The application still owns:
 
-Ovid Core can expose agents, but it is not a full web framework. The application still owns:
-
-- User authentication and authorization.
-- Database setup and data retention.
-- TLS and network policy.
-- Dependency construction.
-- Deployment and process control.
-- Telemetry export.
+- authentication and authorization
+- database setup and data retention
+- TLS and network policy
+- dependency construction
+- deployment and process control
+- telemetry export
 
 Read [Embed and expose agents](docs/content/guides/embed-agents.md) before adding a transport.
 
----
-
 ## Application ownership
 
-Ovid Core does not discover configuration files, load application secrets, choose every tool, or create global services. The application passes one final configuration and explicitly selects each capability.
+Ovid Core does not discover configuration files, load application secrets, choose every tool, or create global services. The application passes one final configuration and selects each capability.
 
-For fast Rust-backed workspace tools, install [ovid-native](https://github.com/EzyGang/ovid-native). Ovid Core does not depend on it.
-
----
+Install [ovid-native](https://github.com/EzyGang/ovid-native) for Rust-backed workspace tools. Ovid Core does not depend on it.
 
 ## Development
 
@@ -258,27 +238,23 @@ uv run task docs-build
 uv build
 ```
 
-Run the documentation site locally with:
+Serve the documentation locally with:
 
 ```bash
 uv run task docs-run
 ```
 
-Ovid Core targets 100% branch coverage for its Python integration layer.
-
----
+Ovid Core requires 100% branch coverage for its Python integration layer.
 
 ## Contributing
 
-1. Open an issue for a large change or a new public contract.
+1. Open an issue for a large change or new public contract.
 2. Create a branch from `main`.
 3. Add tests for changed behavior.
 4. Run the development checks.
-5. Open a pull request with a clear reason for the change.
+5. Open a pull request that explains the reason for the change.
 
-Keep provider runtime types inside adapters. Keep application policy in the application. See [AGENTS.md](AGENTS.md) for the full repository rules.
-
----
+Keep provider runtime types inside adapters. Keep application policy in the application. See [AGENTS.md](AGENTS.md) for all repository rules.
 
 ## License
 
