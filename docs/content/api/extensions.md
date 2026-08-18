@@ -102,6 +102,42 @@ the resolved service providers.
 All capability IDs, toolset IDs, and effective tool wire names must be unique. Collisions raise
 `ExtensionCollisionError`.
 
+## Pydantic AI capability passthrough
+
+Import `pydantic_ai_capability` from `ovid_core.adapters.pydantic_ai`. It accepts a Pydantic AI
+`AbstractCapability` and returns an Ovid `BaseCapability` that the default compiler recognizes:
+
+```python
+from pydantic_ai_harness.planning import Planning
+
+from ovid_core.adapters.pydantic_ai import pydantic_ai_capability
+from ovid_native.search import SearchCapability
+
+
+capabilities = (
+    SearchCapability[AppDependencies](),
+    pydantic_ai_capability(Planning()),
+)
+```
+
+The default Pydantic AI compiler passes the exact source capability instance to Pydantic AI. Its instructions, toolsets,
+native tools, model settings, deferred loading, ordering, `for_agent`, `for_run`, and lifecycle hooks keep their upstream
+behavior. This also lets Pydantic AI Harness capabilities run beside Ovid Native capabilities.
+
+An always-available capability without an explicit ID receives a stable snake-case class ID on both the port and source.
+Deferred capabilities require an explicit upstream ID because message history must refer to a stable value. Explicit IDs
+must be non-empty and trimmed. Ovid rejects collisions between passthrough and Ovid capability IDs.
+
+Passthrough does not convert upstream tools into Ovid `BaseTool` values. Ovid approval metadata, `BaseToolHook` hooks,
+tool-result validation, service requirements, and Ovid tool timeout policy do not apply to those upstream tools. The
+source capability keeps its own Pydantic AI behavior. Applications must install its optional dependencies and own any
+resources it opens.
+
+Capabilities that replace model selection, add message or event values outside Ovid's normalized unions, or impose
+durable-execution rules may conflict with Ovid routing, diagnostics, persistence, streaming, or per-run usage tracking.
+Test those combinations through the public Ovid run and stream APIs. A custom `AgentCompiler` must implement this
+adapter-specific port itself.
+
 ## Agent service contracts
 
 Import `AgentServiceKey`, `AgentServiceRef`, `AgentServiceBinding`, `AgentServiceRequirement`, and `AgentServices` from

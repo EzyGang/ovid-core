@@ -29,11 +29,7 @@ def adapt_agent_extensions[Deps](
     hooks: tuple[BaseToolHook[Deps], ...],
 ) -> PydanticAIExtensions[Deps]:
     validate_extension_ids(capabilities, toolsets)
-    adapted_capabilities = tuple(
-        adapt_integration_capability(capability)
-        or PydanticAICapabilityAdapter(capability, hooks=hooks, include_toolset=False)
-        for capability in capabilities
-    )
+    adapted_capabilities = tuple(_adapt_capability(capability, hooks) for capability in capabilities)
     adapted_toolsets = [
         PydanticAIToolsetAdapter(source=source, hooks=(*hooks, *capability.contributions.hooks))
         for capability in capabilities
@@ -46,6 +42,17 @@ def adapt_agent_extensions[Deps](
         capabilities=adapted_capabilities,
         toolsets=(combined,) if combined is not None else (),
     )
+
+
+def _adapt_capability[Deps](
+    capability: BaseCapability[Deps],
+    hooks: tuple[BaseToolHook[Deps], ...],
+) -> AbstractCapability[Deps]:
+    integration = adapt_integration_capability(capability)
+    if integration is not None:
+        return integration
+
+    return PydanticAICapabilityAdapter(capability, hooks=hooks, include_toolset=False)
 
 
 def _capability_toolsets[Deps](capability: BaseCapability[Deps]) -> tuple[BaseToolset[Deps], ...]:

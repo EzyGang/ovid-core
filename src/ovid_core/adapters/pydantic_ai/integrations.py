@@ -17,6 +17,7 @@ from pydantic_ai.tools import ToolDefinition
 from pydantic_ai.toolsets import AbstractToolset
 from pydantic_ai_harness.skills import Skills
 
+from ovid_core.adapters.pydantic_ai.capabilities import _pydantic_ai_capability
 from ovid_core.capabilities.base import BaseCapability
 from ovid_core.capabilities.integrations import (
     AnthropicCompactionCapabilityConfig,
@@ -36,6 +37,10 @@ from ovid_core.skills import SkillsCapability
 
 
 def adapt_integration_capability[Deps](source: BaseCapability[Deps]) -> AbstractCapability[Deps] | None:
+    capability = _pydantic_ai_capability(source)
+    if capability is not None:
+        return capability
+
     if isinstance(source, ProviderCapability):
         return cast(AbstractCapability[Deps], _adapt_provider_capability(source))
     if isinstance(source, MCPServerCapability):

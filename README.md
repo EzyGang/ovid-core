@@ -11,9 +11,9 @@
 
 ---
 
-**Ovid Core** gives Python applications a clear way to define, run, and share AI agents.
+**Ovid Core is built on top of [Pydantic AI](https://ai.pydantic.dev/).** Pydantic AI runs the model, agent loop, tools, structured output, streaming, and provider integrations.
 
-[Pydantic AI](https://ai.pydantic.dev/) runs the model and agent loop. Ovid Core adds typed application contracts around it. Your code uses Ovid models for configuration, messages, results, usage, tools, and services.
+Ovid Core adds a typed application layer around that runtime. It gives the rest of your application one set of contracts for configuration, messages, results, usage, tools, storage, and transports. It does not replace or fork Pydantic AI.
 
 Installing Ovid Core does not start a server or add tools to an agent. Your application chooses every optional feature.
 
@@ -29,6 +29,7 @@ Installing Ovid Core does not start a server or add tools to an agent. Your appl
 - [Installation](#installation)
 - [Quick start](#quick-start)
 - [Core features](#core-features)
+- [Pydantic AI and Harness compatibility](#pydantic-ai-and-harness-compatibility)
 - [Optional server support](#optional-server-support)
 - [Application ownership](#application-ownership)
 - [Development](#development)
@@ -38,20 +39,32 @@ Installing Ovid Core does not start a server or add tools to an agent. Your appl
 
 ## Why Ovid Core?
 
-A small script can use Pydantic AI directly. Ovid Core is useful when many parts of an application need the same agent contracts.
+Use Pydantic AI directly when one small process owns the agent. It is the simpler choice when upstream types can stay inside that process.
 
-| Need | What Ovid Core provides |
-| --- | --- |
-| Typed agents | Fixed dependency and output types |
-| Model configuration | Named models, aliases, routes, and fallbacks |
-| Stable results | Ovid messages, events, usage, IDs, and errors |
-| Extensions | Typed tools, toolsets, hooks, capabilities, Agent Skills, and MCP |
-| Shared limits | Usage limits for one run or a nested workflow |
-| Agent communication | Opt-in Relay messaging |
-| Storage | A conversation store interface owned by the application |
-| Transports | Optional HTTP, SSE, stdio, and AG-UI adapters |
+Use Ovid Core when the agent is a shared application component. A worker, service, database, command-line program, and user interface can then use the same agent definition and data contracts.
 
-Ovid Core keeps Pydantic AI and provider objects inside its adapter layer. This reduces provider-specific code in the rest of your application.
+```mermaid
+graph LR
+    APP[Your application] --> CORE[Ovid Core contracts]
+    CORE --> PAI[Pydantic AI runtime]
+    PAI --> PROVIDER[Model provider]
+```
+
+Ovid Core adds the boundary between application code and the Pydantic AI runtime:
+
+| Need | Direct Pydantic AI | Ovid Core |
+| --- | --- | --- |
+| Model selection | Use a model string or provider object | Use configured names, aliases, routes, and fallbacks |
+| Messages and results | Use Pydantic AI runtime values | Use frozen Ovid models |
+| Tools | Use Pydantic AI tools and toolsets | Use typed Ovid tools, approval data, timeouts, and hooks |
+| Usage limits | Limit one upstream run | Share one budget across parent and child agents |
+| Storage | Store upstream messages or convert them yourself | Use normalized messages and a versioned codec |
+| Transports | Build an application transport | Use optional HTTP, SSE, stdio, and AG-UI adapters |
+| Upstream changes | Update each caller | Update the Ovid adapter boundary |
+
+This extra layer has a cost. Do not add Ovid Core to a small script that does not need these contracts. Add it when agent data must cross process, storage, transport, or team boundaries.
+
+Read [Why Ovid Core](docs/content/why-ovid-core.md) for the full comparison.
 
 ---
 
@@ -175,6 +188,33 @@ Relay gives application-owned agents a typed message channel. Todo provides opti
 ### Storage and transports
 
 Use the conversation store protocol with your own database. Optional adapters can expose registered agents over HTTP, SSE, stdio, or AG-UI.
+
+---
+
+## Pydantic AI and Harness compatibility
+
+Every default Ovid agent runs on Pydantic AI. `ovid-native` does not create a different agent type. It contributes Ovid capabilities to a normal Ovid Core agent.
+
+Use `pydantic_ai_capability()` to add a Pydantic AI or Pydantic AI Harness capability beside Ovid capabilities:
+
+```python
+from pydantic_ai_harness.planning import Planning
+
+from ovid_core.adapters.pydantic_ai import pydantic_ai_capability
+from ovid_native.search import SearchCapability
+
+
+capabilities = (
+    SearchCapability[AppDependencies](),
+    pydantic_ai_capability(Planning()),
+)
+```
+
+The default compiler passes the exact capability instance to Pydantic AI. Its instructions, tools, deferred loading, ordering, per-run state, and lifecycle hooks keep their upstream behavior. Deferred capabilities must have an explicit ID.
+
+Passthrough tools remain Pydantic AI tools. They do not gain Ovid approval metadata, `BaseToolHook` hooks, Ovid result validation, service binding, or Ovid tool timeouts. Capabilities that change model selection, messages, events, or durable execution can also conflict with Ovid routing and normalized runtime contracts. Test those combinations through the public Ovid run and stream APIs.
+
+Use Ovid-owned capability types when you need the complete Ovid contract. See [Tools and capabilities](docs/content/api/extensions.md#pydantic-ai-capability-passthrough) for the exact boundary.
 
 ---
 

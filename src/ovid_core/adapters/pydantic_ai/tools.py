@@ -153,7 +153,9 @@ def adapt_capabilities[Deps](capabilities: Sequence[BaseCapability[Deps]]) -> tu
     validate_extension_ids(capabilities)
 
     return tuple(
-        adapt_integration_capability(capability) or PydanticAICapabilityAdapter(capability)
+        integration
+        if (integration := adapt_integration_capability(capability)) is not None
+        else PydanticAICapabilityAdapter(capability)
         for capability in capabilities
     )
 
