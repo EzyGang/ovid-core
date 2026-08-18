@@ -66,6 +66,32 @@ async def test_browser_login_times_out() -> None:
 
 
 @pytest.mark.asyncio
+async def test_browser_login_timeout_bounds_stalled_token_exchange() -> None:
+    async def handler(request: httpx.Request) -> httpx.Response:
+        await asyncio.Event().wait()
+        raise AssertionError('The timed out request resumed')
+
+    config = CodexOAuthConfig(callback_ports=(0,), login_timeout_seconds=0.05)
+    async with (
+        httpx.AsyncClient(transport=httpx.MockTransport(handler), timeout=None) as client,
+        CodexAuth.ephemeral(http_client=client, config=config) as auth,
+    ):
+        login = await auth.start_browser_login()
+        wait_task = asyncio.create_task(login.wait())
+
+        async def submit(redirect_uri: str, state: str) -> httpx.Response:
+            async with httpx.AsyncClient(trust_env=False) as callback_client:
+                return await callback_client.get(redirect_uri, params={'code': 'code', 'state': state})
+
+        callback_task = asyncio.create_task(browser_callback(login.authorization_url, submit))
+        with pytest.raises(CodexAuthError, match='timed out'):
+            await wait_task
+        response = await callback_task
+
+    assert response.status_code == 500
+
+
+@pytest.mark.asyncio
 async def test_browser_callback_rejects_invalid_http_and_paths() -> None:
     config = CodexOAuthConfig(callback_ports=(0,))
     async with (

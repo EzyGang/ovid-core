@@ -1,5 +1,6 @@
 import asyncio
 import base64
+import binascii
 import time
 from abc import abstractmethod
 from collections.abc import Mapping
@@ -139,5 +140,5 @@ def _jwt_claims(token: SecretStr) -> dict[str, JsonValue]:
         decoded = base64.urlsafe_b64decode(f'{payload}{"=" * (-len(payload) % 4)}')
 
         return cast(dict[str, JsonValue], _JSON_OBJECT_ADAPTER.validate_json(decoded))
-    except IndexError, ValueError, ValidationError:
+    except binascii.Error, IndexError, ValueError, ValidationError:
         raise CodexAuthError('Codex token is malformed') from None

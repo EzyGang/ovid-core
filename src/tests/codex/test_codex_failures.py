@@ -1,3 +1,5 @@
+import asyncio
+
 import httpx
 import pytest
 from pydantic import SecretStr
@@ -20,6 +22,8 @@ def device_start_response() -> httpx.Response:
     [
         (httpx.Response(500), 'status 500'),
         (httpx.Response(200, json={'device_auth_id': 'id', 'user_code': 'code', 'interval': 0}), 'failed'),
+        (httpx.Response(200, json={'device_auth_id': 'id', 'user_code': 'code', 'interval': 'nan'}), 'failed'),
+        (httpx.Response(200, json={'device_auth_id': 'id', 'user_code': 'code', 'interval': 'inf'}), 'failed'),
         (httpx.Response(200, content=b'invalid'), 'failed'),
     ],
 )
@@ -74,6 +78,40 @@ async def test_device_poll_timeout_is_explicit() -> None:
         login = await auth.start_device_login()
         with pytest.raises(CodexAuthError, match='timed out'):
             await login.wait()
+
+
+@pytest.mark.asyncio
+async def test_device_login_timeout_bounds_stalled_requests() -> None:
+    async def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith('/deviceauth/usercode'):
+            return device_start_response()
+
+        await asyncio.Event().wait()
+        raise AssertionError('The timed out request resumed')
+
+    config = CodexOAuthConfig(login_timeout_seconds=0.001)
+    async with (
+        httpx.AsyncClient(transport=httpx.MockTransport(handler), timeout=None) as client,
+        CodexAuth.ephemeral(http_client=client, config=config) as auth,
+    ):
+        login = await auth.start_device_login()
+        with pytest.raises(CodexAuthError, match='timed out'):
+            await login.wait()
+
+
+@pytest.mark.asyncio
+async def test_device_start_timeout_is_explicit() -> None:
+    async def handler(request: httpx.Request) -> httpx.Response:
+        await asyncio.Event().wait()
+        raise AssertionError('The timed out request resumed')
+
+    config = CodexOAuthConfig(login_timeout_seconds=0.001)
+    async with (
+        httpx.AsyncClient(transport=httpx.MockTransport(handler), timeout=None) as client,
+        CodexAuth.ephemeral(http_client=client, config=config) as auth,
+    ):
+        with pytest.raises(CodexAuthError, match='timed out'):
+            await auth.start_device_login()
 
 
 @pytest.mark.asyncio
@@ -136,7 +174,9 @@ def test_account_claim_validation_is_safe(tokens: CodexTokens) -> None:
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize('access_token', ['bad', make_jwt({'sub': 'user'}), make_jwt({'exp': True})])
+@pytest.mark.parametrize(
+    'access_token', ['bad', 'header.a.signature', make_jwt({'sub': 'user'}), make_jwt({'exp': True})]
+)
 async def test_access_token_validation_is_safe(access_token: str) -> None:
     tokens = CodexTokens(
         id_token=make_codex_tokens().id_token,

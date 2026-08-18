@@ -1,5 +1,5 @@
 import asyncio
-import time
+import math
 from dataclasses import dataclass
 from urllib.parse import urljoin
 
@@ -43,7 +43,7 @@ class _DeviceLoginFlow:
                 raise CodexAuthError(f'Codex device authorization failed with status {response.status_code}')
             payload = _UserCodeResponse.model_validate_json(response.content, extra='ignore')
             interval = float(payload.interval)
-            if interval <= 0:
+            if not math.isfinite(interval) or interval <= 0:
                 raise ValueError
         except httpx.HTTPError, ValidationError, ValueError:
             raise CodexAuthError('Codex device authorization failed') from None
@@ -68,16 +68,12 @@ class _DeviceLoginFlow:
 
     async def _poll(self, authorization: _DeviceAuthorization) -> _DeviceTokenResponse:
         endpoint = f'{self._config.issuer.rstrip("/")}/api/accounts/deviceauth/token'
-        deadline = time.monotonic() + self._config.login_timeout_seconds
-        while time.monotonic() < deadline:
+        while True:
             response = await self._poll_once(endpoint=endpoint, authorization=authorization)
             if response is not None:
                 return response
 
-            delay = min(authorization.interval_seconds, max(0, deadline - time.monotonic()))
-            await asyncio.sleep(delay)
-
-        raise CodexAuthError('Codex device authorization timed out')
+            await asyncio.sleep(authorization.interval_seconds)
 
     async def _poll_once(self, *, endpoint: str, authorization: _DeviceAuthorization) -> _DeviceTokenResponse | None:
         try:

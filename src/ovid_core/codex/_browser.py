@@ -71,12 +71,8 @@ class BrowserCallbackServer:
 
         return callback
 
-    async def next_submission(self, *, timeout_seconds: float) -> BrowserCallbackSubmission:
-        try:
-            async with asyncio.timeout(timeout_seconds):
-                result = await self._submissions.get()
-        except TimeoutError:
-            raise CodexAuthError('Codex browser login timed out') from None
+    async def next_submission(self) -> BrowserCallbackSubmission:
+        result = await self._submissions.get()
 
         if isinstance(result, CodexAuthError):
             raise result
