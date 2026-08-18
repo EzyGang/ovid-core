@@ -2,6 +2,18 @@
 name = "ovid-core"
 version = "0.1.0"
 description = "Shared compatibility, configuration, runtime, and extension layer for Ovid applications"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+keywords = ["ai-agents", "pydantic-ai", "agent-framework", "typed", "asyncio"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.14",
+    "Typing :: Typed",
+]
 authors = [
     { name = "Galtozzy", email = "galtozzy+git@gmail.com" }
 ]
@@ -22,6 +34,11 @@ server-ag-ui = [
     "ovid-core[server]",
     "pydantic-ai-slim[ag-ui]>=2.22.0,<2.23.0",
 ]
+[project.urls]
+Documentation = "https://github.com/EzyGang/ovid-core/tree/main/docs/content"
+Issues = "https://github.com/EzyGang/ovid-core/issues"
+Repository = "https://github.com/EzyGang/ovid-core"
+
 
 
 [build-system]
@@ -34,7 +51,7 @@ dev = [
     "pytest>=9.1.1",
     "pytest-asyncio>=1.4.0",
     "pytest-cov>=7.1.0",
-    "pydantic-ai-slim[anthropic]>=2.22.0,<2.23.0",
+    "pydantic-ai-slim[ag-ui,anthropic]>=2.22.0,<2.23.0",
     "pytest-mock>=3.15.1",
     "pytest-socket>=0.8.0",
     "ruff>=0.16.1",
@@ -45,7 +62,7 @@ dev = [
 
 [tool.taskipy.tasks]
 format-and-lint = "task ruff && task ty-lint"
-docs-build = "uv --directory docs run zensical build"
+docs-build = "uv --directory docs run zensical build --clean --strict"
 docs-run = "uv --directory docs run zensical serve"
 
 ruff = "ruff format ./src/ovid_core ./src/tests/ && ruff check ./src/ovid_core ./src/tests/ --fix --unsafe-fixes"

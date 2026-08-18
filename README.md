@@ -7,6 +7,8 @@
 <p align="center">
   <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/Python-3.14%2B-blue" alt="Python 3.14 or newer"></a>
   <a href="pyproject.toml"><img src="https://img.shields.io/badge/version-0.1.0-indigo" alt="Version 0.1.0"></a>
+  <a href="https://github.com/EzyGang/ovid-core/actions/workflows/ci.yml"><img src="https://github.com/EzyGang/ovid-core/actions/workflows/ci.yml/badge.svg" alt="CI status"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="MIT license"></a>
 </p>
 
 ---
@@ -34,6 +36,7 @@ Installing Ovid Core does not start a server or add tools to an agent. Your appl
 - [Application ownership](#application-ownership)
 - [Development](#development)
 - [Contributing](#contributing)
+- [License](#license)
 
 ---
 
@@ -274,3 +277,9 @@ Ovid Core targets 100% branch coverage for its Python integration layer.
 5. Open a pull request with a clear reason for the change.
 
 Keep provider runtime types inside adapters. Keep application policy in the application. See [AGENTS.md](AGENTS.md) for the full repository rules.
+
+---
+
+## License
+
+Ovid Core is licensed under the [MIT License](LICENSE).
