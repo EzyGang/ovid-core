@@ -183,8 +183,9 @@ Never edit it by hand.
 
 ### Codex subscription
 
-- Keep ChatGPT Codex authentication inside `CodexSubscriptionModelFactory` and `ovid_core.codex`.
-- Use the official device flow, token rotation, model catalog, and dedicated authenticated client.
+- Keep ChatGPT Codex authentication inside `CodexAuth` and `ovid_core.codex`.
+- Support the official browser redirect and device-code login methods through `CodexAuth`.
+- Keep token storage, refresh, cancellation, and request authentication behind the service.
 - Do not copy Codex prompts, serialize OAuth tokens, claim another client identity, or silently fall back to API-key billing.
 - Treat the ChatGPT backend as an undocumented contract and keep it isolated from normal provider setup.
 

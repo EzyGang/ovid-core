@@ -1,59 +1,69 @@
 # Codex subscription
 
-The Codex integration uses OpenAI's device authorization and the undocumented ChatGPT Codex backend. Keep it isolated behind `CodexSubscriptionModelFactory`. It never silently falls back from subscription access to API-key billing for the same configured provider.
+The Codex integration uses ChatGPT subscription authentication and the undocumented ChatGPT Codex backend. Keep it behind `CodexSubscriptionModelFactory`.
 
-## OAuth values
+Ovid does not change a failed subscription request to API-key billing.
 
-Import from `ovid_core.codex.models`.
+System-keyring storage is included with Ovid Core. Use `CodexAuth.ephemeral()` when credentials must remain in memory.
 
-### `CodexOAuthConfig`
+## Authentication service
 
-| Field | Default |
-| --- | --- |
-| `issuer` | `https://auth.openai.com` |
-| `client_id` | Codex device-flow client ID |
-| `backend_url` | `https://chatgpt.com/backend-api/codex` |
-| `poll_timeout_seconds` | `900` |
-| `refresh_window_seconds` | `300` |
+Import `CodexAuth` from `ovid_core.codex`.
 
-URL values must be non-empty. The poll timeout must be positive. The refresh window must be non-negative.
-
-### `CodexDeviceAuthorization`
-
-The public handoff contains a non-empty `verification_url` and `user_code`.
-
-Serialization and repr output omit `device_auth_id` and `interval_seconds`.
-
-### `CodexTokens`
-
-Contains `id_token`, `access_token`, and rotating `refresh_token` as `SecretStr`. Repr output does not show these values.
-
-Do not put this model in configuration, result metadata, logs, or transport data.
-
-## Device authorization
-
-Import `CodexDeviceAuthClient` from `ovid_core.codex.device`.
+`CodexAuth` owns login, token refresh, logout, and its optional HTTP client. Keep the service open while Codex models can make requests.
 
 ```python
-client = CodexDeviceAuthClient(
-    http_client=http_client,
-    token_manager=token_manager,
-    config=oauth_config,
-)
-authorization = await client.start()
-print(authorization.verification_url, authorization.user_code)
-tokens = await client.complete(authorization)
+async with CodexAuth.persistent() as auth:
+    factory = CodexSubscriptionModelFactory(auth=auth)
+    handle = await factory.build(model_id='codex', config=model_config)
+
+    async with handle._runtime:
+        result = await agent.run('Complete the task')
 ```
 
-- `start()` requests a device authorization and returns the browser handoff.
-- `complete(authorization)` polls for authorization. It exchanges the authorization code and saves the returned tokens.
-- Protocol, HTTP, validation, and timeout failures raise `CodexAuthError` without exposing tokens, codes, or response bodies.
+Objects created in the context remain in Python scope after exit. They must not make Codex requests after the authentication service closes.
 
-The caller owns the injected `httpx.AsyncClient` lifecycle.
+Pass an `httpx.AsyncClient` when the application owns the client lifecycle:
 
-## Token storage and refresh
+```python
+auth = CodexAuth.persistent(http_client=http_client)
+```
 
-Import from `ovid_core.codex.tokens`.
+The context manager does not close an injected client.
+
+### Persistent authentication
+
+```python
+auth = CodexAuth.persistent(
+    service='ovid-core.codex',
+    account='default',
+    config=oauth_config,
+)
+```
+
+This mode stores ID, access, and refresh tokens in the system keyring. It never falls back to a plaintext file.
+
+### Ephemeral authentication
+
+```python
+auth = CodexAuth.ephemeral(config=oauth_config)
+```
+
+This mode stores tokens in process memory. Closing the process removes the login.
+
+### Custom storage
+
+Applications can inject a store directly:
+
+```python
+auth = CodexAuth(
+    store=application_token_store,
+    http_client=http_client,
+    config=oauth_config,
+)
+```
+
+A custom store implements `CodexTokenStore`:
 
 ```python
 class CodexTokenStore(Protocol):
@@ -62,68 +72,96 @@ class CodexTokenStore(Protocol):
     async def delete(self) -> None: ...
 ```
 
-`CodexTokenManager(store, http_client, config)` serializes token operations with an async lock:
+## Browser login
 
-- `tokens(force_refresh=False)` loads cached or stored tokens and returns the current value.
-- It refreshes tokens near expiry or when forced.
-- It persists rotating tokens.
-- `save(tokens)` persists and caches an authenticated token set.
-- `logout()` deletes storage and clears the cache.
-- Missing authentication and refresh failures raise `CodexAuthError`.
-
-`codex_account_id(tokens) -> str` reads the ChatGPT account ID from the identity-token claims. A malformed token or missing account claim raises `CodexAuthError`.
-
-## System keyring
-
-Import `KeyringCodexTokenStore` from `ovid_core.codex.keyring`.
+Browser login uses a temporary localhost callback server, OAuth state, and PKCE.
 
 ```python
-store = KeyringCodexTokenStore(
-    service='ovid-core.codex',
-    account='default',
-)
+async with CodexAuth.persistent() as auth:
+    login = await auth.start_browser_login()
+    show_login_url(login.authorization_url)
+    await login.wait()
 ```
 
-`load`, `save`, and `delete` implement `CodexTokenStore` by moving blocking keyring access to worker threads. Keyring and stored-payload failures become redacted `CodexAuthError` values. Deleting a missing entry is a no-op.
+The application decides how to display or open `authorization_url`.
 
-## Instruction catalog
+`wait()` closes the callback server after success, rejection, timeout, failure, or cancellation. Use `await login.cancel()` when the user abandons login.
 
-Import from `ovid_core.codex.catalog`.
+The default callback ports are `1455` and `1457`. OpenAI must allow each configured callback port.
 
-- `CodexInstructionCatalog.models` contains validated internal catalog entries.
-- `instructions_for(model_name)` returns the selected model's base instructions or raises `ModelResolutionError`.
-- `load_instruction_catalog(http_client=..., backend_url=...)` requests `/models`, validates the response while ignoring unknown fields, and raises `ModelResolutionError` on HTTP or schema failure.
+## Device-code login
 
-Most consumers should not call the loader directly. `CodexSubscriptionModelFactory` loads and caches the catalog once per factory.
+Device login is suitable for terminals and remote hosts:
+
+```python
+async with CodexAuth.persistent() as auth:
+    login = await auth.start_device_login()
+    show_device_code(login.verification_url, login.user_code)
+    await login.wait()
+```
+
+`wait()` polls for approval, exchanges the authorization code, and stores the tokens. Use `await login.cancel()` to stop polling.
+
+Only one login attempt can run for one `CodexAuth` service.
+
+## OAuth configuration
+
+Import `CodexOAuthConfig` from `ovid_core.codex`.
+
+| Field | Default |
+| --- | --- |
+| `issuer` | `https://auth.openai.com` |
+| `client_id` | Codex OAuth client ID |
+| `backend_url` | `https://chatgpt.com/backend-api/codex` |
+| `callback_ports` | `(1455, 1457)` |
+| `login_timeout_seconds` | `900` |
+| `refresh_window_seconds` | `300` |
+
+The login timeout applies to browser and device-code login.
+
+## Token lifecycle
+
+Applications do not need to handle tokens during normal use.
+
+`CodexAuth`:
+
+- loads stored tokens
+- refreshes tokens before expiry
+- saves rotating tokens
+- serializes token changes
+- retries one request after a `401`
+- deletes stored tokens through `logout()`
+
+```python
+await auth.logout()
+```
+
+Token, protocol, HTTP, validation, and timeout failures raise redacted `CodexAuthError` values.
 
 ## Subscription model factory
 
-Import `CodexSubscriptionModelFactory` from `ovid_core.adapters.pydantic_ai.codex`.
+Import `CodexSubscriptionModelFactory` from `ovid_core.adapters.pydantic_ai`.
 
 ```python
 factory = CodexSubscriptionModelFactory(
-    token_manager=token_manager,
-    config=oauth_config,                 # optional
-    fallback=DefaultModelFactory(),      # optional
-    backend_transport=transport,         # optional
+    auth=auth,
+    fallback=DefaultModelFactory(),
+    backend_transport=transport,
 )
-handle = await factory.build(model_id='codex', config=model_config)
 ```
 
-Use `provider='codex-subscription'` in `ModelConfig`. Other providers delegate to `fallback`, which defaults to `DefaultModelFactory`.
+Use `provider='codex-subscription'` in `ModelConfig`. Other providers delegate to `fallback`.
 
-For subscription models the factory:
+For subscription models, the factory:
 
-1. Obtains and refreshes OAuth tokens through `CodexTokenManager`.
-2. Creates and owns an authenticated OpenAI HTTP client.
-3. fetches validated base instructions from the model catalog once.
-4. Constructs an `OpenAIResponsesModel` against the ChatGPT Codex backend.
-5. Preserves catalog instructions as top-level Responses instructions and maps consumer instructions to developer input.
-6. Requires streaming, `store=false`, encrypted reasoning replay, and Codex authentication headers.
-7. Closes its HTTP client if model construction fails.
+1. Uses `CodexAuth` for current credentials.
+2. Creates an authenticated OpenAI HTTP client.
+3. Loads and caches the validated model catalog.
+4. Constructs an `OpenAIResponsesModel` for the Codex backend.
+5. Preserves catalog instructions as Responses API instructions.
+6. Requires stateless Responses API operation.
+7. Adds the Codex account and authentication headers.
 
-The model owns the HTTP client after successful construction.
+The model owns its HTTP client after successful construction.
 
-The factory rejects stateful Responses API settings with `ModelResolutionError`.
-
-These settings include `openai_store`, background mode, conversation IDs, and previous-response IDs.
+The factory rejects stateful Responses API settings. These settings include `openai_store`, background mode, conversation IDs, and previous-response IDs.

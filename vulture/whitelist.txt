@@ -53,7 +53,16 @@ _.total_tokens
 CodexAuthError
 CodexSubscriptionModelFactory
 KeyringCodexTokenStore
-CodexDeviceAuthClient
+CodexAuth
+CodexBrowserLogin
+CodexDeviceLogin
+MemoryCodexTokenStore
+_.persistent
+_.ephemeral
+_.start_browser_login
+_.start_device_login
+_.wait
+_.cancel
 _.start
 _.complete
 _.logout

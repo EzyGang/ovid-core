@@ -17,9 +17,10 @@ from pydantic_ai.providers.openai import OpenAIProvider
 from pydantic_ai.settings import ModelSettings, merge_model_settings
 
 from ovid_core.adapters.pydantic_ai.models import DefaultModelFactory, _capabilities
+from ovid_core.codex.auth import CodexAuth
 from ovid_core.codex.catalog import CodexInstructionCatalog, load_instruction_catalog
-from ovid_core.codex.models import CodexOAuthConfig, CodexTokens
-from ovid_core.codex.tokens import CodexTokenManager, codex_account_id
+from ovid_core.codex.models import CodexTokens
+from ovid_core.codex.tokens import codex_account_id
 from ovid_core.config.models import ModelConfig
 from ovid_core.errors import ModelResolutionError
 from ovid_core.routing.models import ModelHandle
@@ -33,13 +34,12 @@ class CodexSubscriptionModelFactory:
     def __init__(
         self,
         *,
-        token_manager: CodexTokenManager,
-        config: CodexOAuthConfig | None = None,
+        auth: CodexAuth,
         fallback: DefaultModelFactory | None = None,
         backend_transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
-        self._tokens = token_manager
-        self._config = config or CodexOAuthConfig()
+        self._auth = auth
+        self._config = auth.config
         self._fallback = fallback or DefaultModelFactory()
         self._backend_transport = backend_transport
         self._instruction_catalog: CodexInstructionCatalog | None = None
@@ -64,7 +64,7 @@ class CodexSubscriptionModelFactory:
         http_client: httpx.AsyncClient | None = None
         try:
             _validate_settings(config.settings)
-            auth = _CodexHttpxAuth(self._tokens)
+            auth = _CodexHttpxAuth(self._auth)
             transport = _RedactingTransport(self._backend_transport or httpx.AsyncHTTPTransport())
             http_client = httpx.AsyncClient(auth=auth, transport=transport)
             base_instructions = await self._instructions_for(
@@ -194,15 +194,15 @@ class _RedactingTransport(httpx.AsyncBaseTransport):
 
 
 class _CodexHttpxAuth(httpx.Auth):
-    def __init__(self, tokens: CodexTokenManager) -> None:
-        self._tokens = tokens
+    def __init__(self, auth: CodexAuth) -> None:
+        self._auth = auth
 
     async def async_auth_flow(self, request: httpx.Request) -> AsyncGenerator[httpx.Request, httpx.Response]:
-        tokens = await self._tokens.tokens()
+        tokens = await self._auth._request_tokens()
         response = yield _prepare_request(request, tokens)
         if response.status_code == 401:
             await response.aread()
-            tokens = await self._tokens.tokens(force_refresh=True)
+            tokens = await self._auth._request_tokens(force_refresh=True)
             yield _prepare_request(request, tokens)
 
 
