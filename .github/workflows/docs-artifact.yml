@@ -30,6 +30,9 @@ jobs:
         run: uv --directory docs sync --locked
       - name: Build documentation
         run: uv --directory docs run zensical build --clean --strict
+      - name: Package documentation site
+        working-directory: docs/site
+        run: zip --quiet --recurse-paths ../../ovid-documentation-site.zip .
       - name: Upload documentation site
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
@@ -38,3 +41,42 @@ jobs:
           if-no-files-found: error
           retention-days: 90
           compression-level: 9
+      - name: Upload release archive
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: ovid-documentation-release
+          path: ovid-documentation-site.zip
+          if-no-files-found: error
+          retention-days: 1
+
+  publish:
+    name: Publish public documentation archive
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write # Required to create and update the rolling GitHub release.
+    steps:
+      - name: Download release archive
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: ovid-documentation-release
+      - name: Publish public documentation archive
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_ASSET: ovid-documentation-site.zip
+          RELEASE_TAG: documentation-site
+        run: |
+          if gh release view "${RELEASE_TAG}" >/dev/null 2>&1; then
+            gh release upload "${RELEASE_TAG}" "${RELEASE_ASSET}" --clobber
+            gh release edit "${RELEASE_TAG}" \
+              --title "Documentation site" \
+              --notes "Latest manual documentation build from ${GITHUB_SHA}." \
+              --prerelease
+          else
+            gh release create "${RELEASE_TAG}" "${RELEASE_ASSET}" \
+              --title "Documentation site" \
+              --notes "Latest manual documentation build from ${GITHUB_SHA}." \
+              --target "${GITHUB_SHA}" \
+              --prerelease
+          fi
