@@ -22,7 +22,12 @@ class DefaultAgentCompiler:
             raise AgentConstructionError('Resolved model is not compatible with the Pydantic AI adapter')
 
         try:
-            extensions = adapt_agent_extensions(definition.capabilities, definition.toolsets, definition.hooks)
+            extensions = adapt_agent_extensions(
+                definition.capabilities,
+                definition.toolsets,
+                definition.hooks,
+                tool_approval=definition.tool_approval,
+            )
             policy = definition.policy
             agent = Agent[Deps, Output](
                 runtime,

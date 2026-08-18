@@ -32,7 +32,7 @@ Import from `ovid_core.server.contracts`.
 
 ### `RequestContext`
 
-```python
+```text
 RequestContext(
     *,
     method: str,

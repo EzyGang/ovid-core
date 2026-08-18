@@ -109,6 +109,32 @@ async def test_toolset_adapter_propagates_identity_usage_approval_hooks_and_life
     await base_hook.on_tool_error(tool.context, 'add', ToolExecutionError('failed'))
 
 
+@pytest.mark.parametrize(
+    ('tool_approval', 'expected_kind'),
+    (
+        (None, 'unapproved'),
+        (ToolApproval(required=False, reason='Run without approval'), 'function'),
+        (ToolApproval(required=True, reason='Require caller approval'), 'unapproved'),
+    ),
+)
+async def test_toolset_adapter_applies_tool_approval_override(
+    tool_approval: ToolApproval | None,
+    expected_kind: str,
+) -> None:
+    tool = AddTool()
+    adapter = PydanticAIToolsetAdapter(
+        source=TrackingToolset((tool,)),
+        tool_approval=tool_approval,
+    )
+
+    definitions = await adapter.get_tools(upstream_context())
+    definition = definitions['add'].tool_def
+    effective_approval = tool.approval if tool_approval is None else tool_approval
+
+    assert definition.kind == expected_kind
+    assert definition.metadata == {'ovid_approval': effective_approval.model_dump(mode='json')}
+
+
 async def test_adapter_preserves_typed_validation_execution_timeout_and_cancellation_errors() -> None:
     context = upstream_context()
     hook = RecordingHook()

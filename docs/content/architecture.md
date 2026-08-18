@@ -74,17 +74,22 @@ The router caches model handles. Run and stream calls can select another configu
 `AgentServiceRequirement` values and resolves its provider during construction. Missing services, incompatible value
 types, missing features, duplicate bindings, and effective tool-name collisions fail before a model call.
 
-Service values remain stateful application-owned objects retained by reference. The registry does not start or stop
-them. `AgentConstructionDiagnostics.services` reports safe provider, feature, consumer, and opaque identity metadata;
-it does not serialize provider state or workspace roots.
+Service values remain stateful application-owned objects retained by reference.
+The registry does not start or stop them.
+`AgentConstructionDiagnostics.services` reports safe provider, feature, consumer, and opaque identity metadata.
+It does not serialize provider state or workspace roots.
 
 Capabilities advertise bound contributions only after requirement validation. Model fallback and per-run model
 selection compile from the same bound definition and never recreate services or bind capabilities again.
 
-Plugin installation is inert. Applications register trusted provider, configurator, and capability factories, select
-their namespaced IDs explicitly, and assemble service bindings before `AgentFactory` runs. Configurators can target
-only selected providers; capabilities retain inspectable service requirements. Selection order is deterministic, and
-the application closes services it owns in reverse startup order.
+Plugin installation is inert.
+Applications register trusted provider, configurator, and capability factories.
+They select the namespaced IDs and assemble service bindings before `AgentFactory` runs.
+
+Configurators can target only selected providers.
+Capabilities retain inspectable service requirements.
+Selection order is deterministic.
+The application closes its services in reverse startup order.
 
 Construction errors occur before a run. Ovid Core converts these errors to configuration or construction errors.
 

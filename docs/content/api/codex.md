@@ -64,7 +64,9 @@ class CodexTokenStore(Protocol):
 
 `CodexTokenManager(store, http_client, config)` serializes token operations with an async lock:
 
-- `tokens(force_refresh=False)` loads cached or stored tokens, refreshes an access token near expiry or when forced, persists rotating tokens, and returns the current value.
+- `tokens(force_refresh=False)` loads cached or stored tokens and returns the current value.
+- It refreshes tokens near expiry or when forced.
+- It persists rotating tokens.
 - `save(tokens)` persists and caches an authenticated token set.
 - `logout()` deletes storage and clears the cache.
 - Missing authentication and refresh failures raise `CodexAuthError`.

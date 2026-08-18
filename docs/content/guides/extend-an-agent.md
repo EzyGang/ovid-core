@@ -64,7 +64,11 @@ The Pydantic AI adapter:
 
 The adapter does not convert cancellation to a tool error.
 
-A tool approval value describes the requirement. The application controls approval and supplies the approval data in the execution context.
+Each tool declares its default approval value.
+The application controls approval and supplies approval data in the execution context.
+Set `AgentDefinition.tool_approval` to replace every Ovid tool default for one agent.
+For example, `ToolApproval(required=False)` removes approval pauses for all Ovid tools.
+Other workspace and tool checks still apply.
 
 ## Bundle it in a capability
 
@@ -145,17 +149,33 @@ definition = AgentDefinition[AppDeps, Answer](
 )
 ```
 
-Share that `InMemoryRelay` instance when another bound connection should appear in `relay_contacts` and exchange messages.
-Separate instances are isolated. `relay_send` returns once the recipient connection accepts the message; it does not wait for the
-handler. The connection serializes automatic handler calls. `ACKNOWLEDGE` consumes that message, while `DEFER` or an exception leaves
-it pending. Calling `set_delivery_handler()` later makes pending messages eligible; setting it to `None` leaves future messages
-pending.
+Share that `InMemoryRelay` instance with every connection that must exchange messages.
+Connections from separate instances remain isolated.
+`relay_send` returns when the recipient connection accepts the message.
+It does not wait for the handler.
+The connection serializes automatic handler calls.
 
-The tools are `relay_send`, `relay_wait`, `relay_pending`, and `relay_contacts`. Use the received message ID as `reply_to` when
-answering, and filter `relay_wait` by `reply_to` for exact correlation. A receipt means only backend acceptance, never that an agent
-read, woke for, or replied to a message.
-Override model-visible tool descriptions through `RelayToolDescriptions`; unspecified descriptions keep their core defaults. Use
-`AgentDefinition.instructions` for application-wide delegation or collaboration policy.
+`ACKNOWLEDGE` consumes the message.
+`DEFER` or an exception leaves it pending.
+Calling `set_delivery_handler()` later makes pending messages eligible.
+Setting it to `None` leaves future messages pending.
+
+The capability contributes four tools:
+
+- `relay_send`
+- `relay_wait`
+- `relay_pending`
+- `relay_contacts`
+
+Use the received message ID as `reply_to` when answering.
+Filter `relay_wait` by `reply_to` for exact correlation.
+A receipt confirms only backend acceptance.
+It does not confirm that an agent read or answered a message.
+
+
+Use `RelayToolDescriptions` to override model-visible tool descriptions.
+Descriptions that you omit keep their core defaults.
+Use `AgentDefinition.instructions` for application-wide collaboration policy.
 
 
 A distributed transport can implement the same structural seam without changing factory configuration:
@@ -167,9 +187,17 @@ connection: RelayConnection = application_relay.connection_for('worker')
 worker_relay = RelayCapability[AppDeps](connection=connection)
 ```
 
-Core owns the values, protocol, capability, tools, and explicit process-local implementation. The application owns network selection,
-identity assignment, delivery into its agent loop, handler policy, startup, and shutdown. `AgentFactory` remains unaware of Relay;
-`RelayConnection` requires neither a context manager nor any lifecycle method.
+Core owns the Relay values, protocol, capability, tools, and process-local implementation.
+The application owns:
+
+- network selection
+- identity assignment
+- delivery into its agent loop
+- handler policy
+- startup and shutdown
+
+`AgentFactory` remains unaware of Relay.
+`RelayConnection` requires no context manager or lifecycle method.
 
 ## Use a toolset for dynamic tools
 

@@ -25,7 +25,7 @@ The `total_tokens` property adds `input_tokens` and `output_tokens`. It does not
 
 Adds `request_count` and `tool_calls` to the same token and provider-detail fields. Public operations:
 
-```python
+```text
 Usage.from_requests(requests: Iterable[RequestUsage] = (), *, tool_calls: int = 0) -> Usage
 usage.total_tokens -> int
 usage.is_zero -> bool
@@ -39,7 +39,7 @@ usage.delta_since(previous) -> Usage
 
 Import from `ovid_core.usage.tracking`.
 
-```python
+```text
 UsageUpdateCallback = Callable[[UsageTracker, Usage], Awaitable[None]]
 
 UsageTracker(

@@ -23,7 +23,7 @@ When `provider_api_key` returns a key, the factory passes that key to the inferr
 
 ### `known_models`
 
-```python
+```text
 def known_models() -> tuple[KnownModel, ...]
 ```
 
@@ -62,7 +62,7 @@ The adapter maps `ToolResult` to JSON and preserves cancellation. Duplicate tool
 
 Import from `ovid_core.adapters.pydantic_ai.messages`.
 
-```python
+```text
 def message_from_pydantic(value: ModelMessage) -> AgentMessage
 def message_to_pydantic(value: AgentMessage) -> ModelMessage
 ```
@@ -75,7 +75,7 @@ Unsupported or invalid upstream messages raise `ProviderError`. Invalid normaliz
 
 Import `result_from_pydantic` from `ovid_core.adapters.pydantic_ai.results`.
 
-```python
+```text
 def result_from_pydantic[Output](
     value: AgentRunResult[Output],
 ) -> RunResult[Output]
@@ -108,7 +108,7 @@ Invalid or inconsistent provider usage raises `ProviderError`.
 
 Import `compile_fallback_model` from `ovid_core.adapters.pydantic_ai.routing`.
 
-```python
+```text
 def compile_fallback_model(
     *,
     model_id: str,

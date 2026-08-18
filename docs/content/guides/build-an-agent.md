@@ -33,7 +33,8 @@ class Answer(BaseModel):
     confidence: float = Field(ge=0, le=1)
 ```
 
-Ovid's base model is frozen and rejects unknown fields. The compiled Pydantic AI agent validates the model output before Ovid creates `RunResult[Answer]`.
+Ovid's base model prevents mutation and rejects unknown fields.
+The compiled Pydantic AI agent validates model output before Ovid creates `RunResult[Answer]`.
 
 Use `str` as `output_type` when plain text is the actual contract.
 

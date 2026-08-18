@@ -10,6 +10,16 @@ Import from `ovid_core.tools.models`.
 - `reason: str | None = None`
 - `metadata: dict[str, JsonValue] = {}`
 
+The approval value controls the Pydantic AI tool definition.
+When `required=True`, Pydantic AI defers the call before tool execution.
+The application can approve or reject the exact call.
+
+Set `AgentDefinition.tool_approval` to override this value for every Ovid tool in one agent.
+For example, `ToolApproval(required=False)` removes all approval pauses for Ovid tools.
+The normal workspace and tool checks still apply.
+
+The override does not change tools from a Pydantic AI capability passthrough.
+
 ### `ToolResult`
 
 - `content: JsonValue` contains the required result content.
@@ -140,33 +150,51 @@ adapter-specific port itself.
 
 ## Agent service contracts
 
-Import `AgentServiceKey`, `AgentServiceRef`, `AgentServiceBinding`, `AgentServiceRequirement`, and `AgentServices` from
-`ovid_core.services`. Keys are identified by namespaced ID and positive API version; references add an identifier name.
-The immutable registry rejects duplicate bindings and validates declared runtime value types. Requirements can also
-name mandatory provider features.
+Import these values from `ovid_core.services`:
+
+- `AgentServiceKey`
+- `AgentServiceRef`
+- `AgentServiceBinding`
+- `AgentServiceRequirement`
+- `AgentServices`
+
+A namespaced ID and positive API version identify each key.
+References add an identifier name.
+The immutable registry rejects duplicate bindings.
+It validates declared runtime value types.
+Requirements can also name mandatory provider features.
 
 `AgentDefinition.services` defaults to an empty registry. `AgentFactory` validates and binds capabilities once before
 compilation. Missing or incompatible services raise narrow `AgentServiceError` subclasses during construction.
 
 ## Explicit plugin factories
 
-`PluginRegistrar` records namespaced service-provider, service-configurator, and capability factories. Registration has
-no activation side effect. Applications select IDs explicitly with `select_service_factories(...)` and
-`select_capability_factories(...)`; unknown, empty, duplicate, or incompatible selections raise `PluginError`.
+`PluginRegistrar` records namespaced factories for service providers, service configurators, and capabilities.
+Registration does not activate a factory.
+Applications select IDs with `select_service_factories(...)` and `select_capability_factories(...)`.
+Invalid selections raise `PluginError`.
+This includes unknown, empty, duplicate, and incompatible selections.
 
-Provider factories receive `PluginActivationContext` plus application-selected JSON configuration and return one
-`AgentServiceBinding`. Configurators target one selected provider ID and return a configured binding; they cannot
-silently replace an unselected provider. Capability factories declare `AgentServiceRequirement` values before
-activation and resolve the already assembled `AgentServices` from their activation context. Requested order is
-preserved, so applications can start selected providers deterministically and close owned services in reverse order.
+Provider factories receive `PluginActivationContext` and application-selected JSON configuration.
+They return one `AgentServiceBinding`.
+Configurators target one selected provider ID and return a configured binding.
+They cannot replace an unselected provider.
+
+Capability factories declare `AgentServiceRequirement` values before activation.
+They resolve the assembled `AgentServices` from their activation context.
+The registry preserves requested order.
+Applications can start selected providers deterministically.
+They close owned services in reverse order.
 
 Plugin code is trusted executable code. Installing or discovering it does not register a provider, configure a
 service, contribute a capability, or change an agent.
 
 ## Relay
 
-Import Relay contracts and implementations from `ovid_core.relay`. Relay is off by default: only
-`RelayCapability(connection=connection)` contributes Relay tools, and `AgentFactory` does not create or configure a connection.
+Import Relay contracts and implementations from `ovid_core.relay`.
+Relay is off by default.
+Only `RelayCapability(connection=connection)` contributes Relay tools.
+`AgentFactory` does not create or configure a connection.
 For a task-oriented walkthrough, see [Use Relay between agents](../guides/use-relay.md).
 
 ### Values and connection
@@ -176,11 +204,11 @@ For a task-oriented walkthrough, see [Use Relay between agents](../guides/use-re
 - `RelayMessageId` is a UUID root with `new()`.
 - `RelayMessage` contains `id`, `sender`, `recipient`, `content`, timezone-aware `sent_at`, and optional `reply_to`.
 - `RelayReceipt` contains `message_id`, `recipient`, and timezone-aware `accepted_at`. It records backend acceptance, not reading or delivery.
-- `RelayContact` contains `address` and `display_name`; Relay does not expose presence or lifecycle status.
+- `RelayContact` contains `address` and `display_name`. Relay does not expose presence or lifecycle status.
 
 `RelayConnection` is structurally typed and bound to one `identity`. It defines:
 
-```python
+```text
 identity: RelayIdentity
 set_delivery_handler(handler: RelayDeliveryHandler | None) -> None
 await send(recipient, content, reply_to=None) -> RelayReceipt
@@ -193,11 +221,19 @@ await contacts() -> tuple[RelayContact, ...]
 `RelayDisposition.DEFER`. Acknowledgement consumes the message. Defer, a handler exception, or no handler retains it.
 An active matching `wait` takes precedence. Handler work is asynchronous to sender acceptance.
 
-`InMemoryRelay(capacity=100)` is an explicit process-local network. Call synchronous
-`connection(identity, delivery_handler=None)` for each unique identity. Connections from the same instance can communicate;
-connections from separate instances cannot. Each mailbox is bounded and rejects overflow with `RelayCapacityError`.
-Unknown recipients raise `UnknownRelayRecipientError`; duplicate live addresses raise `RelayAddressInUseError`; full mailboxes raise
-`RelayCapacityError`; closed connections raise `RelayUnavailableError`.
+`InMemoryRelay(capacity=100)` is an explicit process-local network.
+Call synchronous `connection(identity, delivery_handler=None)` for each unique identity.
+Connections from the same instance can communicate.
+Connections from separate instances cannot communicate.
+Each mailbox has a fixed capacity.
+It rejects overflow with `RelayCapacityError`.
+
+Relay operations use narrow errors:
+
+- Unknown recipients raise `UnknownRelayRecipientError`.
+- Duplicate live addresses raise `RelayAddressInUseError`.
+- Full mailboxes raise `RelayCapacityError`.
+- Closed connections raise `RelayUnavailableError`.
 
 ### Automatic tools
 
@@ -207,12 +243,15 @@ Unknown recipients raise `UnknownRelayRecipientError`; duplicate live addresses 
 | --- | --- | --- |
 | `relay_send` | `to`, `message`, optional `reply_to` | accepted `receipt` |
 | `relay_wait` | optional `sender`, `reply_to`, `timeout_seconds` | one consumed `message` or `None` |
-| `relay_pending` | `retain=False` | FIFO `messages`; consumed unless retained |
+| `relay_pending` | `retain=False` | FIFO `messages`, consumed unless retained |
 | `relay_contacts` | none | registered `contacts` other than self |
 
-When supplied, `reply_to` is matched exactly. A wait timeout returns `None`, including an immediate check with zero; cancellation
-continues to the caller.
-Consumer applications can replace the model-visible description of each built-in tool without replacing its implementation:
+When supplied, `reply_to` requires an exact match.
+A wait timeout returns `None`.
+This includes an immediate check with zero.
+Cancellation continues to the caller.
+Applications can replace each built-in model-visible description.
+They do not need to replace the implementation.
 
 ```python
 from ovid_core.relay import RelayCapability, RelayToolDescriptions
@@ -303,7 +342,7 @@ Use `create_mcp_capability` directly only for an agent-specific or application-g
 
 Import `MCPServerCapability` and `create_mcp_capability` from `ovid_core.mcp.capability`.
 
-```python
+```text
 async def create_mcp_capability[Deps](
     config: MCPServerConfig,
     *,

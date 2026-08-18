@@ -68,7 +68,10 @@ Set `language` to apply one language to every selected file. Omit it to infer th
 
 Strictness accepts `cst`, `smart`, `ast`, `relaxed`, `signature`, and `template`. The default is `smart`.
 
-In Hashline mode, the agent-facing `ast_grep` tool validates the exact current source lines covering each match and capture, then renders shared Hashline locators. Those lines authorize direct edits; parse issues and path-only metadata do not.
+In Hashline mode, `ast_grep` validates the exact current source lines for each match and capture.
+It then renders shared Hashline locators.
+These lines can authorize direct edits.
+Parse issues and path-only metadata cannot authorize edits.
 
 ## Select workspace files
 
@@ -83,9 +86,14 @@ scan = AstScanOptions(
 )
 ```
 
-Paths and globs are relative to the configured root. Scanning rejects absolute paths, parent traversal, and symlink targets outside the root. It skips `.git`, hidden files, and `node_modules` by default and never follows directory symlinks.
+Paths and globs are relative to the configured root.
+Scanning rejects absolute paths, parent traversal, and symlink targets outside the root.
+It skips `.git`, hidden files, and `node_modules` by default.
+It never follows directory symlinks.
 
-Candidate paths are deduplicated and sorted by root-relative POSIX path. Only regular UTF-8 files are parsed. Unsupported extensions and per-file read or parse failures appear in typed result fields.
+The scanner removes duplicate candidates and sorts them by root-relative POSIX path.
+It parses only regular UTF-8 files.
+Typed result fields report unsupported extensions and per-file read or parse failures.
 
 ## Preview and apply a rewrite
 
@@ -118,9 +126,17 @@ applied = await engine.apply_rewrite(
 )
 ```
 
-Preview evaluates every operation against the same original syntax tree. It deduplicates identical edits and rejects divergent overlaps. A preview with no changes stores no proposal and returns an empty proposal ID.
+Preview evaluates every operation against the same original syntax tree.
+It removes identical edits and rejects divergent overlaps.
+A preview with no changes stores no proposal.
+It returns an empty proposal ID.
 
-Apply removes the proposal before writing, so each proposal can be used once. It preflights every affected file and rejects the complete operation when any SHA-256 hash changed. Each file is replaced through a same-directory temporary file, and its permissions are preserved. Filesystems do not provide a single atomic transaction across multiple paths.
+Apply removes the proposal before writing and permits one use.
+It checks every affected file before the first write.
+If any SHA-256 hash changed, apply rejects the complete operation.
+Apply replaces each file through a temporary file in the same directory.
+The replacement preserves file permissions.
+Filesystems do not provide one atomic transaction across multiple paths.
 
 Use `reject_rewrite(proposal_id)` to discard a proposal before expiration.
 

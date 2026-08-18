@@ -25,6 +25,7 @@ from ovid_core.runtime.identifiers import ConversationId, RunId
 from ovid_core.runtime.results import RunResult
 from ovid_core.services import AgentServices
 from ovid_core.tools.base import BaseToolset
+from ovid_core.tools.models import ToolApproval
 from ovid_core.usage.tracking import UsageTracker
 
 
@@ -39,6 +40,7 @@ class AgentDefinition[Deps, Output]:
     instructions: tuple[str, ...] = ()
     capabilities: tuple[BaseCapability[Deps], ...] = ()
     toolsets: tuple[BaseToolset[Deps], ...] = ()
+    tool_approval: ToolApproval | None = None
     hooks: tuple[BaseToolHook[Deps], ...] = ()
     policy: AgentRunPolicy = AgentRunPolicy()
     observability: ObservabilityConfig = ObservabilityConfig()
@@ -69,6 +71,7 @@ class AgentConstructionDiagnostics(BaseModel):
     fallback_order: tuple[str, ...] = Field(min_length=1)
     policy: AgentRunPolicy
     observability: ObservabilityConfig
+    tool_approval: ToolApproval | None = None
     extensions: tuple[AgentExtensionProvenance, ...]
     services: tuple[AgentServiceDiagnostic, ...] = ()
 
@@ -319,6 +322,7 @@ def _diagnostics[Deps, Output](
         fallback_order=resolved.fallback_order,
         policy=definition.policy,
         observability=definition.observability,
+        tool_approval=definition.tool_approval,
         extensions=tuple(extensions),
         services=_service_diagnostics(definition),
     )

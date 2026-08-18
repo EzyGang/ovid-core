@@ -72,9 +72,16 @@ for match in result.matches:
     print(match.path, match.modified_at)
 ```
 
-Each pattern may identify an exact file, directory, or glob. Overlapping selections are deduplicated. Path ordering sorts relative paths ascending. Modification ordering sorts newest entries first, then uses the relative path as a tie-break.
+Each pattern can identify an exact file, directory, or glob.
+The scanner removes overlapping selections.
+Path ordering sorts relative paths in ascending order.
+Modification ordering sorts the newest entries first.
+It uses the relative path to resolve ties.
 
-Directories end with `/` and have `file_type='directory'`. `completion='complete'` proves the scanner exhausted the selection. `file_limit_reached` and `deadline_reached` describe partial scans. `truncated=True` means another qualifying entry may exist.
+Directories end with `/` and have `file_type='directory'`.
+`completion='complete'` proves that the scanner exhausted the selection.
+`file_limit_reached` and `deadline_reached` describe partial scans.
+`truncated=True` means that another qualifying entry can exist.
 
 ## Search content
 
@@ -99,9 +106,16 @@ for file in result.files:
         print(file.path, match.range.start.line, match.line_text)
 ```
 
-Direct calls default to strict `mode='regex'`. The `grep` agent tool defaults to `mode='auto'`, which retries the complete pattern as literal text only when Rust regex and PCRE2 both reject it. Results set `interpreted_as_literal=True` after that fallback.
+Direct calls default to strict `mode='regex'`.
+The `grep` agent tool defaults to `mode='auto'`.
+Auto mode retries the complete pattern as literal text only after Rust regex and PCRE2 reject it.
+The result then sets `interpreted_as_literal=True`.
 
-When the shared workspace is in Hashline mode, the agent-facing `grep` tool validates exact matched and context lines through the workspace observation service and renders `[path#tag]` plus `LINE:hash|text`. Those lines can be edited directly. Truncated lines and incomplete source claims remain uneditable. `glob` is path-only and creates no observation.
+In Hashline mode, the `grep` tool validates each exact result line through the observation service.
+It renders `[path#tag]` and `LINE:hash|text`.
+These lines can authorize an edit.
+Truncated lines and incomplete source claims cannot authorize an edit.
+`glob` returns only paths and creates no observation.
 
 Pattern modes:
 
@@ -113,7 +127,11 @@ Case-sensitive matching is the default. Set `multiline=True` to permit matches a
 
 ## Pagination and coverage
 
-Grep pages by matching file. `file_offset` skips matching files, `file_limit` bounds returned files, and `matches_per_file` prevents one hot file from consuming the response. Continue with `next_file_offset` when present.
+Grep pages by matching file.
+`file_offset` skips matching files.
+`file_limit` bounds the returned files.
+`matches_per_file` prevents one frequent file from consuming the response.
+Continue with `next_file_offset` when the result supplies it.
 
 Each file reports:
 
@@ -122,7 +140,11 @@ Each file reports:
 - searched and total byte counts
 - whether byte coverage is complete
 
-Files above `max_file_bytes` use `large_file_mode='prefix'` by default. Prefix mode searches exactly the allowed prefix and sets `coverage.complete=False`. Skip mode does not search oversized files and increments `skipped_large_files`. Binary and non-UTF-8 files are skipped and counted separately.
+Files above `max_file_bytes` use `large_file_mode='prefix'` by default.
+Prefix mode searches exactly the allowed prefix and sets `coverage.complete=False`.
+Skip mode does not search oversized files.
+It increments `skipped_large_files`.
+The operation skips binary and non-UTF-8 files and counts them separately.
 
 `files_with_matches_exact=False`, incomplete completion, or partial file coverage means absence is unproven.
 
@@ -131,19 +153,29 @@ Files above `max_file_bytes` use `large_file_mode='prefix'` by default. Prefix m
 Search and AST operations share these rules:
 
 - The application supplies an explicit workspace root.
-- Returned paths are relative and use `/` separators.
-- Absolute paths and parent traversal are rejected.
-- Descendant directory symlinks are not followed.
+- Results contain relative paths with `/` separators.
+- The scanner rejects absolute paths and parent traversal.
+- The scanner does not follow descendant directory symlinks.
 - Explicit file symlinks must resolve inside the workspace.
-- `.ignore`, `.gitignore`, and repository excludes are respected by default.
-- Global Git ignores are disabled for deterministic application behavior.
-- Hidden files, `.git`, and `node_modules` are excluded by default.
-- Files, bytes, matches, context, line width, and time are bounded.
+- The scanner respects `.ignore`, `.gitignore`, and repository excludes by default.
+- The scanner disables global Git ignores for deterministic behavior.
+- The scanner excludes hidden files, `.git`, and `node_modules` by default.
+- Engine limits bound files, bytes, matches, context, line width, and time.
 
 Set the corresponding request flags to include hidden files, ignore repository rules, or include `node_modules`.
 
 ## Engine ceilings
 
-`SearchLimits` sets application-owned ceilings for scan entries, glob results, grep files, retained matches, matches per file, bytes per file, context lines, displayed line characters, and timeouts. Requests may choose lower values. A request above an engine ceiling raises `SearchLimitError` before native work begins.
+`SearchLimits` sets application-owned ceilings for:
 
-Cancelling the awaiting task signals the native operation. Native traversal, reads, and match collection check the same cooperative cancellation state.
+- scan entries and glob results
+- grep files and retained matches
+- matches per file and bytes per file
+- context lines and displayed line characters
+- operation timeouts
+
+Requests can choose lower values.
+A request above an engine ceiling raises `SearchLimitError` before native work begins.
+
+Cancelling the awaiting task signals the native operation.
+Native traversal, reads, and match collection check the same cancellation state.

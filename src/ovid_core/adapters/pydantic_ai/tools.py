@@ -22,6 +22,7 @@ from ovid_core.errors import ExtensionCollisionError, ToolExecutionError, ToolTi
 from ovid_core.hooks.base import BaseToolHook
 from ovid_core.runtime.context import RunContext
 from ovid_core.tools.base import BaseTool, BaseToolset, ToolExecutionContext
+from ovid_core.tools.models import ToolApproval
 
 
 _ANY_VALIDATOR = SchemaValidator(core_schema.any_schema())
@@ -31,6 +32,7 @@ _ANY_VALIDATOR = SchemaValidator(core_schema.any_schema())
 class PydanticAIToolsetAdapter[Deps](AbstractToolset[Deps]):
     source: BaseToolset[Deps]
     hooks: tuple[BaseToolHook[Deps], ...] = ()
+    tool_approval: ToolApproval | None = None
     _bound_tools: dict[int, BaseTool[Deps, Any, Any]] | None = None
 
     @property
@@ -39,14 +41,14 @@ class PydanticAIToolsetAdapter[Deps](AbstractToolset[Deps]):
 
     async def for_run(self, ctx: PydanticRunContext[Deps]) -> AbstractToolset[Deps]:
         source = await self.source.for_run(run_context_from_pydantic(ctx))
-        return type(self)(source=source, hooks=self.hooks)
+        return type(self)(source=source, hooks=self.hooks, tool_approval=self.tool_approval)
 
     async def for_run_step(self, ctx: PydanticRunContext[Deps]) -> AbstractToolset[Deps]:
         source = await self.source.for_step(run_context_from_pydantic(ctx))
         if source is self.source:
             return self
 
-        return type(self)(source=source, hooks=self.hooks)
+        return type(self)(source=source, hooks=self.hooks, tool_approval=self.tool_approval)
 
     async def __aenter__(self) -> PydanticAIToolsetAdapter[Deps]:
         await self.source.__aenter__()
@@ -69,7 +71,7 @@ class PydanticAIToolsetAdapter[Deps](AbstractToolset[Deps]):
         for name, source_tool in tools.items():
             advertised_tool = ToolsetTool[Deps](
                 toolset=self,
-                tool_def=_tool_definition(source_tool),
+                tool_def=_tool_definition(source_tool, tool_approval=self.tool_approval),
                 max_retries=0,
                 args_validator=_ANY_VALIDATOR,
             )
@@ -120,6 +122,7 @@ class PydanticAICapabilityAdapter[Deps](AbstractCapability[Deps]):
         *,
         hooks: tuple[BaseToolHook[Deps], ...] = (),
         include_toolset: bool = True,
+        tool_approval: ToolApproval | None = None,
     ) -> None:
         self.id = source.id
         self.description = source.description
@@ -127,6 +130,7 @@ class PydanticAICapabilityAdapter[Deps](AbstractCapability[Deps]):
         self._source = source
         self._hooks = hooks
         self._include_toolset = include_toolset
+        self._tool_approval = tool_approval
 
     def get_instructions(self) -> list[str] | None:
         instructions = self._source.contributions.instructions
@@ -146,16 +150,25 @@ class PydanticAICapabilityAdapter[Deps](AbstractCapability[Deps]):
         if contributions.tools:
             sources.insert(0, _StaticToolset(id=self._source.id, tools=contributions.tools))
 
-        return _combine_toolsets(tuple(PydanticAIToolsetAdapter(source=source, hooks=hooks) for source in sources))
+        return _combine_toolsets(
+            tuple(
+                PydanticAIToolsetAdapter(source=source, hooks=hooks, tool_approval=self._tool_approval)
+                for source in sources
+            )
+        )
 
 
-def adapt_capabilities[Deps](capabilities: Sequence[BaseCapability[Deps]]) -> tuple[AbstractCapability[Deps], ...]:
+def adapt_capabilities[Deps](
+    capabilities: Sequence[BaseCapability[Deps]],
+    *,
+    tool_approval: ToolApproval | None = None,
+) -> tuple[AbstractCapability[Deps], ...]:
     validate_extension_ids(capabilities)
 
     return tuple(
         integration
         if (integration := adapt_integration_capability(capability)) is not None
-        else PydanticAICapabilityAdapter(capability)
+        else PydanticAICapabilityAdapter(capability, tool_approval=tool_approval)
         for capability in capabilities
     )
 
@@ -182,9 +195,14 @@ def _combine_toolsets[Deps](
     return _CollisionCheckedToolset(adapters)
 
 
-def _tool_definition(tool: BaseTool[Any, Any, Any]) -> ToolDefinition:
+def _tool_definition(
+    tool: BaseTool[Any, Any, Any],
+    *,
+    tool_approval: ToolApproval | None = None,
+) -> ToolDefinition:
     presentation = tool.presentation
-    metadata: dict[str, JsonValue] = {'ovid_approval': tool.approval.model_dump(mode='json')}
+    approval = tool_approval if tool_approval is not None else tool.approval
+    metadata: dict[str, JsonValue] = {'ovid_approval': approval.model_dump(mode='json')}
     if presentation.input_format != 'json' or presentation.grammar is not None:
         metadata['ovid_input_format'] = presentation.input_format
     if presentation.grammar is not None:
@@ -197,7 +215,7 @@ def _tool_definition(tool: BaseTool[Any, Any, Any]) -> ToolDefinition:
         name=_wire_name(tool),
         description=tool.description,
         parameters_json_schema=tool.args_type.model_json_schema(),
-        kind='unapproved' if tool.approval.required else 'function',
+        kind='unapproved' if approval.required else 'function',
         metadata=metadata,
         timeout=tool.timeout_seconds,
         defer_loading=tool.defer_loading,

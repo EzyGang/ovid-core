@@ -1,8 +1,10 @@
 # Safe workspace files
 
-`ovid_native.files` provides bounded UTF-8 reads, directory listings, explicit file creation, guarded whole-file replacement, and observation-authorized edits. Files run on the same `NativeWorkspaceSession` used by native search, FFF, and AST operations.
+`ovid_native.files` provides bounded UTF-8 reads, directory listings, file creation, guarded replacement, and observation-authorized edits.
+Files use the same `NativeWorkspaceSession` as native search, FFF, and AST operations.
 
-Installation does not activate file access. Applications must bind a workspace service and add `WorkspaceFilesCapability` explicitly.
+Installation does not activate file access.
+Applications must bind a workspace service and add `WorkspaceFilesCapability` explicitly.
 
 ## Activate the files capability
 
@@ -12,6 +14,7 @@ from pathlib import Path
 from ovid_core.agents import AgentDefinition
 from ovid_core.routing.models import ModelRef
 from ovid_core.services import AgentServices
+from ovid_core.tools import ToolApproval
 from ovid_native.files import EditMode, WorkspaceFilesCapability
 from ovid_native.workspace.service import NativeWorkspaceSession, workspace_binding
 
@@ -27,18 +30,28 @@ definition = AgentDefinition[AppDependencies, str](
     output_type=str,
     services=AgentServices((workspace_binding(workspace),)),
     capabilities=(WorkspaceFilesCapability(),),
+    tool_approval=ToolApproval(required=False),
 )
 ```
 
 The capability contributes:
 
-| Tool | Approval | Purpose |
+| Tool | Default approval | Purpose |
 | --- | --- | --- |
 | `read` | Not required | Read bounded text lines or list one workspace directory |
 | `write` | Required | Create a file or replace a completely observed file |
-| `edit` | Required | Apply the currently selected edit mode |
+| `edit` | Required | Apply the current edit mode |
 
-All built-in and custom modes use the wire name `edit`. Hashline and apply-patch advertise text grammars when the model supports them and always accept the JSON `{ "input": "..." }` form. The schema, grammar, description, and source rendering are captured for each model step.
+Approval is an application tool-call policy.
+The example overrides the tool defaults.
+It removes the approval pause for all Ovid tools in this agent.
+Omit `tool_approval` to keep the defaults in the table.
+Path policy, observation checks, validation, timeouts, and cancellation always apply.
+
+All built-in and custom modes use the wire name `edit`.
+Hashline and apply-patch advertise text grammars when the model supports them.
+They always accept the JSON `{ "input": "..." }` form.
+Each model step captures the schema, grammar, description, and source rendering.
 
 ## Read and observe source
 
@@ -63,11 +76,28 @@ Editable output uses one canonical representation:
 41:0D|    return repository.load(user_id)
 ```
 
-The unguessable four-hex tag identifies one retained observation for this session and path. Each two-hex line hash is a compact locator; authorization also checks the retained full digest for every referenced line. The ledger retains no historical source snapshot, and evicted tags never become valid again.
+The unguessable four-hex tag identifies one retained observation for this session and path.
+Each two-hex line hash is a compact locator.
+Authorization also checks the retained full digest for every referenced line.
+The ledger retains no historical source snapshot.
+Evicted tags never become valid again.
 
-Empty ranges request a bounded full-file presentation. Several non-overlapping ranges may be requested together. Directory reads use `WorkspaceDirectoryReadRequest` and support depth one or two. Reads reject URLs, archives, SSH paths, binary content, invalid UTF-8, absolute paths, root traversal, and descendant symlink traversal. Accepted `.` components and either path separator normalize to one `/`-separated ledger, result, event, and conflict identity.
+Empty ranges request a bounded full-file presentation.
+You can request several non-overlapping ranges together.
+Directory reads use `WorkspaceDirectoryReadRequest` and support depth one or two.
+Reads reject these inputs:
 
-Large files remain bounded. A file above `max_observation_file_bytes` can be displayed only without an authorizing observation and is not editable.
+- URLs, archives, and SSH paths
+- binary content and invalid UTF-8
+- absolute paths and root traversal
+- descendant symlink traversal
+
+Accepted `.` components and both path separators use one normalized `/`-separated identity.
+The ledger, result, event, and conflict use this identity.
+
+Large files remain bounded.
+A file above `max_observation_file_bytes` cannot produce an authorizing observation.
+Therefore, the file cannot authorize an edit.
 
 ## Create or replace a complete file
 
@@ -93,7 +123,12 @@ replaced = await workspace.files.replace_file(
 )
 ```
 
-Creation rejects an existing path. Parent creation requires both `create_parents=True` and `WorkspacePolicy.create_parent_directories=True`. Replacement requires a current, complete observation of the existing regular text file. File replacement uses a same-directory temporary file and an atomic per-file commit.
+Creation rejects an existing path.
+Parent creation requires `create_parents=True`.
+It also requires `WorkspacePolicy.create_parent_directories=True`.
+Replacement requires a current and complete observation of the regular text file.
+File replacement uses a temporary file in the same directory.
+It makes an atomic commit for that file.
 
 The model-facing `write` tool dispatches these operations through `WorkspaceWriteRequest.operation`.
 
@@ -114,7 +149,11 @@ result = await workspace.files.replace(
 )
 ```
 
-Replace requires an exact unique match unless `replace_all=True`. Fuzzy recovery is disabled by default and, when enabled by policy, requires one candidate at or above the configured threshold. Every intersecting source line must have been rendered and must remain unchanged.
+Replace requires one exact match unless `replace_all=True`.
+Policy disables fuzzy recovery by default.
+When enabled, fuzzy recovery requires one candidate at or above the configured threshold.
+The operation must have rendered every intersecting source line.
+Each line must remain unchanged.
 
 ### Structured patch
 
@@ -135,7 +174,10 @@ result = await workspace.files.patch(
 )
 ```
 
-Structured patches support create, update, delete, and move operations. An update with `destination` performs a move. Every hunk needs a change and unique context; delete and move require a complete observation.
+Structured patches support create, update, delete, and move operations.
+An update with `destination` performs a move.
+Every hunk needs one change and unique context.
+Delete and move require a complete observation.
 
 ### Apply patch
 
@@ -157,7 +199,12 @@ result = await workspace.files.apply_patch(
 )
 ```
 
-Apply-patch supports multi-file add, update, delete, and move envelopes. A patch is bounded to 4 MiB and 256 operations. The engine preflights every source and destination path, observation, and hunk before its first commit, then commits in authored order. A failure after one or more filesystem commits raises `WorkspacePartialCommitError` with landed and pending paths; it never claims multi-file atomicity.
+Apply-patch supports multi-file add, update, delete, and move envelopes.
+A patch has a 4 MiB limit and a 256-operation limit.
+The engine checks every path, observation, and hunk before the first commit.
+It then commits in authored order.
+A later failure raises `WorkspacePartialCommitError` with landed and pending paths.
+Apply-patch does not claim multi-file atomicity.
 
 ### Hashline
 
@@ -172,11 +219,34 @@ PUT 40:7A.=41:0D:
 *** End Patch
 ```
 
-Locators include inclusive ranges (`N:HH.=M:HH`), syntax blocks (`N:HH*`), gaps (`<N:HH` and `>N:HH`), block-end gaps (`>N:HH*`), and file boundaries (`<^` and `>$`). `CUT` captures source into an anonymous or named register; a later `PUT` can paste it across sections. `REM` deletes the section path and `MV` moves its final edited source to a non-existing destination. Both directives require a complete observation whose full normalized digest is still current.
+Locators support these forms:
 
-Hashline parses and semantically preflights the complete request before writing. It rejects unseen, changed, shifted, missing, duplicated, overlapping, or ambiguous locators without relocation. A concurrent change outside every referenced line may coexist when the referenced line numbers and retained full digests still match. Remove and move additionally bind the preflight file identity, stage the exact source in its own directory, and never delete a path that was swapped after preflight. Hashline never creates a missing path; use `write`.
+- inclusive ranges with `N:HH.=M:HH`
+- syntax blocks with `N:HH*`
+- gaps with `<N:HH` and `>N:HH`
+- block-end gaps with `>N:HH*`
+- file boundaries with `<^` and `>$`
 
-Successful Hashline output contains bounded fresh line locators. Those exact returned lines can authorize the next edit without rereading.
+`CUT` captures source in an anonymous or named register.
+A later `PUT` can paste the source across sections.
+`REM` deletes the section path.
+`MV` moves its final edited source to a destination that does not exist.
+Both directives require a complete observation with a current normalized digest.
+
+Hashline parses and checks the complete request before writing.
+It rejects unseen, changed, shifted, missing, duplicate, overlapping, or ambiguous locators.
+It does not relocate a locator.
+A concurrent change can coexist when it occurs outside every referenced line.
+The referenced line numbers and retained full digests must still match.
+
+Remove and move also bind the file identity during the check.
+They stage the exact source in its directory.
+They never delete a path that another actor swapped after the check.
+Hashline never creates a missing path.
+Use `write` to create a file.
+
+Successful Hashline output contains bounded fresh line locators.
+These returned lines can authorize the next edit without another read.
 
 ## Change mode and policy live
 
@@ -188,13 +258,32 @@ workspace.policy.update(
 )
 ```
 
-The next model step receives the new edit schema and description without rebuilding the agent. An already advertised call retains its captured edit-mode and policy generations. Each result reports those generations.
+The next model step receives the new edit schema and description.
+The application does not need to rebuild the agent.
+An advertised call retains its captured edit-mode and policy generations.
+Each result reports those generations.
 
-`WorkspacePolicy` also bounds read bytes, observation file bytes, retained observation entries, and retained observation-store bytes. Policy and mode state belong to the shared workspace session, so every bound consumer sees the same current generation.
+`WorkspacePolicy` also bounds read bytes and observation file bytes.
+It bounds retained observation entries and retained store bytes.
+Policy and mode state belong to the shared workspace session.
+Therefore, every bound consumer sees the same current generation.
 
 ## Mutation safety and results
 
-All existing-file changes require compatible evidence from the same workspace session and path. Changed or removed lines must have been rendered and must still match their retained full digest. Gap insertion requires an unchanged adjacent rendered line. Delete and move require complete source coverage. Exact current lines from `read`, native grep, AST grep, FFF grep, and FFF multi-grep share the same ledger and can authorize Hashline. Path-only glob and FFF find results, approximate FFF matches, truncated lines, and stale results never authorize edits.
+All existing-file changes require compatible evidence from the same workspace session and path.
+The operation must have rendered every changed or removed line.
+Each line must still match its retained full digest.
+Gap insertion requires an unchanged adjacent rendered line.
+
+Delete and move require complete source coverage.
+Exact current lines from all workspace content tools share the same ledger.
+These lines can authorize Hashline.
+The following values cannot authorize edits:
+
+- path-only glob and FFF find results
+- approximate FFF matches
+- truncated lines
+- stale results
 
 Every successful mutation:
 
@@ -208,9 +297,37 @@ Every successful mutation:
 
 ## Custom providers and plugins
 
-`WorkspaceSessionBuilder` accepts Ovid-owned files, observations, search, AST, FFF, and stable-view provider protocols. A rootless session exposes only explicitly supplied operations and requires an observation store when files are selected; installing a plugin never activates one. Custom files providers return normalized lines together with exact BOM, line-ending, and terminal-newline metadata so observation validation reconstructs the bytes that were identified. Native search, AST, and FFF can run against a provider's absolute, read-only `WorkspaceView`. FFF retains one view for its index lifetime, returns its revision with content results, and rejects later calls when the provider revision changes. View-backed AST proposals revalidate the provider revision and current files, then commit through the files provider rather than writing the materialized view.
+`WorkspaceSessionBuilder` accepts Ovid-owned provider protocols for each workspace operation.
+A rootless session exposes only the supplied operations.
+It requires an observation store when the application selects files.
+Plugin installation does not activate a provider.
+Custom files providers return normalized lines and exact file-format metadata.
+The metadata covers the BOM, line endings, and terminal newline.
 
-Plugins register provider, configurator, and capability factories through `PluginRegistrar`, then applications select their namespaced IDs explicitly. `activate_workspace_services()` consumes the selected `PluginServiceFactories`: a provider returns `workspace_builder_binding(builder, provider_id=...)`, configurators obtain that same unfrozen builder through `require_workspace_builder()`, and the adapter builds each session only after every selected configurator has run. It publishes validated workspace bindings in deterministic order and `ActivatedWorkspaceServices.close()` shuts owned sessions down in reverse order. Duplicate, empty, unknown, replacement, and incompatible selections fail. Custom edit modes use globally namespaced IDs, declare required workspace operations, and return their complete `BaseTool` schema, description, parser, executor, and approval metadata from `EditModeProvider.bind()`.
+Observation validation uses this metadata to reconstruct the identified bytes.
+Native search, AST, and FFF can use a provider's absolute read-only `WorkspaceView`.
+FFF retains one view for the index lifetime.
+Content results include its revision.
+
+FFF rejects later calls after the provider revision changes.
+View-backed AST proposals revalidate the revision and current files.
+They commit through the files provider and do not write the materialized view.
+
+Plugins register provider, configurator, and capability factories through `PluginRegistrar`.
+Applications then select the namespaced IDs.
+`activate_workspace_services()` consumes the selected `PluginServiceFactories`.
+A provider returns `workspace_builder_binding(builder, provider_id=...)`.
+Configurators obtain that unfrozen builder through `require_workspace_builder()`.
+The adapter builds each session after all selected configurators run.
+
+It publishes validated workspace bindings in deterministic order.
+`ActivatedWorkspaceServices.close()` closes owned sessions in reverse order.
+Invalid selections fail before activation.
+This includes duplicate, empty, unknown, replacement, and incompatible selections.
+
+Custom edit modes use globally namespaced IDs.
+They declare required workspace operations.
+`EditModeProvider.bind()` returns the complete tool definition and behavior.
 
 ```python
 selected = registrar.select_service_factories(
@@ -231,4 +348,6 @@ Close the owning workspace when the application is finished:
 await workspace.close()
 ```
 
-Closed sessions reject new operations. Observation tags are scoped to one session and cannot authorize another session, even when both sessions use the same root.
+Closed sessions reject new operations.
+Observation tags belong to one session.
+They cannot authorize another session, even when both sessions use the same root.

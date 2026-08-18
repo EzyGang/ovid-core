@@ -35,7 +35,11 @@ Validation rejects parts for the other role. Request messages cannot contain `re
 
 ## Identities and context
 
-Import `RunId` and `ConversationId` from `ovid_core.runtime.identifiers`. Both are frozen UUID root models. Construct from a UUID, parse with Pydantic, or generate a random UUID with `RunId.new()` and `ConversationId.new()`. `str(value)` returns the canonical UUID string.
+Import `RunId` and `ConversationId` from `ovid_core.runtime.identifiers`.
+Both use frozen UUID root models.
+Construct them from UUID values or parse them with Pydantic.
+Use `RunId.new()` or `ConversationId.new()` to generate random UUIDs.
+`str(value)` returns the canonical UUID string.
 
 Import `RunContext[Deps]` from `ovid_core.runtime.context`. It is a frozen dataclass with `deps`, `run_id`, `conversation_id`, and `usage`, which defaults to zero `Usage()`.
 
@@ -56,7 +60,7 @@ Import from `ovid_core.runtime.events`. Every event extends `EventIdentity` and 
 
 `AgentEvent` is the discriminated union of these eight event models.
 
-```python
+```text
 def tool_events_from_messages(
     messages: tuple[AgentMessage, ...],
     *,

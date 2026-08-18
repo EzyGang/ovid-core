@@ -75,9 +75,14 @@ for match in result.matches:
     print(match.path, match.exact_match, match.git_status)
 ```
 
-Use one or two short query terms. Multiple terms narrow one ranked search. Set `kind` to `file`, `directory`, or `any`. Directory paths end with `/`. Continue from `next_offset` when present.
+Use one or two short query terms.
+Multiple terms narrow one ranked search.
+Set `kind` to `file`, `directory`, or `any`.
+Directory paths end with `/`.
+Continue from `next_offset` when the result supplies it.
 
-Result order carries FFF ranking. `exact_match` identifies an exact path match without exposing unstable scoring internals.
+Result order carries the FFF ranking.
+`exact_match` identifies an exact path match without exposing unstable scoring details.
 
 ## Search indexed content
 
@@ -107,9 +112,16 @@ Modes:
 - `fuzzy` performs approximate content matching and marks results as approximate.
 - `auto` selects plain or regex from the query, then retries with fuzzy matching when the selected mode produces no page.
 
-`actual_mode`, `fallback_from`, and `approximate` report how the query ran. Matches use one-based line and column values. `match_ranges` contains zero-based byte ranges within the matched line.
+`actual_mode`, `fallback_from`, and `approximate` report how the query ran.
+Matches use one-based line and column values.
+`match_ranges` contains zero-based byte ranges in the matched line.
 
-In Hashline mode, agent-facing FFF content tools pass exact indexed lines and the stable view revision through the shared observation service before rendering editable locators. A stale revision or changed current line yields no misleading tag. Fuzzy and auto-fallback approximate matches are explicitly uneditable. `find_files` remains path-only.
+In Hashline mode, FFF content tools send exact indexed lines to the observation service.
+They also send the stable view revision.
+The service then renders editable locators.
+A stale revision or changed line produces no misleading tag.
+Fuzzy matches and auto-fallback approximate matches cannot authorize edits.
+`find_files` returns only paths.
 
 ## Search naming variants together
 
@@ -125,11 +137,17 @@ result = await fff.multi_grep(
 )
 ```
 
-`multi_grep` searches all patterns in one indexed operation. Patterns are literals, including regex punctuation. The result shape and file-offset pagination match `grep`.
+`multi_grep` searches all patterns in one indexed operation.
+Patterns are literals, including regex punctuation.
+The result shape and file-offset pagination match `grep`.
 
 ## Pagination and indexed coverage
 
-FFF content results page by searched file. `file_offset` selects the starting file and `limit` bounds the page. Continue from `next_file_offset` when present. `matches_per_file` bounds hot files.
+FFF content results page by searched file.
+`file_offset` selects the starting file.
+`limit` bounds the page.
+Continue from `next_file_offset` when the result supplies it.
+`matches_per_file` bounds frequent files.
 
 `completion` has four values:
 
@@ -138,7 +156,10 @@ FFF content results page by searched file. `file_offset` selects the starting fi
 - `time_budget_reached` means the configured search budget ended before completion.
 - `index_incomplete` means initial indexing had not completed.
 
-`indexed_files` counts indexed paths. `searchable_files` counts files eligible for content search after binary, size, and index filtering. An empty FFF result does not prove workspace-wide absence. Use native `glob` or `grep` when exact scan coverage matters.
+`indexed_files` counts indexed paths.
+`searchable_files` counts files that remain after binary, size, and index filtering.
+An empty FFF result does not prove workspace-wide absence.
+Use native `glob` or `grep` when exact scan coverage matters.
 
 ## Configure lifecycle and limits
 
@@ -163,11 +184,22 @@ fff = FffEngine(
 )
 ```
 
-The engine starts lazily on `start()`, `wait_ready()`, or the first operation that requires startup. Concurrent startup calls share one picker. `wait_ready()` runs off the event loop and waits up to the initial scan timeout. `rescan()` requests a new full scan. With `watch=True`, the picker applies later filesystem events to the same index.
+The engine starts lazily on `start()`, `wait_ready()`, or the first operation that requires startup.
+Concurrent startup calls share one picker.
+`wait_ready()` runs off the event loop.
+It waits up to the initial scan timeout.
+`rescan()` requests a new full scan.
+With `watch=True`, the picker applies later filesystem events to the same index.
 
-Requests may choose values at or below `FffLimits`. A request above an engine ceiling raises `FffLimitError` before search. Cancelling an awaiting grep signals the native abort state. Cancelling a readiness wait leaves the shared index running.
+Requests can choose values at or below `FffLimits`.
+A request above an engine ceiling raises `FffLimitError` before search.
+Cancelling an awaiting grep signals the native abort state.
+Cancelling a readiness wait leaves the shared index running.
 
-FFF uses the canonical workspace root, relative model-facing paths, repository ignore rules, and no symlink traversal outside the root. It excludes ignored, binary, and oversized content from the searchable universe.
+FFF uses the canonical workspace root and relative model-facing paths.
+It applies repository ignore rules.
+It does not traverse symlinks outside the root.
+It excludes ignored, binary, and oversized content from the searchable universe.
 
 ## Keep exact glob with FFF
 
@@ -181,9 +213,11 @@ from ovid_native.fff import FffCapability
 capability = FffCapability(include_glob=True)
 ```
 
-The resulting tool set is `glob`, `find_files`, `grep`, and `multi_grep`. Avoid adding a separate `SearchCapability`
-with FFF `grep` enabled because both capabilities use the `grep` wire name. To keep native grep, use
-`FffCapability(include_grep=False)` alongside `SearchCapability()`; both resolve the same named workspace.
+The resulting tool set contains `glob`, `find_files`, `grep`, and `multi_grep`.
+Do not add a separate `SearchCapability` while FFF `grep` remains enabled.
+Both capabilities use the `grep` wire name.
+To keep native grep, combine `FffCapability(include_grep=False)` with `SearchCapability()`.
+Both capabilities resolve the same named workspace.
 
 ## Select a startup fallback
 
@@ -196,6 +230,9 @@ from ovid_native.fff import select_fff_search_backend
 capability = await select_fff_search_backend(workspace=workspace)
 ```
 
-Successful startup returns `FffCapability` with native `glob`. An FFF startup failure or readiness timeout returns
-`SearchCapability`. The selection remains fixed for the agent lifetime, while the workspace retains lifecycle ownership.
-Search failures after successful selection remain visible and do not switch the tool schema.
+Successful startup returns `FffCapability` with native `glob`.
+An FFF startup failure or readiness timeout returns `SearchCapability`.
+The selection remains fixed for the agent lifetime.
+The workspace retains lifecycle ownership.
+Search failures after successful selection remain visible.
+They do not switch the tool schema.

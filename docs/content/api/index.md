@@ -1,6 +1,9 @@
 # Public API overview
 
-This section is the exact interface reference. Start with [Why Ovid Core](../why-ovid-core.md) for the design motivation, [Architecture](../architecture.md) for what happens underneath, or the [guides](../getting-started.md) for task-oriented integration.
+This section is the exact interface reference.
+Read [Why Ovid Core](../why-ovid-core.md) for the design motivation.
+Read [Architecture](../architecture.md) for internal behavior.
+Use the [guides](../getting-started.md) for task-oriented integration.
 
 | Area | Modules | Reference |
 | --- | --- | --- |

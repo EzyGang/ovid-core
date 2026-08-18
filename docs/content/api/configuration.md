@@ -102,7 +102,7 @@ A migration receives its own mutable copy and must return data whose `schema_ver
 
 ### `load_config`
 
-```python
+```text
 def load_config(
     source: ConfigSource,
     *,
@@ -114,7 +114,9 @@ def load_config(
 
 Loads an already parsed mapping or serialized TOML/JSON held in `str` or `bytes`. This is the source-independent entry point for HTTP responses, object stores, databases, package resources, and virtual file systems.
 
-Serialized input beginning with a JSON object delimiter is read as JSON; other input is read as TOML. Pass `config_format` when the source format must be explicit.
+Serialized input that starts with a JSON object delimiter uses JSON.
+All other serialized input uses TOML.
+Pass `config_format` when the source format must be explicit.
 
 ```python
 content = await get_remote('configs/ovid.toml')
@@ -127,7 +129,7 @@ The function runs explicit migrations and validates `OvidConfig`. Parse, validat
 
 ### `migrate_config`
 
-```python
+```text
 def migrate_config(
     data: Mapping[str, JsonValue],
     *,
@@ -139,7 +141,7 @@ Copies the source mapping before migration. A future schema version, a non-integ
 
 ### `load_config_file`
 
-```python
+```text
 def load_config_file(
     path: Path,
     *,

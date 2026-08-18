@@ -21,6 +21,7 @@ from ovid_core import (
 from ovid_core.config import ModelConfig, OvidConfig
 from ovid_core.mcp import MCPHTTPTransportConfig, MCPServerConfig
 from ovid_core.routing import ModelRef, ModelRouteRef
+from ovid_core.tools import ToolApproval
 from tests.support.agent_consumer import AddTool, AgentDependencies, RecordingHook
 from tests.support.agent_helpers import agent_factory, failing_request, structured_test_model
 from tests.support.helpers import CONVERSATION_ID, RUN_ID
@@ -30,6 +31,10 @@ async def text_stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIte
     del messages, info
     yield 'Hello'
     yield ' world'
+
+
+class ApprovalAddTool(AddTool):
+    approval = ToolApproval(required=True, reason='Approve addition')
 
 
 @pytest.mark.asyncio
@@ -48,6 +53,28 @@ async def test_factory_builds_basic_agent_from_final_config() -> None:
 
     assert result.output == 'success (no tool calls)'
     assert agent.diagnostics.selected_model == 'primary'
+
+
+@pytest.mark.asyncio
+async def test_factory_applies_agent_tool_approval_override() -> None:
+    model = structured_test_model()
+    tool_approval = ToolApproval(required=False, reason='Application permits all Ovid tools')
+    definition = replace(
+        consumer.structured_definition(
+            model=ModelRef(name='primary'),
+            tool=ApprovalAddTool(),
+            hook=RecordingHook(),
+        ),
+        tool_approval=tool_approval,
+    )
+    agent = await agent_factory({'primary': model}).build(definition)
+
+    result = await agent.run('Add values.', deps=AgentDependencies(prefix='consumer'))
+
+    assert result.output.value == 'done'
+    assert agent.diagnostics.tool_approval == tool_approval
+    assert model.last_model_request_parameters is not None
+    assert model.last_model_request_parameters.function_tools[0].kind == 'function'
 
 
 def test_factory_rejects_api_key_resolver_with_custom_model_factory(mocker: MockerFixture) -> None:

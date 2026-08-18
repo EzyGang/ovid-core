@@ -170,6 +170,9 @@ Runs return Ovid-owned messages, events, results, usage values, and identifiers.
 
 Add only the tools an agent needs. Capabilities can add instructions, tools, toolsets, model settings, and service requirements. Duplicate IDs are errors.
 
+Each tool supplies a default approval value.
+Set `AgentDefinition.tool_approval` when the application must override that value for all Ovid tools.
+
 ### Usage and policy
 
 Apply request, token, and tool-call limits to one run or a nested workflow. Run policy also controls retries, timeouts, concurrency, and end behavior.

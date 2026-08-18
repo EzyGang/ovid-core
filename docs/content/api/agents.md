@@ -20,7 +20,7 @@ class ModelRuntime(Protocol):
 
 ### `ModelHandle`
 
-```python
+```text
 ModelHandle(
     *,
     model_id: str,
@@ -96,14 +96,40 @@ class AgentDefinition[Deps, Output]:
     instructions: tuple[str, ...] = ()
     capabilities: tuple[BaseCapability[Deps], ...] = ()
     toolsets: tuple[BaseToolset[Deps], ...] = ()
+    tool_approval: ToolApproval | None = None
     hooks: tuple[BaseToolHook[Deps], ...] = ()
     policy: AgentRunPolicy = AgentRunPolicy()
     observability: ObservabilityConfig = ObservabilityConfig()
+    services: AgentServices = AgentServices()
 ```
 
 The definition contains all immutable construction input.
 
 Capabilities can add instructions, tools, toolsets, hooks, and model settings. The compiler also adds direct toolsets and hooks.
+
+### Ovid tool approval
+
+The `tool_approval` value overrides the approval value on every Ovid `BaseTool` in the agent.
+The default value, `None`, keeps the value from each tool.
+
+Use this value to let the application run all Ovid tools without an approval pause:
+
+```python
+AgentDefinition[AppDeps, Answer](
+    model=ModelRef(name='primary'),
+    deps_type=AppDeps,
+    output_type=Answer,
+    capabilities=(WorkspaceFilesCapability(),),
+    tool_approval=ToolApproval(required=False),
+)
+```
+
+The proxy advertises these tools as normal Pydantic AI function tools.
+Workspace policy, path validation, observations, timeouts, and cancellation still apply.
+
+Set `required=True` to require approval for all Ovid tools.
+This override does not change tools from a Pydantic AI capability passthrough.
+Those tools keep the approval behavior of their source capability.
 
 ## Compiler and runtime protocols
 
@@ -118,7 +144,7 @@ class AgentCompiler(Protocol):
 
 `AgentRuntime[Deps, Output]` supplies:
 
-```python
+```text
 async def run(
     prompt: str,
     *,

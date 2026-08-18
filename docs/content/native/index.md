@@ -22,14 +22,21 @@ dependencies = [
 ]
 ```
 
-All `ovid-native` wheels contain the complete supported native surface. Extras select Python-only dependencies required by a capability. AST, FFF, files, and search currently have no extra Python dependencies, so `[ast]`, `[fff]`, `[files]`, `[search]`, `[all]`, and the base package resolve to the same files. Declaring profiles records the application's dependency contract and includes future domain-specific dependencies.
+Every `ovid-native` wheel contains the complete supported native surface.
+Extras select the Python-only dependencies for a capability.
+AST, FFF, files, and search currently have no extra Python dependencies.
+Their named profiles, `[all]`, and the base package resolve to the same files.
+Declaring a profile records the application dependency contract.
+The profile can also include future domain dependencies.
 
-Python installers do not retain the requested extra as runtime state. Code cannot reliably reject a base installation after dependency resolution. Agent access remains protected through explicit capability composition and Ovid tool approval.
+Python installers do not retain the requested extra as runtime state.
+Code cannot reliably reject a base installation after dependency resolution.
+Explicit capability composition and Ovid tool approval protect agent access.
 
 ## Import from the owning module
 
-`ovid_native.__init__` and `ovid_native.workspace.__init__` stay empty. Import public values from the module that owns
-them:
+Keep `ovid_native.__init__` and `ovid_native.workspace.__init__` empty.
+Import each public value from its owning module:
 
 ```python
 from ovid_native.ast import AstCapability, AstEngine
@@ -40,8 +47,9 @@ from ovid_native.workspace.builder import WorkspaceSessionBuilder
 from ovid_native.workspace.service import NativeWorkspaceSession, workspace_binding
 ```
 
-The direct engine classes remain available for application calls. Agent capabilities resolve providers from one named
-workspace service instead of accepting independently rooted engines.
+The direct engine classes remain available for application calls.
+Agent capabilities resolve providers from one named workspace service.
+They do not accept independently rooted engines.
 
 ## Add native tools to an agent
 
@@ -72,17 +80,53 @@ definition = AgentDefinition[AppDependencies, str](
 )
 ```
 
-The application owns the workspace root and engine lifetime. `WorkspaceFilesCapability` contributes bounded `read` and guarded `write` tools plus one dynamically selected edit tool; `SearchCapability` contributes `glob` and `grep`; `FffCapability` contributes `find_files`, indexed `grep`, and `multi_grep`, with optional native `glob`; `AstCapability` contributes `ast_grep`, `ast_edit_preview`, and `ast_edit_apply`. `AgentFactory` uses the existing capability adapter and needs no native-specific configuration.
+Each capability contributes a bounded set of tools:
 
-The capabilities resolve the same canonical root, native handle, session identity, revision domain, and lifecycle. FFF disables its `grep` tool here because search already owns that wire name; `find_files` and `multi_grep` remain available. Use distinct binding names only for deliberate multi-workspace agents. Missing services or operations fail during agent construction. Call `await workspace.close()` when the agent lifetime ends; close is idempotent and stops the lazily started FFF provider before closing the shared native handle.
+- `WorkspaceFilesCapability` contributes `read`, `write`, and one selected edit tool.
+- `SearchCapability` contributes `glob` and `grep`.
+- `FffCapability` contributes `find_files`, indexed `grep`, and `multi_grep`.
+- `FffCapability` can also contribute native `glob`.
+- `AstCapability` contributes `ast_grep`, `ast_edit_preview`, and `ast_edit_apply`.
+
+`AgentFactory` uses the existing capability adapter.
+It needs no native-specific configuration.
+
+All capabilities resolve the same root, native handle, session identity, revision domain, and lifecycle.
+FFF disables its `grep` tool here because search already owns that wire name.
+The `find_files` and `multi_grep` tools remain available.
+Use distinct binding names only for deliberate multi-workspace agents.
+
+Missing services or operations stop agent construction.
+Call `await workspace.close()` when the agent lifetime ends.
+Close is idempotent.
+It stops the lazily started FFF provider before it closes the shared native handle.
 
 ## Build and override a workspace
 
-`WorkspaceSessionBuilder.native(root=..., ast_limits=AstLimits(...))` creates native defaults with explicit AST search and proposal-retention limits. `with_native_ast(limits=...)` applies the same immutable limits to view-backed AST. Provider selectors cover files, observations, search, AST, FFF, and stable local views; every slot can be selected once and required methods are validated immediately. A rootless workspace requires explicit providers.
+`WorkspaceSessionBuilder.native(root=..., ast_limits=AstLimits(...))` creates native defaults.
+The AST limits control search and proposal retention.
+`with_native_ast(limits=...)` applies the same immutable limits to view-backed AST.
+Provider selectors cover files, observations, search, AST, FFF, and stable local views.
 
-Provider protocols use Ovid request and result models only. `WorkspaceViewProvider.acquire_view()` supplies an absolute, contained, read-only local view with one stable revision for the context lifetime. Native search and AST use bounded view contexts. FFF retains one view through indexing and closes it with the session. View-backed AST proposals use the configured maximum count and monotonic TTL, revalidate the view revision and current files, then commit through the files provider.
+You can select each slot once.
+The builder validates required methods immediately.
+A rootless workspace requires explicit providers.
 
-Plugins register namespaced service, capability, and custom edit-mode factories explicitly. Installation alone changes no agent. `ovid_native.workspace.plugins.activate_workspace_services()` applies selected workspace configurators to an unfrozen `WorkspaceSessionBuilder`, then publishes the completed binding and owns reverse-order shutdown. Direct `SearchEngine`, `AstEngine`, and `FffEngine` construction remains supported for application calls.
+Provider protocols use only Ovid request and result models.
+`WorkspaceViewProvider.acquire_view()` supplies a contained, read-only local view.
+The absolute view has one stable revision for its context lifetime.
+Native search and AST use bounded view contexts.
+FFF retains one view during indexing and closes it with the session.
+
+View-backed AST proposals use the configured maximum count and monotonic TTL.
+They revalidate the view revision and current files before commit.
+The files provider performs the commit.
+
+Plugins register namespaced service, capability, and custom edit-mode factories.
+Installation alone changes no agent.
+`ovid_native.workspace.plugins.activate_workspace_services()` applies selected configurators to an unfrozen `WorkspaceSessionBuilder`.
+It then publishes the completed binding and owns reverse-order shutdown.
+Applications can still construct `SearchEngine`, `AstEngine`, and `FffEngine` directly.
 
 ## Runtime compatibility
 
@@ -93,6 +137,14 @@ info = runtime_info()
 print(info.api_version)
 ```
 
-`api_version` protects the private Python and Rust boundary. `NativeWorkspaceSession`, `AstEngine`, `FffEngine`, and `SearchEngine` reject a compiled extension whose API version does not match their Python wrapper. The package version and its declared `ovid-core` range protect public compatibility. Domain metadata remains available from `ovid_native.ast.ast_grep_version` and `ovid_native.fff.fff_version`.
+`api_version` protects the private Python and Rust boundary.
+The engine and workspace classes reject an extension with a different API version.
+The package version and declared `ovid-core` range protect public compatibility.
+Domain metadata remains available from `ovid_native.ast.ast_grep_version` and `ovid_native.fff.fff_version`.
 
-See [safe workspace files](files.md), [workspace search](search.md), [warm indexed FFF search](fff.md), and [AST search and rewrites](ast.md) for direct API and agent-tool usage.
+The following guides contain direct API and agent-tool examples:
+
+- [safe workspace files](files.md)
+- [workspace search](search.md)
+- [warm indexed FFF search](fff.md)
+- [AST search and rewrites](ast.md)

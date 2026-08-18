@@ -35,7 +35,10 @@ Place code according to ownership:
 - Keep application policy in the application. This includes config precedence, secret discovery, prompts, tool selection, authorization, storage policy, deployment, and UI behavior.
 - Keep `ovid-native` optional. `ovid-core` must never import or depend on it.
 
-Adapters translate values at the boundary. They must not define a second copy of a domain contract. Pass dependencies through typed parameters; do not add service locators, hidden singletons, or mutable global configuration.
+Adapters translate values at the boundary.
+They must not define a second copy of a domain contract.
+Pass dependencies through typed parameters.
+Do not add service locators, hidden singletons, or mutable global configuration.
 
 ## Folder structure
 
@@ -94,7 +97,9 @@ uv run task docs-build
 
 Use `uv run task docs-run` to serve the documentation locally.
 
-`uv.lock` is generated. Update it with uv after changing dependencies; never edit it by hand.
+uv generates `uv.lock`.
+Update it with uv after changing dependencies.
+Never edit it by hand.
 
 ## Python rules
 
@@ -102,7 +107,7 @@ Use `uv run task docs-run` to serve the documentation locally.
 
 - Target Python 3.14. Use current generic syntax instead of `TypeVar` or `ParamSpec` declarations.
 - Annotate every parameter and return value. Parameterize every collection.
-- Use a precise type when possible. Use `Any` when the value is truly dynamic; do not use `object` as a substitute.
+- Use a precise type when possible. Use `Any` when the value is truly dynamic. Do not use `object` as a substitute.
 - Do not silence ty. Fix the type model or report the blocker.
 - Public structured DTOs inherit `ovid_core.models.BaseModel`. UUID-like root values inherit `BaseRootModel`.
 - Use Pydantic models for validated data. Use plain classes for factories, routers, resolvers, clients, stores, and other stateful services.
@@ -115,7 +120,7 @@ Use `uv run task docs-run` to serve the documentation locally.
 - Use keyword arguments when a call passes several values.
 - Use f-strings for interpolation. Do not use `.format()`, `%` formatting, or string concatenation for templates.
 - Avoid local imports. Break import cycles by changing module boundaries first.
-- Keep public exports deliberate. `ovid_core.__init__` exposes only stable high-level contracts; domain modules own the full API.
+- Keep public exports deliberate. `ovid_core.__init__` exposes only stable high-level contracts. Domain modules own the full API.
 
 ### Boundaries and safety
 
@@ -137,6 +142,19 @@ Use `uv run task docs-run` to serve the documentation locally.
 - Delete speculative options, wrappers, branches, and extension points.
 - Add comments or docstrings only when a critical rule is not clear from names and types.
 
+## Documentation rules
+
+- Use ASD-STE100 Issue 9 as the writing guide.
+- Use one term for one meaning. Keep API names and necessary technical nouns exact.
+- Use active voice unless the actor is unknown.
+- Limit descriptive sentences to 25 words.
+- Limit procedural sentences to 20 words and one instruction.
+- Use no more than six sentences in one paragraph.
+- Do not use contractions or semicolons.
+- Use a vertical list when a sentence contains many items or actions.
+- Give information in a general-to-specific order.
+- Keep examples small and make each prerequisite explicit.
+
 ## Domain contracts
 
 ### Configuration and credentials
@@ -151,7 +169,7 @@ Use `uv run task docs-run` to serve the documentation locally.
 - Store `provider` and `model` separately. Join them only in the Pydantic AI model adapter.
 - `known_models()` may expose the upstream catalog, but unknown future provider/model pairs remain valid until construction.
 - Provider retries finish inside one route candidate. Ovid fallback moves to the next candidate only after an eligible final failure.
-- Concurrency limits wrap each candidate before fallback is compiled.
+- The compiler wraps each candidate with its concurrency limit before it compiles fallback.
 
 ### Capabilities, MCP, and Skills
 
@@ -159,6 +177,9 @@ Use `uv run task docs-run` to serve the documentation locally.
 - MCP configuration uses typed stdio or HTTP definitions and credential references. Pydantic AI and FastMCP own transport lifecycles.
 - Agent Skills use the official `pydantic-ai-harness` `Skills` capability with explicit trusted directories.
 - Do not search for skills implicitly, parse `SKILL.md` separately, execute skill scripts, or hide filesystem trust policy in core.
+- `AgentDefinition.tool_approval` can override every Ovid tool approval value for one agent.
+- A `None` override keeps each tool default. A supplied `ToolApproval` replaces every Ovid tool default.
+- The override does not change tools from a Pydantic AI capability passthrough.
 
 ### Codex subscription
 

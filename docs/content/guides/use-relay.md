@@ -1,11 +1,16 @@
 # Use Relay between agents
 
-Relay gives selected agents direct asynchronous messaging through application-owned connections. It is disabled unless you attach
-`RelayCapability` to an agent definition.
+Relay gives selected agents direct asynchronous messaging through application-owned connections.
+Relay stays inactive until you attach `RelayCapability` to an agent definition.
 
-Use Relay when an orchestrator must communicate with a spawned subagent, a subagent must report progress, or equal agents need a
-shared messaging path. Relay does not define parent and child roles, launch agents, or decide how incoming messages enter an agent
-conversation.
+Use Relay for these communication paths:
+
+- an orchestrator and a spawned agent
+- an agent that reports progress
+- equal agents that share a message path
+
+Relay does not define agent roles or launch agents.
+The application decides how incoming messages enter a conversation.
 
 ## Create an in-memory network
 
@@ -30,11 +35,14 @@ worker_connection = relay.connection(
 )
 ```
 
-Connections from different `InMemoryRelay` instances are isolated. Each address must be unique within one network. Contacts are the
-other live connections in that network; Relay does not attach running, idle, parent, or child status to them.
+Connections from different `InMemoryRelay` instances remain isolated.
+Each address must be unique in one network.
+Contacts are the other live connections in that network.
+Relay does not assign running, idle, parent, or child status.
 
-The in-memory backend is process-local and bounded. A full mailbox rejects a new message with `RelayCapacityError`; it never silently
-drops an accepted message.
+The in-memory backend is process-local and bounded.
+A full mailbox rejects a new message with `RelayCapacityError`.
+The backend never drops an accepted message silently.
 
 ## Attach the capability
 
@@ -88,12 +96,19 @@ async def deliver_to_worker(message: RelayMessage) -> RelayDisposition:
 worker_connection.set_delivery_handler(deliver_to_worker)
 ```
 
-The application can use this handler to queue an aside, steer a running loop, append conversation history, start an idle turn, or
-forward the message to a remote worker.
+The application can use this handler to:
 
-Return `ACKNOWLEDGE` after the application accepts responsibility for the message. Return `DEFER` when it must remain unread. A handler
-exception also leaves the message pending. Handler work runs independently of sender acceptance and is serialized for each in-memory
-recipient.
+- queue an aside
+- steer a running loop
+- append conversation history
+- start an idle turn
+- forward the message to a remote worker
+
+Return `ACKNOWLEDGE` after the application accepts responsibility for the message.
+Return `DEFER` when the message must remain unread.
+A handler exception also leaves the message pending.
+Handler work runs independently of sender acceptance.
+The in-memory connection serializes handler work for each recipient.
 
 Setting a handler later makes pending messages eligible for automatic delivery. Setting it to `None` leaves future messages pending.
 
@@ -105,7 +120,7 @@ Attaching the capability contributes four tools automatically:
 | --- | --- |
 | `relay_send` | Send a message to a known address and optionally identify the message being answered |
 | `relay_wait` | Wait for and consume one message, optionally filtered by sender or exact reply correlation |
-| `relay_pending` | Read outstanding messages in FIFO order; consume them unless `retain=true` |
+| `relay_pending` | Read outstanding messages in FIFO order and consume them unless `retain=true` |
 | `relay_contacts` | List addresses visible through the connection |
 
 A typical delegation exchange is:
@@ -114,16 +129,18 @@ A typical delegation exchange is:
 2. The task result gives the orchestrator the worker address.
 3. The worker receives the orchestrator address through task instructions or dependencies.
 4. Either agent calls `relay_send` for instructions, progress, correction, or completion.
-5. A recipient already waiting receives the message as the `relay_wait` result; otherwise its application delivery handler runs.
+5. Relay sends the message to a matching waiter or the application delivery handler.
 
-A send receipt means only that the recipient connection accepted the message. It does not mean the recipient read it, woke, ran, or
-replied.
+A send receipt confirms only that the recipient connection accepted the message.
+It does not confirm that the recipient read, processed, or answered it.
 
-Use `reply_to` for exact correlation. After sending message `M`, the recipient answers with `reply_to=M.id`; the sender can call
-`relay_wait(reply_to=M.id)` without consuming an unrelated message from the same agent.
+Use `reply_to` for exact correlation.
+After sending message `M`, the recipient answers with `reply_to=M.id`.
+The sender can call `relay_wait(reply_to=M.id)` without consuming an unrelated message.
 
-`relay_pending(retain=true)` inspects unread messages without consuming them. Without `retain`, returned messages are atomically
-consumed. Messages already acknowledged by an application delivery handler or returned through `relay_wait` are no longer pending.
+`relay_pending(retain=true)` inspects unread messages without consuming them.
+Without `retain`, the call consumes returned messages atomically.
+Acknowledged messages and messages returned through `relay_wait` are no longer pending.
 
 ## Customize model-visible tool descriptions
 
@@ -154,21 +171,34 @@ connection: RelayConnection = application_relay.connection_for('worker')
 relay_capability = RelayCapability[AppDeps](connection=connection)
 ```
 
-A consumer connection can use a broker, database, RPC service, or remote worker. It owns identity binding, contact visibility, mailbox
-storage, automatic delivery, initialization, reconnection, and shutdown. The required protocol does not impose a context manager or
-lifecycle method.
+A consumer connection can use:
 
-The connection must preserve the public behavior documented in the [Relay API reference](../api/extensions.md#relay): waiter
-precedence, exact filters, pending-message consumption, receipt semantics, and application delivery dispositions.
+- a broker
+- a database
+- an RPC service
+- a remote worker
+
+It owns identity binding, contact visibility, and mailbox storage.
+It also owns automatic delivery, initialization, reconnection, and shutdown.
+The required protocol does not impose a context manager or lifecycle method.
+
+The connection must preserve the behavior in the [Relay API reference](../api/extensions.md#relay):
+
+- waiter precedence
+- exact filters
+- pending-message consumption
+- receipt semantics
+- application delivery dispositions
 
 ## Close in-memory connections
 
-`InMemoryRelayConnection.close()` unregisters that address, wakes active waiters with `RelayUnavailableError`, and rejects later
-operations through the closed connection:
+`InMemoryRelayConnection.close()` unregisters that address.
+It wakes active waiters with `RelayUnavailableError`.
+It rejects later operations through the closed connection:
 
 ```python
 worker_connection.close()
 ```
 
-Custom connection implementations define their own lifecycle API. The application that created the connection is responsible for
-closing it.
+Custom connection implementations define their own lifecycle API.
+The application that created the connection must close it.
