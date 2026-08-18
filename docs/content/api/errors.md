@@ -38,7 +38,7 @@ OvidCoreError
 | `OvidCoreError` | Common base for catch-all Ovid Core failures. |
 | `ConfigurationError` | Unsupported schema versions and invalid migration behavior. File-facing validation normally wraps this as `ConfigValidationError`. |
 | `CredentialError` | Missing, unsupported, or failed credential resolution. |
-| `CodexAuthError` | Codex device flow, token parsing, refresh, and keyring failures. |
+| `CodexAuthError` | Codex browser login, device login, token parsing, refresh, and credential-storage failures. |
 | `ProviderError` | Invalid or unsupported provider messages, usage, and results. |
 | `PersistenceError` | Invalid or unsupported persisted message records. |
 | `ModelResolutionError` | Unknown selectors, alias collisions, provider construction, Codex catalog, or incompatible model settings. |

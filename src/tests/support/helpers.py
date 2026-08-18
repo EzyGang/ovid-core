@@ -49,6 +49,19 @@ def make_codex_tokens(*, expired: bool = False, suffix: str = 'old') -> CodexTok
     )
 
 
+def codex_token_response() -> httpx.Response:
+    tokens = make_codex_tokens()
+
+    return httpx.Response(
+        200,
+        json={
+            'id_token': tokens.id_token.get_secret_value(),
+            'access_token': tokens.access_token.get_secret_value(),
+            'refresh_token': tokens.refresh_token.get_secret_value(),
+        },
+    )
+
+
 def json_body(request: httpx.Request) -> dict[str, JsonValue]:
     return _JSON_OBJECT_ADAPTER.validate_json(request.content)
 

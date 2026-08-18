@@ -1,5 +1,6 @@
 import asyncio
 import base64
+import binascii
 import time
 from abc import abstractmethod
 from collections.abc import Mapping
@@ -29,6 +30,20 @@ class CodexTokenStore(Protocol):
     async def delete(self) -> None: ...
 
 
+class MemoryCodexTokenStore:
+    def __init__(self) -> None:
+        self._tokens: CodexTokens | None = None
+
+    async def load(self) -> CodexTokens | None:
+        return self._tokens
+
+    async def save(self, tokens: CodexTokens) -> None:
+        self._tokens = tokens
+
+    async def delete(self) -> None:
+        self._tokens = None
+
+
 class _RefreshResponse(BaseModel):
     id_token: SecretStr | None = None
     access_token: SecretStr | None = None
@@ -41,7 +56,7 @@ class _RefreshRequest(BaseModel):
     refresh_token: str = Field(min_length=1, repr=False)
 
 
-class CodexTokenManager:
+class _CodexTokenManager:
     def __init__(self, *, store: CodexTokenStore, http_client: httpx.AsyncClient, config: CodexOAuthConfig) -> None:
         self._store = store
         self._client = http_client
@@ -125,5 +140,5 @@ def _jwt_claims(token: SecretStr) -> dict[str, JsonValue]:
         decoded = base64.urlsafe_b64decode(f'{payload}{"=" * (-len(payload) % 4)}')
 
         return cast(dict[str, JsonValue], _JSON_OBJECT_ADAPTER.validate_json(decoded))
-    except IndexError, ValueError, ValidationError:
+    except binascii.Error, IndexError, ValueError, ValidationError:
         raise CodexAuthError('Codex token is malformed') from None

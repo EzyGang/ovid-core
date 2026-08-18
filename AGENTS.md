@@ -163,6 +163,7 @@ Never edit it by hand.
 - Applications own config file discovery, environment mapping, precedence, merging, and profile selection.
 - Run persisted configuration through `migrate_config` before validation. Applications provide migrations explicitly.
 - Configuration stores credential references, not secret values.
+- Keep OAuth tokens out of configuration, logs, result metadata, and application transport data.
 
 ### Models and routing
 
@@ -170,6 +171,7 @@ Never edit it by hand.
 - `known_models()` may expose the upstream catalog, but unknown future provider/model pairs remain valid until construction.
 - Provider retries finish inside one route candidate. Ovid fallback moves to the next candidate only after an eligible final failure.
 - The compiler wraps each candidate with its concurrency limit before it compiles fallback.
+- Keep the undocumented ChatGPT subscription backend isolated from normal providers. Do not hard-code its prompts, claim another client identity, or fall back to API-key billing.
 
 ### Capabilities, MCP, and Skills
 
@@ -180,13 +182,6 @@ Never edit it by hand.
 - `AgentDefinition.tool_approval` can override every Ovid tool approval value for one agent.
 - A `None` override keeps each tool default. A supplied `ToolApproval` replaces every Ovid tool default.
 - The override does not change tools from a Pydantic AI capability passthrough.
-
-### Codex subscription
-
-- Keep ChatGPT Codex authentication inside `CodexSubscriptionModelFactory` and `ovid_core.codex`.
-- Use the official device flow, token rotation, model catalog, and dedicated authenticated client.
-- Do not copy Codex prompts, serialize OAuth tokens, claim another client identity, or silently fall back to API-key billing.
-- Treat the ChatGPT backend as an undocumented contract and keep it isolated from normal provider setup.
 
 ### Usage and observability
 

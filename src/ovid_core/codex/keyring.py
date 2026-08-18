@@ -26,13 +26,14 @@ class KeyringCodexTokenStore:
             if serialized is None:
                 return None
             payload = _StoredTokenPayload.model_validate_json(serialized)
-            return CodexTokens(
-                id_token=SecretStr(payload.id_token),
-                access_token=SecretStr(payload.access_token),
-                refresh_token=SecretStr(payload.refresh_token),
-            )
         except KeyringError, ValidationError, ValueError:
             raise CodexAuthError('Codex credentials could not be loaded from the system keyring') from None
+
+        return CodexTokens(
+            id_token=SecretStr(payload.id_token),
+            access_token=SecretStr(payload.access_token),
+            refresh_token=SecretStr(payload.refresh_token),
+        )
 
     async def save(self, tokens: CodexTokens) -> None:
         serialized = _StoredTokenPayload(

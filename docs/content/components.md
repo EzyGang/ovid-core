@@ -116,18 +116,19 @@ The key remains outside `OvidConfig`. The default factory passes it directly to 
 Use `CodexSubscriptionModelFactory` only for explicit ChatGPT Codex subscription access:
 
 ```python
-model_factory = CodexSubscriptionModelFactory(
-    token_manager=token_manager,
-    fallback=DefaultModelFactory(),
-)
-factory = AgentFactory(config=config, model_factory=model_factory)
+async with CodexAuth.persistent() as auth:
+    model_factory = CodexSubscriptionModelFactory(
+        auth=auth,
+        fallback=DefaultModelFactory(),
+    )
+    factory = AgentFactory(config=config, model_factory=model_factory)
+    agent = await factory.create(definition)
+    result = await agent.run('Complete the task')
 ```
 
-The fallback factory constructs models for other providers.
+Keep `CodexAuth` open while the model can make requests. The fallback factory constructs models for other providers.
 
-The Codex integration uses an undocumented backend. It requires stateless Responses API operation.
-
-The integration does not change a subscription request to API-key billing.
+The Codex integration uses an undocumented backend and stateless Responses API operation. It does not change a subscription request to API-key billing.
 
 ### Custom model factories
 

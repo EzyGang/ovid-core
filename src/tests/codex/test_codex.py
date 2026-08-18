@@ -11,96 +11,9 @@ from pytest_mock import MockerFixture
 
 from ovid_core import CodexAuthError, ModelResolutionError
 from ovid_core.adapters.pydantic_ai import CodexSubscriptionModelFactory
-from ovid_core.codex import CodexDeviceAuthClient, CodexOAuthConfig, CodexTokenManager, KeyringCodexTokenStore
+from ovid_core.codex import CodexAuth, KeyringCodexTokenStore
 from ovid_core.config import ModelConfig
 from tests.support.helpers import MemoryTokenStore, json_body, make_codex_tokens, oauth_client
-
-
-@pytest.mark.asyncio
-async def test_device_flow_polls_exchanges_and_persists_redacted_tokens() -> None:
-    requests: list[httpx.Request] = []
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        requests.append(request)
-        if request.url.path.endswith('/deviceauth/usercode'):
-            return httpx.Response(
-                200, json={'device_auth_id': 'device-secret', 'user_code': 'ABCD', 'interval': '0.001'}
-            )
-        if request.url.path.endswith('/deviceauth/token') and len(requests) == 2:
-            return httpx.Response(403)
-        if request.url.path.endswith('/deviceauth/token'):
-            return httpx.Response(
-                200,
-                json={'authorization_code': 'code-secret', 'code_challenge': 'challenge', 'code_verifier': 'verifier'},
-            )
-        assert request.url.path.endswith('/oauth/token')
-        tokens = make_codex_tokens()
-        return httpx.Response(
-            200,
-            json={
-                'id_token': tokens.id_token.get_secret_value(),
-                'access_token': tokens.access_token.get_secret_value(),
-                'refresh_token': tokens.refresh_token.get_secret_value(),
-                'token_type': 'Bearer',
-            },
-        )
-
-    async with oauth_client(handler) as client:
-        store = MemoryTokenStore()
-        config = CodexOAuthConfig(issuer='https://auth.example', poll_timeout_seconds=1)
-        manager = CodexTokenManager(store=store, http_client=client, config=config)
-        device = CodexDeviceAuthClient(http_client=client, token_manager=manager, config=config)
-        authorization = await device.start()
-        tokens = await device.complete(authorization)
-
-    assert authorization.verification_url == 'https://auth.example/codex/device'
-    assert authorization.user_code == 'ABCD'
-    assert 'device-secret' not in repr(authorization)
-    assert authorization.model_dump() == {
-        'verification_url': 'https://auth.example/codex/device',
-        'user_code': 'ABCD',
-    }
-    assert store.value == tokens
-    assert 'refresh-old' not in repr(tokens)
-    assert 'refresh-old' not in tokens.model_dump_json()
-    assert json_body(requests[0]) == {'client_id': config.client_id}
-    assert json_body(requests[1]) == {'device_auth_id': 'device-secret', 'user_code': 'ABCD'}
-    assert b'code-secret' in requests[-1].content
-    assert [request.headers['content-type'] for request in requests] == [
-        'application/json',
-        'application/json',
-        'application/json',
-        'application/x-www-form-urlencoded',
-    ]
-
-
-@pytest.mark.asyncio
-async def test_token_manager_refreshes_expiring_tokens_and_logs_out() -> None:
-    refreshed = make_codex_tokens(suffix='new')
-    requests: list[httpx.Request] = []
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        requests.append(request)
-        return httpx.Response(
-            200,
-            json={
-                'id_token': refreshed.id_token.get_secret_value(),
-                'access_token': refreshed.access_token.get_secret_value(),
-                'refresh_token': refreshed.refresh_token.get_secret_value(),
-            },
-        )
-
-    store = MemoryTokenStore(make_codex_tokens(expired=True))
-    async with oauth_client(handler) as client:
-        manager = CodexTokenManager(store=store, http_client=client, config=CodexOAuthConfig())
-        assert await manager.tokens() == refreshed
-        assert await manager.tokens() == refreshed
-        await manager.logout()
-
-    assert len(requests) == 1
-    assert json_body(requests[0])['grant_type'] == 'refresh_token'
-    assert requests[0].headers['content-type'] == 'application/json'
-    assert store.value is None
 
 
 @pytest.mark.asyncio
@@ -154,30 +67,30 @@ async def test_subscription_factory_runs_stateless_responses_and_retries_unautho
             {'type': 'response.completed', 'sequence_number': 2, 'response': response},
         )
         content = ''.join(f'data: {json.dumps(event)}\n\n' for event in events)
+
         return httpx.Response(200, text=content, headers={'content-type': 'text/event-stream'})
 
+    store = MemoryTokenStore(make_codex_tokens())
     async with oauth_client(oauth_handler) as oauth_http_client:
-        manager = CodexTokenManager(
-            store=MemoryTokenStore(make_codex_tokens()), http_client=oauth_http_client, config=CodexOAuthConfig()
-        )
-        factory = CodexSubscriptionModelFactory(
-            token_manager=manager,
-            backend_transport=httpx.MockTransport(backend_handler),
-        )
-        model_config = ModelConfig(provider='codex-subscription', model='gpt-5-codex')
-        handle = await factory.build(model_id='codex', config=model_config)
-        cached_handle = await factory.build(model_id='codex-cached', config=model_config)
-        async with handle._runtime, cached_handle._runtime:
-            agent = Agent(handle._runtime, instructions='custom-agent-guidance')
-            result = await agent.run('hello')
-            repeated = await agent.run('again', message_history=result.all_messages())
-            plain = await Agent(handle._runtime).run('without custom instructions')
-            streaming_agent = Agent(
-                handle._runtime,
-                model_settings=OpenAIResponsesModelSettings(openai_store=True),
+        async with CodexAuth(store=store, http_client=oauth_http_client) as auth:
+            factory = CodexSubscriptionModelFactory(
+                auth=auth,
+                backend_transport=httpx.MockTransport(backend_handler),
             )
-            async with streaming_agent.run_stream('stream directly') as streamed:
-                streamed_output = await streamed.get_output()
+            model_config = ModelConfig(provider='codex-subscription', model='gpt-5-codex')
+            handle = await factory.build(model_id='codex', config=model_config)
+            cached_handle = await factory.build(model_id='codex-cached', config=model_config)
+            async with handle._runtime, cached_handle._runtime:
+                agent = Agent(handle._runtime, instructions='custom-agent-guidance')
+                result = await agent.run('hello')
+                repeated = await agent.run('again', message_history=result.all_messages())
+                plain = await Agent(handle._runtime).run('without custom instructions')
+                streaming_agent = Agent(
+                    handle._runtime,
+                    model_settings=OpenAIResponsesModelSettings(openai_store=True),
+                )
+                async with streaming_agent.run_stream('stream directly') as streamed:
+                    streamed_output = await streamed.get_output()
 
     assert result.output == 'subscription works'
     assert repeated.output == 'subscription works'
@@ -202,21 +115,20 @@ async def test_subscription_factory_runs_stateless_responses_and_retries_unautho
 
 @pytest.mark.asyncio
 async def test_factory_delegates_non_subscription_models_and_rejects_stateful_settings() -> None:
+    store = MemoryTokenStore(make_codex_tokens())
     async with oauth_client(lambda request: httpx.Response(500)) as client:
-        manager = CodexTokenManager(
-            store=MemoryTokenStore(make_codex_tokens()), http_client=client, config=CodexOAuthConfig()
-        )
-        factory = CodexSubscriptionModelFactory(token_manager=manager)
-        delegated = await factory.build(model_id='test', config=ModelConfig(provider='test', model='test'))
-        with pytest.raises(ModelResolutionError) as captured:
-            await factory.build(
-                model_id='unsafe',
-                config=ModelConfig(
-                    provider='codex-subscription',
-                    model='gpt-5-codex',
-                    settings={'openai_previous_response_id': 'secret-response'},
-                ),
-            )
+        async with CodexAuth(store=store, http_client=client) as auth:
+            factory = CodexSubscriptionModelFactory(auth=auth)
+            delegated = await factory.build(model_id='test', config=ModelConfig(provider='test', model='test'))
+            with pytest.raises(ModelResolutionError) as captured:
+                await factory.build(
+                    model_id='unsafe',
+                    config=ModelConfig(
+                        provider='codex-subscription',
+                        model='gpt-5-codex',
+                        settings={'openai_previous_response_id': 'secret-response'},
+                    ),
+                )
 
     assert isinstance(delegated._runtime, Model)
     assert 'secret-response' not in repr(captured.value)
