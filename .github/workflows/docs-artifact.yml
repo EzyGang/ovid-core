@@ -1,0 +1,40 @@
+name: Documentation artifact
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: documentation-artifact-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build documentation artifact
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Install uv and Python
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          python-version: '3.14'
+          enable-cache: true
+          cache-dependency-glob: docs/uv.lock
+      - name: Install documentation dependencies
+        run: uv --directory docs sync --locked
+      - name: Build documentation
+        run: uv --directory docs run zensical build --clean --strict
+      - name: Upload documentation site
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: ovid-documentation-site
+          path: docs/site/
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 9
