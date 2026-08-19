@@ -95,13 +95,7 @@ uv add 'ovid-core[server-ag-ui]'
 
 ## Quick start
 
-Create `ovid.toml`:
-
-```toml
-[models.primary]
-provider = "openai"
-model = "gpt-5"
-```
+The application constructs one final `OvidConfig`. It can parse TOML, JSON, YAML, or another source before validation.
 
 Set the provider key:
 
@@ -119,15 +113,16 @@ Create and run an agent:
 
 ```python
 import asyncio
-from pathlib import Path
 
 from ovid_core import AgentDefinition, AgentFactory
-from ovid_core.config import load_config_file
+from ovid_core.config import OvidConfig
 from ovid_core.routing import ModelRef
 
 
 async def main() -> None:
-    config = load_config_file(Path('ovid.toml'))
+    config = OvidConfig.model_validate(
+        {'models': {'primary': {'provider': 'openai', 'model': 'gpt-5'}}}
+    )
     factory = AgentFactory(config=config)
     agent = await factory.build(
         AgentDefinition[None, str](

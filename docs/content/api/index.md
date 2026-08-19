@@ -20,7 +20,7 @@ Use the [guides](../getting-started.md) for task-oriented integration.
 | ChatGPT Codex subscription authentication and models | `ovid_core.codex.*`, `ovid_core.adapters.pydantic_ai.codex` | [Codex subscription](codex.md) |
 | Native HTTP, SSE, stdio, and AG-UI servers | `ovid_core.server.*` | [Servers and transports](server.md) |
 | Pydantic AI and Starlette compatibility boundaries | `ovid_core.adapters.pydantic_ai.*`, `ovid_core.adapters.starlette.*` | [Pydantic AI adapters](adapters.md) |
-| Exception hierarchy | `ovid_core.errors`, `ovid_core.config.errors` | [Errors](errors.md) |
+| Exception hierarchy | `ovid_core.errors` | [Errors](errors.md) |
 
 ## API conventions
 

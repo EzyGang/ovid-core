@@ -40,36 +40,31 @@ Use `str` as `output_type` when plain text is the actual contract.
 
 ## 3. Produce the final configuration
 
-Use TOML for the normal file:
-
-```toml
-schema_version = 1
-
-[models.fast]
-provider = "openai"
-model = "gpt-5-mini"
-aliases = ["default"]
-concurrency_limit = 8
-
-[models.deep]
-provider = "anthropic"
-model = "claude-sonnet-4-5"
-
-[routes.answering]
-models = ["deep", "fast"]
-```
-
-Load the final configuration:
+Construct `OvidConfig` from the application-produced mapping:
 
 ```python
-from pathlib import Path
+from ovid_core.config import OvidConfig
 
-from ovid_core.config import load_config_file
-
-config = load_config_file(Path('ovid.toml'))
+config = OvidConfig.model_validate(
+    {
+        'models': {
+            'fast': {
+                'provider': 'openai',
+                'model': 'gpt-5-mini',
+                'aliases': ['default'],
+                'concurrency_limit': 8,
+            },
+            'deep': {
+                'provider': 'anthropic',
+                'model': 'claude-sonnet-4-5',
+            },
+        },
+        'routes': {'answering': {'models': ['deep', 'fast']}},
+    }
+)
 ```
 
-The application owns file discovery, source precedence, merging, and profiles. JSON remains available when an application already uses JSON.
+The application owns source parsing, file discovery, precedence, merging, and profiles. Core receives only the validated model.
 
 Provider environment authentication works by default. Applications can also pass a `provider_api_key` callback to `AgentFactory`.
 

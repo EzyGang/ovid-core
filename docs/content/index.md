@@ -61,18 +61,12 @@ Adapter code uses Pydantic AI and provider runtime objects.
 
 ## One configured agent
 
-Define the model in `ovid.toml`:
-
-```toml
-[models.primary]
-provider = "openai"
-model = "gpt-5"
-```
-
-Load the configuration and build the agent:
+Construct the final configuration from application-produced data:
 
 ```python
-config = load_config_file(Path('ovid.toml'))
+config = OvidConfig.model_validate(
+    {'models': {'primary': {'provider': 'openai', 'model': 'gpt-5'}}}
+)
 factory = AgentFactory(config=config)
 agent = await factory.build(
     AgentDefinition[AppDeps, Answer](

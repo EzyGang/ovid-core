@@ -36,7 +36,7 @@ OvidCoreError
 | Exception | Raised for |
 | --- | --- |
 | `OvidCoreError` | Common base for catch-all Ovid Core failures. |
-| `ConfigurationError` | Unsupported schema versions and invalid migration behavior. File-facing validation normally wraps this as `ConfigValidationError`. |
+| `ConfigurationError` | Unsupported schema versions and invalid migration behavior. |
 | `CredentialError` | Missing, unsupported, or failed credential resolution. |
 | `CodexAuthError` | Codex browser login, device login, token parsing, refresh, and credential-storage failures. |
 | `ProviderError` | Invalid or unsupported provider messages, usage, and results. |
@@ -59,10 +59,6 @@ OvidCoreError
 | `RelayAddressInUseError` | Duplicate live address registration in a Relay network. |
 | `TransportError` | Normalized transport and server-runtime failure. |
 | `ServerConstructionError` | Missing optional dependencies, incompatible agent runtime, or invalid server registration. |
-
-## Configuration issue errors
-
-Import `ConfigIssue`, `ConfigPath`, and `ConfigValidationError` from `ovid_core.config.errors`. `ConfigValidationError` extends `ConfigurationError` and exposes every validation issue through its `issues` tuple. See [Models and configuration](configuration.md#validation-errors).
 
 ## Catching errors
 

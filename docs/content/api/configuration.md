@@ -11,11 +11,11 @@ Import from `ovid_core.models`.
 
 ## Configuration models
 
-Import from `ovid_core.config.models`.
+Import from `ovid_core.config`.
 
 ### `ConfigName`
 
-`Annotated[str, StringConstraints(min_length=1)]`. Used as the key type for named model, route, credential, and plugin mappings.
+`Annotated[str, StringConstraints(min_length=1)]`. It is the key type for named model, route, credential, and plugin mappings.
 
 ### `ModelConfig`
 
@@ -35,7 +35,7 @@ Provider and model remain separate in configuration. `DefaultModelFactory` joins
 
 ### `RunPolicyConfig`
 
-A domain-neutral configuration section for application configuration files.
+A domain-neutral configuration section for final Ovid configuration.
 
 | Field | Type | Default |
 | --- | --- | --- |
@@ -52,7 +52,7 @@ This configuration value is distinct from the richer runtime `AgentRunPolicy` us
 | `enabled` | `bool` | `True` |
 | `config` | `dict[str, JsonValue]` | `{}` |
 
-Ovid Core validates and carries plugin configuration but does not discover or load plugins.
+Ovid Core validates and carries plugin configuration. It does not discover or load plugins.
 
 ### `OvidConfig`
 
@@ -68,66 +68,47 @@ The final configuration accepted by core.
 | `run_policy` | `RunPolicyConfig` | `RunPolicyConfig()` |
 | `plugins` | `dict[ConfigName, PluginConfig]` | `{}` |
 
-Core accepts one final `OvidConfig`. File discovery, environment mapping, merging, profile selection, and source precedence belong to the consuming application.
+Core accepts one final `OvidConfig`. The consuming application owns:
 
-Use TOML for the standard application configuration file:
+- file and remote-source I/O
+- TOML, JSON, YAML, or other parsing
+- environment mapping
+- merging and source precedence
+- profile selection
+- source provenance and error presentation.
 
-```toml
-[models.primary]
-provider = "openai"
-model = "gpt-5"
-
-[[mcp_servers]]
-id = "project-tools"
-
-[mcp_servers.transport]
-kind = "http"
-url = "https://mcp.example.com"
-```
-
-JSON remains supported for applications that already use JSON configuration.
-
-## Validation and loading
-
-Import from `ovid_core.config.loading`.
-
-### Constants and aliases
-
-- `CURRENT_CONFIG_SCHEMA_VERSION = 1`
-- `ConfigFormat = Literal['json', 'toml']`
-- `ConfigSource = Mapping[str, JsonValue] | str | bytes`
-- `ConfigMigration = Callable[[dict[str, JsonValue]], Mapping[str, JsonValue]]`
-
-A migration receives its own mutable copy and must return data whose `schema_version` is exactly one greater than the input version.
-
-### `load_config`
-
-```text
-def load_config(
-    source: ConfigSource,
-    *,
-    config_format: ConfigFormat | None = None,
-    source_file: Path | None = None,
-    migrations: Mapping[int, ConfigMigration] | None = None,
-) -> OvidConfig
-```
-
-Loads an already parsed mapping or serialized TOML/JSON held in `str` or `bytes`. This is the source-independent entry point for HTTP responses, object stores, databases, package resources, and virtual file systems.
-
-Serialized input that starts with a JSON object delimiter uses JSON.
-All other serialized input uses TOML.
-Pass `config_format` when the source format must be explicit.
+Validate the application-produced mapping with Pydantic:
 
 ```python
-content = await get_remote('configs/ovid.toml')
-config = load_config(content, config_format='toml')
+from ovid_core.config import OvidConfig
+
+config_data = load_application_config()
+config = OvidConfig.model_validate(config_data)
 ```
 
-The function runs explicit migrations and validates `OvidConfig`. Parse, validation, and migration failures become source-safe `ConfigValidationError` values.
+An application can embed the contract in its own settings model:
 
-`source_file` is optional issue metadata. Core never opens it.
+```python
+from pydantic import BaseModel
 
-### `migrate_config`
+from ovid_core.config import OvidConfig
+
+
+class ApplicationSettings(BaseModel):
+    ovid: OvidConfig
+    database_url: str
+```
+
+Parse and merge all application sources before model validation. Pass `settings.ovid` to `AgentFactory`.
+
+## Schema migration
+
+Import from `ovid_core.config`.
+
+- `CURRENT_CONFIG_SCHEMA_VERSION = 1`
+- `ConfigMigration = Callable[[dict[str, JsonValue]], Mapping[str, JsonValue]]`
+
+A migration receives its own mutable copy. It must return data whose `schema_version` is exactly one greater than the input version.
 
 ```text
 def migrate_config(
@@ -137,27 +118,35 @@ def migrate_config(
 ) -> dict[str, JsonValue]
 ```
 
-Copies the source mapping before migration. A future schema version, a non-integer version, a missing migration, or a migration that does not advance exactly one version raises `ConfigurationError`.
+Call `migrate_config` after application parsing and before `OvidConfig.model_validate`:
 
-### `load_config_file`
+```python
+from ovid_core.config import OvidConfig, migrate_config
 
-```text
-def load_config_file(
-    path: Path,
-    *,
-    migrations: Mapping[int, ConfigMigration] | None = None,
-) -> OvidConfig
+parsed = load_application_config()
+migrated = migrate_config(parsed, migrations=application_migrations)
+config = OvidConfig.model_validate(migrated)
 ```
 
-Expands `~`, selects TOML or JSON from the file suffix, reads the file, and delegates to `load_config`.
+The function copies the source mapping before migration. It raises `ConfigurationError` for:
 
-Unsupported suffixes, I/O failures, parse errors, and validation errors become source-safe `ConfigValidationError` values.
+- a non-integer schema version
+- a future schema version
+- a missing migration step
+- a migration that does not advance exactly one version.
+
+Applications provide migrations explicitly. Core does not discover migration functions or configuration sources.
 
 ## Validation errors
 
-Import from `ovid_core.config.errors`.
+`OvidConfig.model_validate` raises Pydantic `ValidationError` for invalid final data. The application owns source labels and user-facing error envelopes.
 
-- `ConfigPath = tuple[str | int, ...]`
-- `ConfigIssue(path, message, source_file=None)` stores one source-safe issue.
-- `str(issue)` shows the dotted path, optional file, and message. The root path appears as `<root>`.
-- `ConfigValidationError(issues)` extends `ConfigurationError`. Its `issues` attribute contains the ordered issues.
+Pydantic structured errors include rejected input unless the caller excludes it. Omit input and context before logging untrusted configuration:
+
+```python
+issues = error.errors(
+    include_url=False,
+    include_context=False,
+    include_input=False,
+)
+```

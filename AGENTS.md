@@ -155,6 +155,14 @@ Never edit it by hand.
 - Give information in a general-to-specific order.
 - Keep examples small and make each prerequisite explicit.
 
+### Output guidance
+
+Write for an audience that has no knowledge of this conversation, meaning:
+
+- No leaking of intermediate steps.
+- No breadcrumbs.
+- Final code, comments, and output should present final data and content with no indication of intermediate steps.
+
 ## Domain contracts
 
 ### Configuration and credentials

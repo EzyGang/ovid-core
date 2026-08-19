@@ -17,7 +17,6 @@ observability
 plugins
 credentials
 schema_version
-load_config_file
 _.expand_user_path
 callback
 store
@@ -96,6 +95,7 @@ _.wrap_run
 ConversationStore
 InMemoryConversationStore
 MessageCodec
+_.decode
 _.select_one_filter
 _.reject_overlapping_names
 _.validate_mode

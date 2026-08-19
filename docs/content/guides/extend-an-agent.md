@@ -310,26 +310,32 @@ Set `include` or `exclude`, never both. Filesystem discovery happens through the
 
 ## Connect MCP servers from configuration
 
-Add the server to `ovid.toml`:
+Add the server to the final `OvidConfig`:
 
-```toml
-[[mcp_servers]]
-id = "issue-tracker"
-include_tools = ["search_issues", "get_issue"]
-namespace = "issues"
-defer_loading = true
-description = "Read issue tracker state."
+```python
+from ovid_core.config import OvidConfig
+from ovid_core.mcp import MCPServerConfig
 
-[mcp_servers.transport]
-kind = "http"
-url = "https://mcp.example.test"
-
-[mcp_servers.transport.headers.plain]
-X-Client = "ovid-app"
-
-[mcp_servers.transport.headers.credentials.Authorization]
-kind = "callback"
-callback = "issue-tracker-token"
+issue_tracker = MCPServerConfig.model_validate(
+    {
+        'id': 'issue-tracker',
+        'include_tools': ['search_issues', 'get_issue'],
+        'namespace': 'issues',
+        'defer_loading': True,
+        'description': 'Read issue tracker state.',
+        'transport': {
+            'kind': 'http',
+            'url': 'https://mcp.example.test',
+            'headers': {
+                'plain': {'X-Client': 'ovid-app'},
+                'credentials': {
+                    'Authorization': {'kind': 'callback', 'callback': 'issue-tracker-token'},
+                },
+            },
+        },
+    }
+)
+config = OvidConfig(models=models, mcp_servers=(issue_tracker,))
 ```
 
 Pass the application credential resolver when you create the factory:

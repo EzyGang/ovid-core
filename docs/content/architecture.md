@@ -180,17 +180,16 @@ connections or enable Relay tools.
 
 Configuration stores the provider and model as separate values:
 
-```toml
-[models.fast]
-provider = 'openai'
-model = 'gpt-5-mini'
-
-[models.deep]
-provider = 'anthropic'
-model = 'claude-sonnet-4-5'
-
-[routes.primary]
-models = ['deep', 'fast']
+```python
+config = OvidConfig.model_validate(
+    {
+        'models': {
+            'fast': {'provider': 'openai', 'model': 'gpt-5-mini'},
+            'deep': {'provider': 'anthropic', 'model': 'claude-sonnet-4-5'},
+        },
+        'routes': {'primary': {'models': ['deep', 'fast']}},
+    }
+)
 ```
 
 The router resolves this route to `deep` and `fast`. The routing adapter makes a Pydantic AI `FallbackModel`.

@@ -1,6 +1,6 @@
 # Getting started
 
-This guide builds one agent from `ovid.toml`. The example has no storage, tools, server, or observability.
+This guide builds one agent from a final `OvidConfig`. The example has no storage, tools, server, or observability.
 
 ## Before you start
 
@@ -14,43 +14,29 @@ Use Python 3.14 or newer.
 
 ## 1. Configure the model
 
-Create `ovid.toml`:
+Construct `OvidConfig` from the application-produced data:
 
-```toml
-[models.primary]
-provider = "openai"
-model = "gpt-5"
+```python
+from ovid_core.config import OvidConfig
+
+config = OvidConfig.model_validate(
+    {'models': {'primary': {'provider': 'openai', 'model': 'gpt-5'}}}
+)
 ```
 
 `primary` is an application model ID. Agent code uses this ID instead of a provider model string.
 
-TOML is the recommended file format. `load_config_file` also accepts JSON when an application already uses JSON configuration.
+The application owns parsing, file discovery, source precedence, environment mapping, and profiles. Core accepts one final model.
 
-The application owns file discovery, source precedence, environment mapping, and profiles. Ovid Core receives one final configuration.
+Applications can parse TOML, JSON, YAML, remote content, or another source. Validate the resulting Ovid mapping after applying application policy.
 
-## 2. Load the configuration
+## 2. Create the factory
 
 ```python
-from pathlib import Path
-
 from ovid_core import AgentFactory
-from ovid_core.config import load_config_file
 
-config = load_config_file(Path('ovid.toml'))
 factory = AgentFactory(config=config)
 ```
-
-For a remote or virtual source, fetch the content in application code and pass it directly to `load_config`:
-
-```python
-from ovid_core.config import load_config
-
-content = await get_remote('configs/ovid.toml')
-config = load_config(content, config_format='toml')
-factory = AgentFactory(config=config)
-```
-
-`load_config` also accepts an already parsed mapping. Core does not own the remote client, source discovery, or precedence rules.
 
 `AgentFactory` supplies the default model factory, router, and compiler. It caches constructed model handles for reuse.
 
@@ -113,15 +99,16 @@ Application code does not need to handle upstream `AgentRunResult`, provider mes
 
 ```python
 import asyncio
-from pathlib import Path
 
 from ovid_core import AgentDefinition, AgentFactory
-from ovid_core.config import load_config_file
+from ovid_core.config import OvidConfig
 from ovid_core.routing import ModelRef
 
 
 async def main() -> None:
-    config = load_config_file(Path('ovid.toml'))
+    config = OvidConfig.model_validate(
+        {'models': {'primary': {'provider': 'openai', 'model': 'gpt-5'}}}
+    )
     factory = AgentFactory(config=config)
     agent = await factory.build(
         AgentDefinition[None, str](
@@ -197,12 +184,17 @@ This is enough for an in-memory caller. Add a `ConversationStore` only when hist
 
 ## Override the model for one run
 
-Add every selectable model to `ovid.toml` before factory construction:
+Add every selectable model to the final configuration before factory construction:
 
-```toml
-[models.fast]
-provider = "openai"
-model = "gpt-5-mini"
+```python
+config = OvidConfig.model_validate(
+    {
+        'models': {
+            'primary': {'provider': 'openai', 'model': 'gpt-5'},
+            'fast': {'provider': 'openai', 'model': 'gpt-5-mini'},
+        }
+    }
+)
 ```
 
 Pass the user selection to `run` or `stream`:
@@ -239,19 +231,18 @@ The adapter converts upstream stream parts to the stable `AgentEvent` union. Con
 
 ## Add a fallback route
 
-Define the ordered route in `ovid.toml`:
+Define the ordered route in the final configuration:
 
-```toml
-[models.primary]
-provider = "openai"
-model = "gpt-5"
-
-[models.backup]
-provider = "anthropic"
-model = "claude-sonnet-4-5"
-
-[routes.resilient]
-models = ["primary", "backup"]
+```python
+config = OvidConfig.model_validate(
+    {
+        'models': {
+            'primary': {'provider': 'openai', 'model': 'gpt-5'},
+            'backup': {'provider': 'anthropic', 'model': 'claude-sonnet-4-5'},
+        },
+        'routes': {'resilient': {'models': ['primary', 'backup']}},
+    }
+)
 ```
 
 Select the route in the definition or as a run override:
@@ -272,16 +263,21 @@ Authentication and invalid requests stop the route.
 
 ## Configure MCP servers
 
-Add MCP definitions to `ovid.toml`:
+Include MCP definitions in the final configuration:
 
-```toml
-[[mcp_servers]]
-id = "project-tools"
-include_tools = ["search", "read"]
-
-[mcp_servers.transport]
-kind = "http"
-url = "https://mcp.example.com"
+```python
+config = OvidConfig.model_validate(
+    {
+        'models': {'primary': {'provider': 'openai', 'model': 'gpt-5'}},
+        'mcp_servers': [
+            {
+                'id': 'project-tools',
+                'include_tools': ['search', 'read'],
+                'transport': {'kind': 'http', 'url': 'https://mcp.example.com'},
+            }
+        ],
+    }
+)
 ```
 
 `AgentFactory(config=config)` constructs these capabilities and adds them to each agent.
