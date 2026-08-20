@@ -1,3 +1,4 @@
+from ovid_core.capabilities.base import AgentCapabilityDescriptor as AgentCapabilityDescriptor
 from ovid_core.capabilities.base import BaseCapability as BaseCapability
 from ovid_core.capabilities.base import CapabilityContributions as CapabilityContributions
 from ovid_core.capabilities.base import CapabilityModelSettings as CapabilityModelSettings

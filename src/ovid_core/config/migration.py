@@ -20,7 +20,7 @@ def migrate_config(
 
     if isinstance(version, bool) or not isinstance(version, int):
         raise ConfigurationError('schema version must be an integer')
-        
+
     if version > CURRENT_CONFIG_SCHEMA_VERSION:
         raise ConfigurationError(f'unsupported schema version {version}')
 

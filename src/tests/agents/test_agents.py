@@ -21,7 +21,7 @@ from ovid_core import (
 from ovid_core.config import ModelConfig, OvidConfig
 from ovid_core.mcp import MCPHTTPTransportConfig, MCPServerConfig
 from ovid_core.routing import ModelRef, ModelRouteRef
-from ovid_core.tools import ToolApproval
+from ovid_core.tools import ToolApproval, ToolPresentation
 from tests.support.agent_consumer import AddTool, AgentDependencies, RecordingHook
 from tests.support.agent_helpers import agent_factory, failing_request, structured_test_model
 from tests.support.helpers import CONVERSATION_ID, RUN_ID
@@ -35,6 +35,12 @@ async def text_stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIte
 
 class ApprovalAddTool(AddTool):
     approval = ToolApproval(required=True, reason='Approve addition')
+
+
+class PresentedAddTool(AddTool):
+    timeout_seconds = 4.0
+    defer_loading = True
+    presentation = ToolPresentation(wire_name='sum')
 
 
 @pytest.mark.asyncio
@@ -75,6 +81,59 @@ async def test_factory_applies_agent_tool_approval_override() -> None:
     assert agent.diagnostics.tool_approval == tool_approval
     assert model.last_model_request_parameters is not None
     assert model.last_model_request_parameters.function_tools[0].kind == 'function'
+
+
+@pytest.mark.asyncio
+async def test_factory_exposes_extension_context_before_compilation() -> None:
+    model = TestModel(
+        call_tools=['sum'],
+        custom_output_args={'value': 'done'},
+        model_name='working',
+    )
+    factory = agent_factory({'primary': model})
+    definition = replace(
+        consumer.structured_definition(
+            model=ModelRef(name='primary'),
+            tool=PresentedAddTool(),
+            hook=RecordingHook(),
+        ),
+        toolsets=(consumer.ConsumerToolset(()),),
+        tool_approval=ToolApproval(required=False, reason='Application policy'),
+    )
+
+    prepared = await factory.prepare(definition)
+    capability = prepared.context.capabilities[0]
+    tool = prepared.context.tools[0]
+    bound_capability = prepared.definition.capabilities[0]
+    source_tool = bound_capability.contributions.tools[0]
+
+    assert capability == bound_capability.descriptor(source='caller')
+    assert tool == source_tool.descriptor(source='arithmetic', approval=prepared.definition.tool_approval)
+    assert prepared.context.toolsets[0] == prepared.definition.toolsets[0].descriptor(source='caller')
+
+    assert prepared.context.model == 'primary'
+    assert (capability.id, capability.source, capability.instructions) == (
+        'arithmetic',
+        'caller',
+        ('Use the add tool before answering.',),
+    )
+    assert (tool.id, tool.name, tool.source) == ('add', 'sum', 'arithmetic')
+    assert set(tool.parameters_json_schema['properties']) == {'left', 'right'}
+    assert tool.approval.reason == 'Application policy'
+    assert tool.timeout_seconds == 4.0
+    assert tool.defer_loading
+    assert prepared.context.toolsets[0].model_dump() == {
+        'id': 'consumer',
+        'description': None,
+        'dynamic': True,
+        'source': 'caller',
+    }
+
+    prepared = prepared.with_instructions(('Rendered application prompt.',))
+    agent = factory.build_prepared(prepared)
+
+    assert prepared.definition.instructions == ('Rendered application prompt.',)
+    assert agent.diagnostics.selected_model == 'primary'
 
 
 def test_factory_rejects_api_key_resolver_with_custom_model_factory(mocker: MockerFixture) -> None:

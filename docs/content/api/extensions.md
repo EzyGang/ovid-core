@@ -67,6 +67,9 @@ the stable Ovid identity. Effective wire-name collisions fail deterministically.
 the exact bound Ovid tool instance, so a call from an earlier model step cannot dispatch to a later dynamic definition.
 JSON schema input remains the fallback when the provider or supported Pydantic AI API cannot advertise text grammar.
 
+`descriptor(source=..., approval=...)` returns the effective `AgentToolDescriptor` used during agent preparation.
+The descriptor applies the effective wire name and optional agent-wide approval override.
+
 The adapter validates tool input and output. It also applies approval policy, timeouts, hooks, and typed tool errors.
 
 ### `BaseToolset[Deps]`
@@ -77,6 +80,8 @@ Define `id` and implement `async get_tools(context) -> Sequence[BaseTool[Deps, A
 - `for_step(context) -> Self`
 - `__aenter__() -> Self`
 - `__aexit__(exception_type, exception, traceback) -> bool | None`
+
+`descriptor(source=...)` returns the dynamic `AgentToolsetDescriptor` used during agent preparation.
 
 ## Tool hooks
 
@@ -108,6 +113,8 @@ Import from `ovid_core.capabilities.base`.
 `defer_loading`, `contributions`, and inspectable `AgentServiceRequirement` values. Its default `bind(services)`
 validates requirements and returns itself. Stateful capabilities return a frozen bound value whose contributions use
 the resolved service providers.
+
+`descriptor(source=...)` returns the `AgentCapabilityDescriptor` with the capability instructions and deferred-loading state.
 
 All capability IDs, toolset IDs, and effective tool wire names must be unique. Collisions raise
 `ExtensionCollisionError`.

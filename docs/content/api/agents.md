@@ -187,6 +187,25 @@ It also converts `config.mcp_servers` to capabilities. `credential_resolver` res
 
 The optional `model` argument overrides the definition model for the constructed agent.
 
+Applications that construct prompts from the effective extension surface can split preparation from compilation:
+
+```python
+prepared = await factory.prepare(definition, model=None)
+extension_context = prepared.context
+prepared = prepared.with_instructions((*definition.instructions, render_extensions(extension_context)))
+agent = factory.build_prepared(prepared)
+```
+
+`prepare` resolves the model, constructs configured capabilities, validates service requirements, and binds each capability once.
+It returns a frozen `PreparedAgentDefinition` with the bound definition and an `AgentBuildContext`.
+The context describes the selected model, capabilities, static Ovid tools, dynamic Ovid toolsets, and bound services.
+Tool descriptors include effective wire names, descriptions, argument JSON Schemas, approval policy, timeouts, input formats, and deferred-loading state.
+Dynamic toolset descriptors expose identity and ownership because their concrete tools can change between model steps.
+Each `BaseCapability`, `BaseTool`, and `BaseToolset` produces its own descriptor from its effective bound state.
+`with_instructions` replaces only the prepared definition instructions.
+`build_prepared` compiles that prepared definition without repeating capability construction, service binding, or model resolution.
+`build` remains the shorthand for `prepare` followed immediately by `build_prepared`.
+
 `OvidAgent.run` and `OvidAgent.stream` accept the same optional override:
 
 ```python

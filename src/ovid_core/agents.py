@@ -3,11 +3,12 @@ from abc import abstractmethod
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import dataclass, replace
-from typing import Any, Literal, Protocol, cast
+from typing import Any, Literal, Protocol, Self, cast
 
 from pydantic import Field
 
-from ovid_core.capabilities.base import BaseCapability
+from ovid_core.agent_build import AgentBuildContext, AgentServiceDiagnostic, build_agent_context
+from ovid_core.capabilities.base import AgentExtensionSource, BaseCapability
 from ovid_core.config.models import OvidConfig
 from ovid_core.credentials.resolvers import CredentialResolver, ProviderAPIKeyResolver
 from ovid_core.errors import ModelResolutionError
@@ -47,14 +48,14 @@ class AgentDefinition[Deps, Output]:
     services: AgentServices = AgentServices()
 
 
-class AgentServiceDiagnostic(BaseModel):
-    id: str = Field(min_length=1)
-    api_version: int = Field(ge=1)
-    name: str = Field(min_length=1)
-    provider: str = Field(min_length=1)
-    features: tuple[str, ...]
-    identity: str | None = None
-    consumers: tuple[str, ...]
+@dataclass(frozen=True, slots=True)
+class PreparedAgentDefinition[Deps, Output]:
+    definition: AgentDefinition[Deps, Output]
+    context: AgentBuildContext
+    _resolved: ResolvedModel
+
+    def with_instructions(self, instructions: tuple[str, ...]) -> Self:
+        return replace(self, definition=replace(self.definition, instructions=instructions))
 
 
 class AgentExtensionProvenance(BaseModel):
@@ -237,13 +238,17 @@ class AgentFactory:
         self._mcp_capabilities: tuple[BaseCapability[Any], ...] | None = None
         self._mcp_lock = asyncio.Lock()
 
-    async def build[Deps, Output](
+    async def prepare[Deps, Output](
         self,
         definition: AgentDefinition[Deps, Output],
         *,
         model: AgentModelSelector | None = None,
-    ) -> OvidAgent[Deps, Output]:
+    ) -> PreparedAgentDefinition[Deps, Output]:
         configured_capabilities = await self._configured_capabilities()
+        sources: tuple[AgentExtensionSource, ...] = (
+            *('configuration' for _ in configured_capabilities),
+            *('caller' for _ in definition.capabilities),
+        )
         unbound_definition = replace(
             definition,
             model=definition.model if model is None else model,
@@ -251,13 +256,38 @@ class AgentFactory:
         )
         effective_definition = _bind_definition(unbound_definition)
         resolved = await self._router.resolve(effective_definition.model)
-        runtime = self._compiler.compile(effective_definition, resolved)
+        capability_sources = tuple(zip(effective_definition.capabilities, sources, strict=True))
+        context = build_agent_context(
+            resolved=resolved,
+            capabilities=capability_sources,
+            direct_toolsets=effective_definition.toolsets,
+            tool_approval=effective_definition.tool_approval,
+            services=effective_definition.services,
+        )
+
+        return PreparedAgentDefinition(definition=effective_definition, context=context, _resolved=resolved)
+
+    def build_prepared[Deps, Output](
+        self,
+        prepared: PreparedAgentDefinition[Deps, Output],
+    ) -> OvidAgent[Deps, Output]:
+        definition = prepared.definition
+        runtime = self._compiler.compile(definition, prepared._resolved)
 
         return OvidAgent(
             runtime=runtime,
-            diagnostics=_diagnostics(effective_definition, resolved),
-            runtime_resolver=lambda selector: self._runtime_for_model(effective_definition, selector),
+            diagnostics=_diagnostics(definition, prepared._resolved, prepared.context),
+            runtime_resolver=lambda selector: self._runtime_for_model(definition, selector),
         )
+
+    async def build[Deps, Output](
+        self,
+        definition: AgentDefinition[Deps, Output],
+        *,
+        model: AgentModelSelector | None = None,
+    ) -> OvidAgent[Deps, Output]:
+        prepared = await self.prepare(definition, model=model)
+        return self.build_prepared(prepared)
 
     async def _runtime_for_model[Deps, Output](
         self,
@@ -288,13 +318,21 @@ def _bind_definition[Deps, Output](definition: AgentDefinition[Deps, Output]) ->
 def _diagnostics[Deps, Output](
     definition: AgentDefinition[Deps, Output],
     resolved: ResolvedModel,
+    context: AgentBuildContext,
 ) -> AgentConstructionDiagnostics:
     extensions: list[AgentExtensionProvenance] = []
     if definition.instructions:
         extensions.append(AgentExtensionProvenance(kind='instructions', id='caller', source='caller'))
 
+    capability_sources = {descriptor.id: descriptor.source for descriptor in context.capabilities}
     for capability in definition.capabilities:
-        extensions.append(AgentExtensionProvenance(kind='capability', id=capability.id, source='caller'))
+        extensions.append(
+            AgentExtensionProvenance(
+                kind='capability',
+                id=capability.id,
+                source=capability_sources[capability.id],
+            )
+        )
         contributions = capability.contributions
         extensions.extend(
             AgentExtensionProvenance(kind='tool', id=tool.id, source=capability.id) for tool in contributions.tools
@@ -324,37 +362,5 @@ def _diagnostics[Deps, Output](
         observability=definition.observability,
         tool_approval=definition.tool_approval,
         extensions=tuple(extensions),
-        services=_service_diagnostics(definition),
+        services=context.services,
     )
-
-
-def _service_diagnostics[Deps, Output](
-    definition: AgentDefinition[Deps, Output],
-) -> tuple[AgentServiceDiagnostic, ...]:
-    diagnostics: list[AgentServiceDiagnostic] = []
-
-    for binding in definition.services.bindings:
-        ref = binding.ref
-        consumers = tuple(
-            capability.id
-            for capability in definition.capabilities
-            if any(
-                requirement.service_id == ref.key.id
-                and requirement.api_version == ref.key.api_version
-                and requirement.name == ref.name
-                for requirement in capability.requirements
-            )
-        )
-        diagnostics.append(
-            AgentServiceDiagnostic(
-                id=ref.key.id,
-                api_version=ref.key.api_version,
-                name=ref.name,
-                provider=binding.provider,
-                features=tuple(sorted(binding.features)),
-                identity=binding.identity,
-                consumers=consumers,
-            )
-        )
-
-    return tuple(diagnostics)

@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Any, Self
+from typing import Any, Literal, Self
 
 from pydantic import Field, JsonValue
 
@@ -7,6 +7,17 @@ from ovid_core.hooks.base import BaseToolHook
 from ovid_core.models import BaseModel
 from ovid_core.services import AgentServiceRequirement, AgentServices
 from ovid_core.tools.base import BaseTool, BaseToolset
+
+
+type AgentExtensionSource = Literal['caller', 'configuration']
+
+
+class AgentCapabilityDescriptor(BaseModel):
+    id: str = Field(min_length=1)
+    description: str | None = None
+    defer_loading: bool
+    instructions: tuple[str, ...]
+    source: AgentExtensionSource
 
 
 class CapabilityModelSettings(BaseModel):
@@ -29,6 +40,15 @@ class BaseCapability[Deps]:
     defer_loading: bool = False
     contributions: CapabilityContributions[Deps] = CapabilityContributions()
     requirements: tuple[AgentServiceRequirement, ...] = ()
+
+    def descriptor(self, *, source: AgentExtensionSource) -> AgentCapabilityDescriptor:
+        return AgentCapabilityDescriptor(
+            id=self.id,
+            description=self.description,
+            defer_loading=self.defer_loading,
+            instructions=self.contributions.instructions,
+            source=source,
+        )
 
     def bind(self, services: AgentServices) -> Self:
         for requirement in self.requirements:

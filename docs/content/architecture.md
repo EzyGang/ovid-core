@@ -48,8 +48,9 @@ graph LR
     A --> B[Requirement validation and capability binding]
     B --> R[ModelRouter.resolve]
     R --> H[ResolvedModel and ModelHandle]
-    H --> F[AgentCompiler.compile]
-    B --> F
+    H --> P[PreparedAgentDefinition and AgentBuildContext]
+    B --> P
+    P --> F[AgentCompiler.compile]
     F --> O[OvidAgent]
 ```
 
@@ -61,8 +62,10 @@ The construction phase has these steps:
 4. The factory validates every capability service requirement and binds each capability exactly once.
 5. The router resolves the selected model, alias, or route.
 6. The model factory constructs and caches each model handle.
-7. The compiler adapts the bound extensions and constructs the agent runtime.
-8. The factory returns an `OvidAgent`.
+7. The factory creates a prepared definition and neutral build context.
+8. The application can render instructions from the build context.
+9. The compiler adapts the prepared extensions and constructs the agent runtime.
+10. The factory returns an `OvidAgent`.
 
 `AgentFactory(config=config)` supplies the default model factory, router, and compiler.
 

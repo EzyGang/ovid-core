@@ -1,5 +1,6 @@
 from ovid_core.adapters.pydantic_ai.agents import DefaultAgentCompiler as DefaultAgentCompiler
 from ovid_core.adapters.pydantic_ai.models import DefaultModelFactory as DefaultModelFactory
+from ovid_core.agent_build import AgentBuildContext as AgentBuildContext
 from ovid_core.agents import AgentCompiler as AgentCompiler
 from ovid_core.agents import AgentConstructionDiagnostics as AgentConstructionDiagnostics
 from ovid_core.agents import AgentDefinition as AgentDefinition
@@ -10,6 +11,8 @@ from ovid_core.agents import AgentRuntime as AgentRuntime
 from ovid_core.agents import AgentServiceDiagnostic as AgentServiceDiagnostic
 from ovid_core.agents import AgentStream as AgentStream
 from ovid_core.agents import OvidAgent as OvidAgent
+from ovid_core.agents import PreparedAgentDefinition as PreparedAgentDefinition
+from ovid_core.capabilities.base import AgentCapabilityDescriptor as AgentCapabilityDescriptor
 from ovid_core.credentials.resolvers import ProviderAPIKeyResolver as ProviderAPIKeyResolver
 from ovid_core.errors import AgentConstructionError as AgentConstructionError
 from ovid_core.errors import AgentRunError as AgentRunError
@@ -57,3 +60,5 @@ from ovid_core.services import AgentServiceRequirement as AgentServiceRequiremen
 from ovid_core.services import AgentServices as AgentServices
 from ovid_core.skills import SkillLibraryConfig as SkillLibraryConfig
 from ovid_core.skills import SkillsCapability as SkillsCapability
+from ovid_core.tools.models import AgentToolDescriptor as AgentToolDescriptor
+from ovid_core.tools.models import AgentToolsetDescriptor as AgentToolsetDescriptor
