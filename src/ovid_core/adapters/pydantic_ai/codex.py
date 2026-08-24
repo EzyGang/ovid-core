@@ -16,14 +16,15 @@ from pydantic_ai.profiles.openai import OpenAIModelProfile, openai_model_profile
 from pydantic_ai.providers.openai import OpenAIProvider
 from pydantic_ai.settings import ModelSettings, merge_model_settings
 
-from ovid_core.adapters.pydantic_ai.models import DefaultModelFactory, _capabilities
+from ovid_core.adapters.pydantic_ai.models import DefaultModelFactory, _capabilities, available_model_options
 from ovid_core.codex.auth import CodexAuth
 from ovid_core.codex.catalog import CodexInstructionCatalog, load_instruction_catalog
 from ovid_core.codex.models import CodexTokens
 from ovid_core.codex.tokens import codex_account_id
 from ovid_core.config.models import ModelConfig
 from ovid_core.errors import ModelResolutionError
-from ovid_core.routing.models import ModelHandle
+from ovid_core.routing.models import KnownModel, ModelHandle
+from ovid_core.routing.options import ModelSelectionOptions
 
 
 _PROVIDER = 'codex-subscription'
@@ -45,7 +46,20 @@ class CodexSubscriptionModelFactory:
         self._instruction_catalog: CodexInstructionCatalog | None = None
         self._instruction_lock = asyncio.Lock()
 
+    async def available_options(self) -> ModelSelectionOptions:
+        auth = _CodexHttpxAuth(self._auth)
+        transport = _RedactingTransport(self._backend_transport or httpx.AsyncHTTPTransport())
+        async with httpx.AsyncClient(auth=auth, transport=transport) as http_client:
+            catalog = await self._catalog(http_client=http_client)
+
+        subscription_models = (KnownModel(provider=_PROVIDER, model=model_name) for model_name in catalog.model_names())
+        return available_model_options(additional_models=subscription_models)
+
     async def _instructions_for(self, *, http_client: httpx.AsyncClient, model_name: str) -> str:
+        catalog = await self._catalog(http_client=http_client)
+        return catalog.instructions_for(model_name)
+
+    async def _catalog(self, *, http_client: httpx.AsyncClient) -> CodexInstructionCatalog:
         async with self._instruction_lock:
             catalog = self._instruction_catalog
             if catalog is None:
@@ -54,8 +68,7 @@ class CodexSubscriptionModelFactory:
                     backend_url=self._config.backend_url,
                 )
                 self._instruction_catalog = catalog
-
-            return catalog.instructions_for(model_name)
+            return catalog
 
     async def build(self, *, model_id: str, config: ModelConfig) -> ModelHandle:
         if config.provider != _PROVIDER:

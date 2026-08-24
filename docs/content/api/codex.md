@@ -4,8 +4,6 @@ The Codex integration uses ChatGPT subscription authentication and the undocumen
 
 Ovid does not change a failed subscription request to API-key billing.
 
-System-keyring storage is included with Ovid Core. Use `CodexAuth.ephemeral()` when credentials must remain in memory.
-
 ## Authentication service
 
 Import `CodexAuth` from `ovid_core.codex`.
@@ -149,6 +147,10 @@ factory = CodexSubscriptionModelFactory(
     backend_transport=transport,
 )
 ```
+
+`await factory.available_options()` returns the versioned provider, model, and reasoning-effort
+catalog used by settings clients. Codex subscription models come from the authenticated backend
+catalog; fallback-provider models come from Pydantic AI's known-model catalog.
 
 Use `provider='codex-subscription'` in `ModelConfig`. Other providers delegate to `fallback`.
 

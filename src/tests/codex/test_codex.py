@@ -3,15 +3,13 @@ import time
 
 import httpx
 import pytest
-from keyring.errors import KeyringError
 from pydantic_ai import Agent
 from pydantic_ai.models import Model
 from pydantic_ai.models.openai import OpenAIResponsesModelSettings
-from pytest_mock import MockerFixture
 
-from ovid_core import CodexAuthError, ModelResolutionError
+from ovid_core import ModelResolutionError
 from ovid_core.adapters.pydantic_ai import CodexSubscriptionModelFactory
-from ovid_core.codex import CodexAuth, KeyringCodexTokenStore
+from ovid_core.codex import CodexAuth
 from ovid_core.config import ModelConfig
 from tests.support.helpers import MemoryTokenStore, json_body, make_codex_tokens, oauth_client
 
@@ -77,6 +75,7 @@ async def test_subscription_factory_runs_stateless_responses_and_retries_unautho
                 auth=auth,
                 backend_transport=httpx.MockTransport(backend_handler),
             )
+            options = await factory.available_options()
             model_config = ModelConfig(provider='codex-subscription', model='gpt-5-codex')
             handle = await factory.build(model_id='codex', config=model_config)
             cached_handle = await factory.build(model_id='codex-cached', config=model_config)
@@ -92,6 +91,8 @@ async def test_subscription_factory_runs_stateless_responses_and_retries_unautho
                 async with streaming_agent.run_stream('stream directly') as streamed:
                     streamed_output = await streamed.get_output()
 
+    codex_provider = next(provider for provider in options.providers if provider.value == 'codex-subscription')
+    assert tuple(model.value for model in codex_provider.models) == ('gpt-5-codex',)
     assert result.output == 'subscription works'
     assert repeated.output == 'subscription works'
     assert plain.output == 'subscription works'
@@ -132,33 +133,3 @@ async def test_factory_delegates_non_subscription_models_and_rejects_stateful_se
 
     assert isinstance(delegated._runtime, Model)
     assert 'secret-response' not in repr(captured.value)
-
-
-@pytest.mark.asyncio
-async def test_keyring_store_round_trip_and_safe_errors(mocker: MockerFixture) -> None:
-    values: dict[tuple[str, str], str] = {}
-    get_password = mocker.patch(
-        'keyring.get_password',
-        side_effect=lambda service, account: values.get((service, account)),
-    )
-    mocker.patch(
-        'keyring.set_password',
-        side_effect=lambda service, account, value: values.__setitem__((service, account), value),
-    )
-    mocker.patch('keyring.delete_password', side_effect=lambda service, account: values.pop((service, account)))
-    store = KeyringCodexTokenStore(service='test', account='user')
-
-    assert await store.load() is None
-    await store.save(make_codex_tokens())
-    assert await store.load() == make_codex_tokens()
-    await store.delete()
-    assert await store.load() is None
-    await store.delete()
-
-    def fail_get(service: str, account: str) -> str:
-        raise KeyringError('secret backend detail')
-
-    get_password.side_effect = fail_get
-    with pytest.raises(CodexAuthError) as captured:
-        await store.load()
-    assert 'secret backend detail' not in repr(captured.value)

@@ -52,6 +52,13 @@ _.total_tokens
 CodexAuthError
 CodexSubscriptionModelFactory
 KeyringCodexTokenStore
+ModelProviderOption
+ModelSelectionOptions
+SelectionOption
+available_model_options
+_.label
+_.reasoning_efforts
+_.available_options
 CodexAuth
 CodexBrowserLogin
 CodexDeviceLogin

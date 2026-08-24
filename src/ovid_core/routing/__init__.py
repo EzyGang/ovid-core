@@ -8,4 +8,8 @@ from ovid_core.routing.models import ModelRouteRef as ModelRouteRef
 from ovid_core.routing.models import ModelRuntime as ModelRuntime
 from ovid_core.routing.models import ModelSelector as ModelSelector
 from ovid_core.routing.models import ResolvedModel as ResolvedModel
+from ovid_core.routing.options import ModelProviderOption as ModelProviderOption
+from ovid_core.routing.options import ModelSelectionOptions as ModelSelectionOptions
+from ovid_core.routing.options import SelectionOption as SelectionOption
+from ovid_core.routing.options import model_selection_options as model_selection_options
 from ovid_core.routing.router import ModelRouter as ModelRouter

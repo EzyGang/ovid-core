@@ -1,5 +1,6 @@
 from ovid_core.adapters.pydantic_ai.agents import DefaultAgentCompiler as DefaultAgentCompiler
 from ovid_core.adapters.pydantic_ai.models import DefaultModelFactory as DefaultModelFactory
+from ovid_core.adapters.pydantic_ai.models import available_model_options as available_model_options
 from ovid_core.agent_build import AgentBuildContext as AgentBuildContext
 from ovid_core.agents import AgentCompiler as AgentCompiler
 from ovid_core.agents import AgentConstructionDiagnostics as AgentConstructionDiagnostics
@@ -49,6 +50,9 @@ from ovid_core.policy import AgentRetryPolicy as AgentRetryPolicy
 from ovid_core.policy import AgentRunPolicy as AgentRunPolicy
 from ovid_core.policy import AgentUsageLimits as AgentUsageLimits
 from ovid_core.policy import ProviderFailureKind as ProviderFailureKind
+from ovid_core.routing.options import ModelProviderOption as ModelProviderOption
+from ovid_core.routing.options import ModelSelectionOptions as ModelSelectionOptions
+from ovid_core.routing.options import SelectionOption as SelectionOption
 from ovid_core.services import AgentServiceBinding as AgentServiceBinding
 from ovid_core.services import AgentServiceCollisionError as AgentServiceCollisionError
 from ovid_core.services import AgentServiceCompatibilityError as AgentServiceCompatibilityError

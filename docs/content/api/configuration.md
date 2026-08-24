@@ -29,6 +29,23 @@ Import from `ovid_core.config`.
 
 Provider and model remain separate in configuration. `DefaultModelFactory` joins them only during model construction.
 
+## Provider and model options
+
+`available_model_options()` is exported from `ovid_core`. It returns a versioned
+`ModelSelectionOptions` DTO containing providers, each provider's models, and reasoning-effort
+options:
+
+```python
+from ovid_core import available_model_options
+
+options = available_model_options()
+payload = options.model_dump(mode='json')
+```
+
+Consumers can serialize the payload directly through HTTP, stdio, or another application API.
+Pass application-specific `KnownModel` values through `additional_models` when a custom model
+factory adds providers beyond Pydantic AI's known-model catalog.
+
 ### `RouteConfig`
 
 `models: tuple[str, ...]` is a non-empty ordered list of configured model names or aliases. The order is the fallback order.

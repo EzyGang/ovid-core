@@ -20,6 +20,9 @@ class CodexInstructionCatalog(BaseModel):
 
         raise ModelResolutionError(f'Codex model catalog does not contain {model_name!r}')
 
+    def model_names(self) -> tuple[str, ...]:
+        return tuple(model.slug for model in self.models)
+
 
 async def load_instruction_catalog(
     *,

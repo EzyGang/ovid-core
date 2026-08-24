@@ -16,7 +16,7 @@ Import from `ovid_core.credentials.models`. `CredentialRef` is a Pydantic discri
 
 `FileCredentialRef` expands `~` during validation. The reference does not read the file.
 
-The application defines named, callback, file, and store behavior. Core supplies only the value contracts.
+The application defines named, callback, file-reference, and external-store behavior.
 
 ```python
 from ovid_core.credentials.models import CredentialRef
@@ -55,6 +55,7 @@ The default model factory calls it when it constructs a configured model. Return
 Return `None` to use the provider environment or native authentication.
 
 This callback supports application-owned storage. It does not put the key in `OvidConfig` or modify process environment variables.
+
 
 ## Environment resolver
 

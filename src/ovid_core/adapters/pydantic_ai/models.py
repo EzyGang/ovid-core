@@ -1,3 +1,4 @@
+from collections.abc import Iterable
 from functools import partial
 from typing import Any, cast
 
@@ -11,6 +12,7 @@ from ovid_core.config.models import ModelConfig
 from ovid_core.credentials.resolvers import ProviderAPIKeyResolver
 from ovid_core.errors import ModelResolutionError
 from ovid_core.routing.models import KnownModel, ModelCapabilities, ModelHandle
+from ovid_core.routing.options import ModelSelectionOptions, model_selection_options
 
 
 class DefaultModelFactory:
@@ -48,14 +50,25 @@ class DefaultModelFactory:
         return infer_model(_model_identifier(config), provider_factory=provider_factory)
 
 
+def known_models() -> tuple[KnownModel, ...]:
+    return tuple(_split_known_model(identifier) for identifier in known_model_names())
+
+
+def available_model_options(*, additional_models: Iterable[KnownModel] = ()) -> ModelSelectionOptions:
+    return model_selection_options(models=(*known_models(), *additional_models))
+
+
+def _split_known_model(identifier: str) -> KnownModel:
+    if identifier == 'test':
+        return KnownModel(provider='test', model='test')
+    provider, model = identifier.split(':', maxsplit=1)
+    return KnownModel(provider=provider, model=model)
+
+
 def _provider_with_api_key(provider: str, *, api_key: SecretStr) -> Provider[Any]:
     provider_class = infer_provider_class(provider)
 
     return cast(Any, provider_class)(api_key=api_key.get_secret_value())
-
-
-def known_models() -> tuple[KnownModel, ...]:
-    return tuple(_split_known_model(identifier) for identifier in known_model_names())
 
 
 def _model_identifier(config: ModelConfig) -> str:
@@ -63,15 +76,6 @@ def _model_identifier(config: ModelConfig) -> str:
         return 'test'
 
     return f'{config.provider}:{config.model}'
-
-
-def _split_known_model(identifier: str) -> KnownModel:
-    if identifier == 'test':
-        return KnownModel(provider='test', model='test')
-
-    provider, model = identifier.split(':', maxsplit=1)
-
-    return KnownModel(provider=provider, model=model)
 
 
 def _capabilities(runtime: Model) -> ModelCapabilities:
