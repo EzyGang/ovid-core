@@ -5,6 +5,7 @@ from ovid_core.adapters.pydantic_ai.integrations import adapt_integration_capabi
 from ovid_core.adapters.pydantic_ai.messages import message_from_pydantic as message_from_pydantic
 from ovid_core.adapters.pydantic_ai.messages import message_to_pydantic as message_to_pydantic
 from ovid_core.adapters.pydantic_ai.models import DefaultModelFactory as DefaultModelFactory
+from ovid_core.adapters.pydantic_ai.models import available_api_key_models as available_api_key_models
 from ovid_core.adapters.pydantic_ai.models import available_model_options as available_model_options
 from ovid_core.adapters.pydantic_ai.models import known_models as known_models
 from ovid_core.adapters.pydantic_ai.results import result_from_pydantic as result_from_pydantic

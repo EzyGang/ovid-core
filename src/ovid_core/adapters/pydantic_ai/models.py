@@ -1,3 +1,4 @@
+import inspect
 from collections.abc import Iterable
 from functools import partial
 from typing import Any, cast
@@ -58,6 +59,19 @@ def known_models() -> tuple[KnownModel, ...]:
     return tuple(_split_known_model(identifier) for identifier in known_model_names())
 
 
+def available_api_key_models() -> tuple[KnownModel, ...]:
+    providers: dict[str, bool] = {}
+    models = []
+    for model in known_models():
+        supported = providers.get(model.provider)
+        if supported is None:
+            supported = _provider_accepts_api_key(model.provider)
+            providers[model.provider] = supported
+        if supported:
+            models.append(model)
+    return tuple(models)
+
+
 def available_model_options(*, additional_models: Iterable[KnownModel] = ()) -> ModelSelectionOptions:
     return model_selection_options(models=(*known_models(), *additional_models))
 
@@ -73,6 +87,14 @@ def _provider_with_api_key(provider: str, *, api_key: SecretStr) -> Provider[Any
     provider_class = infer_provider_class(provider)
 
     return cast(Any, provider_class)(api_key=api_key.get_secret_value())
+
+
+def _provider_accepts_api_key(provider: str) -> bool:
+    try:
+        provider_class = infer_provider_class(provider)
+        return 'api_key' in inspect.signature(provider_class).parameters
+    except ImportError, TypeError, ValueError:
+        return False
 
 
 def _model_identifier(config: ModelConfig) -> str:

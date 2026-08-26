@@ -31,6 +31,14 @@ Delegates to the Pydantic AI model catalog. It divides each identifier into a ty
 
 The catalog gives information only. An unknown future pair remains valid until model construction cannot resolve it.
 
+### `available_api_key_models`
+
+```text
+def available_api_key_models() -> tuple[KnownModel, ...]
+```
+
+Returns catalog models whose provider adapter is installed and accepts an explicit `api_key` argument.
+
 ## Agent compilation
 
 `DefaultAgentCompiler.compile(definition, resolved)` implements `AgentCompiler`. It returns an Ovid `AgentRuntime`.

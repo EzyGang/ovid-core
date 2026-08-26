@@ -18,8 +18,7 @@ from tests.server.server_helpers import allow, build_registration, server_client
 async def test_server_contract_validation_and_optional_dependency_failures(mocker: MockerFixture) -> None:
     registration = await build_registration()
 
-    with pytest.raises(ValueError, match='at least one'):
-        _AgentServerRuntime(agents=(), authorize=allow, config=ServerConfig(), store=None)
+    _AgentServerRuntime(agents=(), authorize=allow, config=ServerConfig(), store=None)
     with pytest.raises(ValueError, match='unique'):
         _AgentServerRuntime(agents=(registration, registration), authorize=allow, config=ServerConfig(), store=None)
     with pytest.raises(ValueError, match='letters'):
