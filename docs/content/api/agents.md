@@ -27,10 +27,14 @@ ModelHandle(
     model_name: str,
     capabilities: ModelCapabilities,
     runtime: ModelRuntime,
+    context_window: int | None = None,
 )
 ```
 
-Public attributes are `model_id`, `model_name`, and `capabilities`. The read-only `runtime` property exposes the opaque `ModelRuntime` for adapters. `repr(handle)` includes only the model ID and name.
+Public attributes are `model_id`, `model_name`, `capabilities`, and `context_window`.
+`context_window` contains discovered model metadata when the provider or `genai-prices` supplies it.
+The read-only `runtime` property exposes the opaque `ModelRuntime` for adapters.
+`repr(handle)` includes only the model ID and name.
 
 ### Selectors
 
@@ -228,6 +232,7 @@ The public `diagnostics` value describes the model selected when the factory bui
 - `requested`: original agent selector.
 - `selected_model`: canonical primary model ID.
 - `fallback_order`: canonical attempt order.
+- `context_window`: discovered maximum context tokens, or `None` when metadata is unavailable.
 - `policy`, `observability`: effective definition values.
 - `extensions`: ordered `AgentExtensionProvenance` entries.
 

@@ -55,9 +55,14 @@ class CodexSubscriptionModelFactory:
         subscription_models = (KnownModel(provider=_PROVIDER, model=model_name) for model_name in catalog.model_names())
         return available_model_options(additional_models=subscription_models)
 
-    async def _instructions_for(self, *, http_client: httpx.AsyncClient, model_name: str) -> str:
+    async def _model_details_for(
+        self,
+        *,
+        http_client: httpx.AsyncClient,
+        model_name: str,
+    ) -> tuple[str, int | None]:
         catalog = await self._catalog(http_client=http_client)
-        return catalog.instructions_for(model_name)
+        return catalog.instructions_for(model_name), catalog.context_window_for(model_name)
 
     async def _catalog(self, *, http_client: httpx.AsyncClient) -> CodexInstructionCatalog:
         async with self._instruction_lock:
@@ -80,7 +85,7 @@ class CodexSubscriptionModelFactory:
             auth = _CodexHttpxAuth(self._auth)
             transport = _RedactingTransport(self._backend_transport or httpx.AsyncHTTPTransport())
             http_client = httpx.AsyncClient(auth=auth, transport=transport)
-            base_instructions = await self._instructions_for(
+            base_instructions, context_window = await self._model_details_for(
                 http_client=http_client,
                 model_name=config.model,
             )
@@ -102,6 +107,7 @@ class CodexSubscriptionModelFactory:
                 model_name=runtime.model_name,
                 capabilities=_capabilities(runtime),
                 runtime=runtime,
+                context_window=context_window,
             )
         except Exception:
             if http_client is not None:

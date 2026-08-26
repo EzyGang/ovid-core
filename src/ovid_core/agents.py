@@ -5,7 +5,7 @@ from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import dataclass, replace
 from typing import Any, Literal, Protocol, Self, cast
 
-from pydantic import Field
+from pydantic import Field, PositiveInt
 
 from ovid_core.agent_build import AgentBuildContext, AgentServiceDiagnostic, build_agent_context
 from ovid_core.capabilities.base import AgentExtensionSource, BaseCapability
@@ -70,6 +70,7 @@ class AgentConstructionDiagnostics(BaseModel):
     requested: AgentModelSelector
     selected_model: str = Field(min_length=1)
     fallback_order: tuple[str, ...] = Field(min_length=1)
+    context_window: PositiveInt | None = None
     policy: AgentRunPolicy
     observability: ObservabilityConfig
     tool_approval: ToolApproval | None = None
@@ -358,6 +359,7 @@ def _diagnostics[Deps, Output](
         requested=definition.model,
         selected_model=resolved.selected_model,
         fallback_order=resolved.fallback_order,
+        context_window=resolved.handle.context_window,
         policy=definition.policy,
         observability=definition.observability,
         tool_approval=definition.tool_approval,

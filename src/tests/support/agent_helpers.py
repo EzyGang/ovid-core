@@ -28,6 +28,7 @@ class RuntimeFactory:
                 thinking=False,
             ),
             runtime=runtime,
+            context_window=1_000,
         )
 
 

@@ -2,6 +2,8 @@ from collections.abc import Iterable
 from functools import partial
 from typing import Any, cast
 
+from genai_prices import Usage as PriceUsage
+from genai_prices import calc_price
 from pydantic import SecretStr
 from pydantic_ai.models import Model, infer_model, known_model_names
 from pydantic_ai.models.concurrency import ConcurrencyLimitedModel
@@ -25,6 +27,7 @@ class DefaultModelFactory:
             if config.settings:
                 configured_settings = cast(ModelSettings, config.settings)
                 runtime._settings = merge_model_settings(runtime.settings, configured_settings)
+            context_window = _context_window(runtime)
             if config.concurrency_limit is not None:
                 runtime = ConcurrencyLimitedModel(runtime, limiter=config.concurrency_limit)
 
@@ -33,6 +36,7 @@ class DefaultModelFactory:
                 model_name=runtime.model_name,
                 capabilities=_capabilities(runtime),
                 runtime=runtime,
+                context_window=context_window,
             )
         except Exception:
             raise ModelResolutionError(f'model {model_id!r} construction failed') from None
@@ -76,6 +80,28 @@ def _model_identifier(config: ModelConfig) -> str:
         return 'test'
 
     return f'{config.provider}:{config.model}'
+
+
+def _context_window(runtime: Model) -> int | None:
+    try:
+        if runtime.base_url is not None:
+            try:
+                calculation = calc_price(
+                    PriceUsage(),
+                    runtime.model_name,
+                    provider_api_url=runtime.base_url,
+                )
+                return calculation.model.context_window
+            except LookupError:
+                pass
+        calculation = calc_price(
+            PriceUsage(),
+            runtime.model_name,
+            provider_id=runtime.system,
+        )
+        return calculation.model.context_window
+    except LookupError:
+        return None
 
 
 def _capabilities(runtime: Model) -> ModelCapabilities:

@@ -9,7 +9,9 @@ from pydantic_ai.models import Model
 from pydantic_ai.models.concurrency import ConcurrencyLimitedModel
 from pydantic_ai.models.fallback import FallbackModel
 from pydantic_ai.models.function import AgentInfo, FunctionModel
+from pydantic_ai.models.openai import OpenAIResponsesModel
 from pydantic_ai.models.test import TestModel
+from pydantic_ai.providers.openai import OpenAIProvider
 from pytest_mock import MockerFixture
 
 from ovid_core import DefaultModelFactory, ModelResolutionError
@@ -135,6 +137,35 @@ async def test_generic_pydantic_factory_applies_settings_concurrency_and_capabil
 
 
 @pytest.mark.asyncio
+async def test_default_factory_discovers_context_window_from_model_metadata(mocker: MockerFixture) -> None:
+    model = OpenAIResponsesModel('gpt-5.4', provider=OpenAIProvider(api_key='test-key'))
+    mocker.patch('ovid_core.adapters.pydantic_ai.models.infer_model', return_value=model)
+
+    async with model:
+        handle = await DefaultModelFactory().build(
+            model_id='primary',
+            config=ModelConfig(provider='openai', model='gpt-5.4'),
+        )
+
+    assert handle.context_window == 1_050_000
+
+
+@pytest.mark.asyncio
+async def test_context_discovery_falls_back_from_custom_url_to_provider(mocker: MockerFixture) -> None:
+    provider = OpenAIProvider(base_url='https://models.example.test/v1', api_key='test-key')
+    model = OpenAIResponsesModel('gpt-5.4', provider=provider)
+    mocker.patch('ovid_core.adapters.pydantic_ai.models.infer_model', return_value=model)
+
+    async with model:
+        handle = await DefaultModelFactory().build(
+            model_id='primary',
+            config=ModelConfig(provider='openai', model='gpt-5.4'),
+        )
+
+    assert handle.context_window == 1_050_000
+
+
+@pytest.mark.asyncio
 async def test_default_model_factory_accepts_application_api_keys(mocker: MockerFixture) -> None:
     calls: list[tuple[str, str]] = []
 
@@ -220,3 +251,20 @@ def test_selector_contracts_serialize() -> None:
     selector = CandidateModelSelector(models=(ModelRef(name='first'), ModelRef(name='second')))
 
     assert selector_adapter.validate_json(selector_adapter.dump_json(selector)) == selector
+
+
+def test_model_handle_rejects_non_positive_context_window() -> None:
+    with pytest.raises(ValueError, match='context window must be positive'):
+        ModelHandle(
+            model_id='invalid',
+            model_name='invalid',
+            capabilities=ModelCapabilities(
+                tools=True,
+                json_schema_output=False,
+                json_object_output=False,
+                image_output=False,
+                thinking=False,
+            ),
+            runtime=TestModel(),
+            context_window=0,
+        )

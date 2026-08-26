@@ -35,7 +35,15 @@ async def test_subscription_factory_runs_stateless_responses_and_retries_unautho
         if request.url.path.endswith('/models'):
             return httpx.Response(
                 200,
-                json={'models': [{'slug': 'gpt-5-codex', 'base_instructions': 'approved-codex-instructions'}]},
+                json={
+                    'models': [
+                        {
+                            'slug': 'gpt-5-codex',
+                            'base_instructions': 'approved-codex-instructions',
+                            'context_window': 272_000,
+                        }
+                    ]
+                },
             )
         response_requests.append(request)
         if len(response_requests) == 1:
@@ -93,6 +101,8 @@ async def test_subscription_factory_runs_stateless_responses_and_retries_unautho
 
     codex_provider = next(provider for provider in options.providers if provider.value == 'codex-subscription')
     assert tuple(model.value for model in codex_provider.models) == ('gpt-5-codex',)
+    assert handle.context_window == 272_000
+    assert cached_handle.context_window == 272_000
     assert result.output == 'subscription works'
     assert repeated.output == 'subscription works'
     assert plain.output == 'subscription works'
