@@ -10,7 +10,8 @@ Ovid Core does not convert cancellation to a normal error.
 OvidCoreError
 ├── ConfigurationError
 ├── CredentialError
-│   └── CodexAuthError
+│   └── AuthenticationError
+│       └── CodexAuthError
 ├── ProviderError
 ├── PersistenceError
 ├── ModelResolutionError
@@ -38,6 +39,7 @@ OvidCoreError
 | `OvidCoreError` | Common base for catch-all Ovid Core failures. |
 | `ConfigurationError` | Unsupported schema versions and invalid migration behavior. |
 | `CredentialError` | Missing, unsupported, or failed credential resolution. |
+| `AuthenticationError` | Unknown providers, invalid authentication flows, inactive sessions, and failed generic provider authentication. |
 | `CodexAuthError` | Codex browser login, device login, token parsing, refresh, and credential-storage failures. |
 | `ProviderError` | Invalid or unsupported provider messages, usage, and results. |
 | `PersistenceError` | Invalid or unsupported persisted message records. |

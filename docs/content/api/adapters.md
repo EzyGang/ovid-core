@@ -39,6 +39,8 @@ def available_api_key_models() -> tuple[KnownModel, ...]
 
 Returns catalog models whose provider adapter is installed and accepts an explicit `api_key` argument.
 
+`available_api_key_model_options()` returns the same installed subset as grouped `ModelSelectionOptions`.
+
 ## Agent compilation
 
 `DefaultAgentCompiler.compile(definition, resolved)` implements `AgentCompiler`. It returns an Ovid `AgentRuntime`.

@@ -57,6 +57,44 @@ Return `None` to use the provider environment or native authentication.
 This callback supports application-owned storage. It does not put the key in `OvidConfig` or modify process environment variables.
 
 
+## Provider authentication registry
+
+Import provider authentication contracts from `ovid_core.authentication`.
+
+`ProviderRegistry` is the source of enabled providers, authentication flows, connection state, and authenticated model options.
+
+Each `ProviderDefinition` supplies:
+
+- a stable provider ID and label
+- one or more `AuthenticationFlow` implementations
+- a `ProviderCredentialBinding`
+- an async model-option loader
+
+`AuthenticationFlowSession` returns transport-neutral interactions for URL display, secret input, progress, completion, and failure.
+
+Interactions contain semantic input kinds, progress stages, and failure reasons only.
+
+They do not contain UI messages, prompts, placeholders, instructions, or completion text.
+
+Applications render these interactions and provide concrete credential stores.
+
+`default_provider_registry` automatically includes:
+
+- every Pydantic AI model provider whose installed adapter accepts an API key
+- Codex browser and device authentication
+- caller-supplied custom definitions
+
+Ovid Core installs all Pydantic AI model-provider extras, so the default registry exposes the complete upstream provider catalog.
+
+Pass `excluded_provider_ids` to remove providers.
+
+Pass `custom_definitions` to add providers or replace a generated definition with the same ID.
+
+Provider modules own provider-specific behavior.
+
+The registry and application surfaces contain no provider-specific dispatch.
+
+
 ## Environment resolver
 
 ```python

@@ -12,4 +12,5 @@ from ovid_core.routing.options import ModelProviderOption as ModelProviderOption
 from ovid_core.routing.options import ModelSelectionOptions as ModelSelectionOptions
 from ovid_core.routing.options import SelectionOption as SelectionOption
 from ovid_core.routing.options import model_selection_options as model_selection_options
+from ovid_core.routing.options import model_selection_options_from_providers as model_selection_options_from_providers
 from ovid_core.routing.router import ModelRouter as ModelRouter

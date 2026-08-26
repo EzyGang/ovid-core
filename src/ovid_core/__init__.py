@@ -18,6 +18,7 @@ from ovid_core.credentials.resolvers import ProviderAPIKeyResolver as ProviderAP
 from ovid_core.errors import AgentConstructionError as AgentConstructionError
 from ovid_core.errors import AgentRunError as AgentRunError
 from ovid_core.errors import AgentTimeoutError as AgentTimeoutError
+from ovid_core.errors import AuthenticationError as AuthenticationError
 from ovid_core.errors import CodexAuthError as CodexAuthError
 from ovid_core.errors import ConfigurationError as ConfigurationError
 from ovid_core.errors import CredentialError as CredentialError

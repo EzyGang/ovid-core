@@ -10,6 +10,7 @@ Use the [guides](../getting-started.md) for task-oriented integration.
 | Shared immutable Pydantic bases | `ovid_core.models` | [Models and configuration](configuration.md) |
 | Configuration models, validation, loading, migrations | `ovid_core.config.models`, `.loading`, `.errors` | [Models and configuration](configuration.md) |
 | Serializable credential references and resolution | `ovid_core.credentials.models`, `.resolvers` | [Credentials](credentials.md) |
+| Provider authentication definitions, flows, and registry | `ovid_core.authentication` | [Credentials](credentials.md#provider-authentication-registry) |
 | Model selectors, handles, factories, and routing | `ovid_core.routing.models`, `.factory`, `.router` | [Routing and agents](agents.md) |
 | Agent definitions, construction, runtime, and streaming | `ovid_core.agents` | [Routing and agents](agents.md) |
 | Normalized messages, identities, contexts, events, and results | `ovid_core.messages.models`, `ovid_core.runtime.*` | [Messages and runtime](runtime.md) |

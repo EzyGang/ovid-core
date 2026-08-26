@@ -57,3 +57,12 @@ def model_selection_options(*, models: Iterable[KnownModel]) -> ModelSelectionOp
         if grouped[provider]
     )
     return ModelSelectionOptions(providers=providers, reasoning_efforts=_REASONING_EFFORTS)
+
+
+def model_selection_options_from_providers(
+    providers: Iterable[ModelProviderOption],
+) -> ModelSelectionOptions:
+    return ModelSelectionOptions(
+        providers=tuple(providers),
+        reasoning_efforts=_REASONING_EFFORTS,
+    )
