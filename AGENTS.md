@@ -142,27 +142,6 @@ Never edit it by hand.
 - Delete speculative options, wrappers, branches, and extension points.
 - Add comments or docstrings only when a critical rule is not clear from names and types.
 
-## Documentation rules
-
-- Use ASD-STE100 Issue 9 as the writing guide.
-- Use one term for one meaning. Keep API names and necessary technical nouns exact.
-- Use active voice unless the actor is unknown.
-- Limit descriptive sentences to 25 words.
-- Limit procedural sentences to 20 words and one instruction.
-- Use no more than six sentences in one paragraph.
-- Do not use contractions or semicolons.
-- Use a vertical list when a sentence contains many items or actions.
-- Give information in a general-to-specific order.
-- Keep examples small and make each prerequisite explicit.
-
-### Output guidance
-
-Write for an audience that has no knowledge of this conversation, meaning:
-
-- No leaking of intermediate steps.
-- No breadcrumbs.
-- Final code, comments, and output should present final data and content with no indication of intermediate steps.
-
 ## Domain contracts
 
 ### Configuration and credentials
@@ -226,3 +205,20 @@ uv build
 ```
 
 The Python integration layer requires 100% branch coverage. Do not weaken checks or thresholds. If a repository problem blocks a check, report the exact blocker.
+
+# Output
+
+Use ASD-STE100 Issue 9 as the writing guide.
+
+- Use one term for one meaning.
+- Use active voice unless the actor is unknown.
+- Limit descriptive sentences to 25 words.
+- Limit procedural sentences to 20 words and one instruction.
+- Write each complete sentence on one Markdown line. Do not wrap a sentence manually.
+- Use a vertical list when one sentence contains many items or actions.
+- Give information in a general-to-specific order.
+- Do not use contractions or semicolons.
+- Use no more than six sentences in one paragraph.
+- Write for readers who do not know this conversation.
+- Do not include intermediate steps or breadcrumbs.
+- Present final code, comments, and output without development history.
