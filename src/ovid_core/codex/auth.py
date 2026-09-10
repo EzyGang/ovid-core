@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from abc import ABC, abstractmethod
 from types import TracebackType
 from typing import Self, cast
 
@@ -131,13 +132,37 @@ class CodexAuth:
             raise CodexAuthError('Codex authentication service is not active')
 
 
-class CodexBrowserLogin:
-    def __init__(self, *, auth: CodexAuth, callback: BrowserCallbackServer) -> None:
+class _CodexLogin(ABC):
+    def __init__(self, *, auth: CodexAuth) -> None:
         self._auth = auth
-        self._callback = callback
         self._wait_task: asyncio.Task[None] | None = None
         self._cancelled = False
         self._finished = False
+
+    async def cancel(self) -> None:
+        if self._finished:
+            return
+
+        self._cancelled = True
+        task = self._wait_task
+        if task is not None and task is not asyncio.current_task():
+            task.cancel()
+        await self._finish()
+
+    def _begin_wait(self) -> None:
+        if self._finished or self._wait_task is not None:
+            raise CodexAuthError('Codex login is not pending')
+
+        self._wait_task = cast(asyncio.Task[None], asyncio.current_task())
+
+    @abstractmethod
+    async def _finish(self) -> None: ...
+
+
+class CodexBrowserLogin(_CodexLogin):
+    def __init__(self, *, auth: CodexAuth, callback: BrowserCallbackServer) -> None:
+        super().__init__(auth=auth)
+        self._callback = callback
 
     @property
     def authorization_url(self) -> str:
@@ -173,22 +198,6 @@ class CodexBrowserLogin:
         finally:
             await self._finish()
 
-    async def cancel(self) -> None:
-        if self._finished:
-            return
-
-        self._cancelled = True
-        task = self._wait_task
-        if task is not None and task is not asyncio.current_task():
-            task.cancel()
-        await self._finish()
-
-    def _begin_wait(self) -> None:
-        if self._finished or self._wait_task is not None:
-            raise CodexAuthError('Codex login is not pending')
-
-        self._wait_task = cast(asyncio.Task[None], asyncio.current_task())
-
     async def _finish(self) -> None:
         if self._finished:
             return
@@ -200,14 +209,11 @@ class CodexBrowserLogin:
             await self._auth._release()
 
 
-class CodexDeviceLogin:
+class CodexDeviceLogin(_CodexLogin):
     def __init__(self, *, auth: CodexAuth, flow: _DeviceLoginFlow, authorization: _DeviceAuthorization) -> None:
-        self._auth = auth
+        super().__init__(auth=auth)
         self._flow = flow
         self._authorization = authorization
-        self._cancelled = False
-        self._wait_task: asyncio.Task[None] | None = None
-        self._finished = False
 
     @property
     def verification_url(self) -> str:
@@ -231,22 +237,6 @@ class CodexDeviceLogin:
             raise
         finally:
             await self._finish()
-
-    async def cancel(self) -> None:
-        if self._finished:
-            return
-
-        self._cancelled = True
-        task = self._wait_task
-        if task is not None and task is not asyncio.current_task():
-            task.cancel()
-        await self._finish()
-
-    def _begin_wait(self) -> None:
-        if self._finished or self._wait_task is not None:
-            raise CodexAuthError('Codex login is not pending')
-
-        self._wait_task = cast(asyncio.Task[None], asyncio.current_task())
 
     async def _finish(self) -> None:
         if self._finished:

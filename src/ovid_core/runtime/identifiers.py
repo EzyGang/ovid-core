@@ -1,22 +1,9 @@
-from typing import Self
-from uuid import UUID, uuid4
-
-from ovid_core.models import BaseRootModel
+from ovid_core.models import UUIDRootModel
 
 
-class RunId(BaseRootModel[UUID]):
-    @classmethod
-    def new(cls) -> Self:
-        return cls(root=uuid4())
-
-    def __str__(self) -> str:
-        return str(self.root)
+class RunId(UUIDRootModel):
+    pass
 
 
-class ConversationId(BaseRootModel[UUID]):
-    @classmethod
-    def new(cls) -> Self:
-        return cls(root=uuid4())
-
-    def __str__(self) -> str:
-        return str(self.root)
+class ConversationId(UUIDRootModel):
+    pass

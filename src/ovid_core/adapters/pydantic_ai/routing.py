@@ -13,12 +13,16 @@ def compile_fallback_model(*, model_id: str, handles: Sequence[ModelHandle]) -> 
         return handles[0]
     native_models = tuple(cast(Model, handle._runtime) for handle in handles)
     runtime = FallbackModel(native_models[0], *native_models[1:], fallback_on=should_fallback)
+    context_window = None
+    if all(handle.context_window is not None for handle in handles):
+        context_window = min(cast(int, handle.context_window) for handle in handles)
 
     return ModelHandle(
         model_id=model_id,
         model_name=runtime.model_name,
         capabilities=_shared_capabilities(handles),
         runtime=runtime,
+        context_window=context_window,
     )
 
 

@@ -26,19 +26,25 @@ class TextPart(BaseModel):
 type ToolArguments = str | dict[str, JsonValue] | None
 
 
-class ToolCallPart(BaseModel):
-    kind: Literal['tool_call'] = 'tool_call'
+class ToolCallData(BaseModel):
     tool_name: str = Field(min_length=1)
     arguments: ToolArguments = None
     tool_call_id: str = Field(min_length=1)
 
 
-class ToolReturnPart(BaseModel):
-    kind: Literal['tool_return'] = 'tool_return'
+class ToolCallPart(ToolCallData):
+    kind: Literal['tool_call'] = 'tool_call'
+
+
+class ToolReturnData(BaseModel):
     tool_name: str = Field(min_length=1)
     content: JsonValue
     tool_call_id: str = Field(min_length=1)
     outcome: Literal['success', 'failed', 'denied', 'interrupted'] = 'success'
+
+
+class ToolReturnPart(ToolReturnData):
+    kind: Literal['tool_return'] = 'tool_return'
 
 
 class CapabilityLoadCallPart(BaseModel):

@@ -134,6 +134,7 @@ async def test_factory_exposes_extension_context_before_compilation() -> None:
 
     assert prepared.definition.instructions == ('Rendered application prompt.',)
     assert agent.diagnostics.selected_model == 'primary'
+    assert agent.diagnostics.context_window == 1_000
 
 
 def test_factory_rejects_api_key_resolver_with_custom_model_factory(mocker: MockerFixture) -> None:

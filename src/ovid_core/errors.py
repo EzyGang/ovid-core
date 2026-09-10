@@ -10,7 +10,11 @@ class CredentialError(OvidCoreError):
     pass
 
 
-class CodexAuthError(CredentialError):
+class AuthenticationError(CredentialError):
+    pass
+
+
+class CodexAuthError(AuthenticationError):
     pass
 
 

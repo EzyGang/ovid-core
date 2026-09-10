@@ -176,9 +176,6 @@ def _agent_map(
 ) -> dict[str, AgentRegistration[Any, Any]]:
     mapped = {agent.id: agent for agent in agents}
 
-    if not mapped:
-        raise ValueError('at least one agent registration is required')
-
     if len(mapped) != len(agents):
         raise ValueError('agent registration ids must be unique')
 

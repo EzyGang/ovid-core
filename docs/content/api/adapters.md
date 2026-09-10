@@ -21,6 +21,8 @@ It merges model settings, applies model concurrency, normalizes capabilities, an
 
 When `provider_api_key` returns a key, the factory passes that key to the inferred provider constructor. Construction failures become source-safe `ModelResolutionError` values.
 
+Gateway-prefixed providers use the upstream gateway factory, so the application key remains scoped to the gateway endpoint.
+
 ### `known_models`
 
 ```text
@@ -30,6 +32,19 @@ def known_models() -> tuple[KnownModel, ...]
 Delegates to the Pydantic AI model catalog. It divides each identifier into a typed provider and model pair.
 
 The catalog gives information only. An unknown future pair remains valid until model construction cannot resolve it.
+
+### `available_api_key_models`
+
+```text
+def available_api_key_models() -> tuple[KnownModel, ...]
+```
+
+Returns catalog models whose provider adapter is installed and accepts an explicit `api_key` argument.
+
+`available_api_key_model_options()` returns the same installed subset as grouped `ModelSelectionOptions`.
+
+Availability does not validate remote credentials or model access.
+Provider-specific environment requirements still apply, including AWS region configuration for Bedrock and Bedrock Mantle.
 
 ## Agent compilation
 
@@ -119,6 +134,9 @@ def compile_fallback_model(
 The function returns one handle without a change.
 
 For multiple handles, it makes a Pydantic AI `FallbackModel`. The new handle reports capabilities that all candidates support.
+
+Its context window is the smallest candidate window when every candidate supplies metadata.
+It is unknown when any candidate window is unknown.
 
 Authentication and invalid-request errors stop the route. Other applicable final errors can move to the next model.
 

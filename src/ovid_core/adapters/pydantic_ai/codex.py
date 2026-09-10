@@ -24,6 +24,7 @@ from ovid_core.codex.tokens import codex_account_id
 from ovid_core.config.models import ModelConfig
 from ovid_core.errors import ModelResolutionError
 from ovid_core.routing.models import ModelHandle
+from ovid_core.routing.options import ModelProviderOption, SelectionOption
 
 
 _PROVIDER = 'codex-subscription'
@@ -45,7 +46,35 @@ class CodexSubscriptionModelFactory:
         self._instruction_catalog: CodexInstructionCatalog | None = None
         self._instruction_lock = asyncio.Lock()
 
-    async def _instructions_for(self, *, http_client: httpx.AsyncClient, model_name: str) -> str:
+    async def provider_options(self) -> ModelProviderOption:
+        auth = _CodexHttpxAuth(self._auth)
+        transport = _RedactingTransport(self._backend_transport or httpx.AsyncHTTPTransport())
+        async with httpx.AsyncClient(auth=auth, transport=transport) as http_client:
+            catalog = await self._catalog(http_client=http_client)
+
+        model_names = sorted(set(catalog.model_names()))
+        if not model_names:
+            raise ModelResolutionError('Codex subscription model catalog is unavailable')
+
+        return ModelProviderOption(
+            value=_PROVIDER,
+            label=_PROVIDER,
+            description=f'Models available through the {_PROVIDER} provider.',
+            models=tuple(
+                SelectionOption(value=name, label=name, description=f'{_PROVIDER}:{name}') for name in model_names
+            ),
+        )
+
+    async def _model_details_for(
+        self,
+        *,
+        http_client: httpx.AsyncClient,
+        model_name: str,
+    ) -> tuple[str, int | None]:
+        catalog = await self._catalog(http_client=http_client)
+        return catalog.instructions_for(model_name), catalog.context_window_for(model_name)
+
+    async def _catalog(self, *, http_client: httpx.AsyncClient) -> CodexInstructionCatalog:
         async with self._instruction_lock:
             catalog = self._instruction_catalog
             if catalog is None:
@@ -54,8 +83,7 @@ class CodexSubscriptionModelFactory:
                     backend_url=self._config.backend_url,
                 )
                 self._instruction_catalog = catalog
-
-            return catalog.instructions_for(model_name)
+            return catalog
 
     async def build(self, *, model_id: str, config: ModelConfig) -> ModelHandle:
         if config.provider != _PROVIDER:
@@ -67,7 +95,7 @@ class CodexSubscriptionModelFactory:
             auth = _CodexHttpxAuth(self._auth)
             transport = _RedactingTransport(self._backend_transport or httpx.AsyncHTTPTransport())
             http_client = httpx.AsyncClient(auth=auth, transport=transport)
-            base_instructions = await self._instructions_for(
+            base_instructions, context_window = await self._model_details_for(
                 http_client=http_client,
                 model_name=config.model,
             )
@@ -89,6 +117,7 @@ class CodexSubscriptionModelFactory:
                 model_name=runtime.model_name,
                 capabilities=_capabilities(runtime),
                 runtime=runtime,
+                context_window=context_window,
             )
         except Exception:
             if http_client is not None:

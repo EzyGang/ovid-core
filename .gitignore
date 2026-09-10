@@ -298,3 +298,6 @@ Control.system-ca-bundle
 
 # MacOS
 .DS_Store
+
+# Aposlop analysis cache
+.aposlop_cache

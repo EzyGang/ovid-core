@@ -1,0 +1,20 @@
+[core]
+min_lines = 5
+min_nodes = 30
+# Match the existing production-code policy; keep generated and vendored code out.
+exclude = ["tests/", "tests.rs", "*_tests.rs", "vendor/", "node_modules/", "target/", "dist/", "build/", "site/"]
+use_cache = true
+
+[duplicates_detection]
+type_1 = true
+type_2 = true
+type_3 = true
+type_3_threshold = 0.90
+
+[metrics]
+calculate_complexity = true
+complexity_threshold = 20
+
+[file_length]
+max_lines = 300
+exclude = []

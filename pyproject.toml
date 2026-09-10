@@ -20,9 +20,10 @@ authors = [
 requires-python = ">=3.14"
 dependencies = [
     "httpx>=0.28.1,<0.29.0",
+    "genai-prices>=0.1.1,<0.2.0",
     "keyring>=25.6.0,<26.0.0",
     "pydantic-ai-harness[skills]>=0.18.0,<0.19.0",
-    "pydantic-ai-slim[mcp,openai]>=2.22.0,<2.23.0",
+    "pydantic-ai-slim[anthropic,bedrock,bedrock-mantle,cohere,google,groq,huggingface,mcp,mistral,openai,openrouter,xai,zai]>=2.22.0,<2.23.0",
 ]
 
 [project.optional-dependencies]
@@ -61,7 +62,7 @@ dev = [
 ]
 
 [tool.taskipy.tasks]
-format-and-lint = "task ruff && task ty-lint"
+format-and-lint = "task ruff && task ty-lint && task aposlop"
 docs-build = "uv --directory docs run zensical build --clean --strict"
 docs-run = "uv --directory docs run zensical serve"
 
@@ -70,6 +71,8 @@ tests = "pytest ./src/tests/ -v"
 vulture = "vulture ./src/ovid_core ./vulture/whitelist.txt --sort-by-size"
 ruff-lint = "ruff check ./src/ovid_core"
 ty-lint = "ty check ./src/ovid_core"
+aposlop = "uvx aposlop ci ."
+checks = "task ruff-lint && task ty-lint && task vulture && task aposlop"
 
 [tool.ty.rules]
 blanket-ignore-comment = "error"
@@ -116,7 +119,7 @@ skip-magic-trailing-comma = false
 exclude = ['*.pyi']
 
 [tool.ruff.lint.mccabe]
-max-complexity = 6
+max-complexity = 5
 
 [tool.ruff.lint.isort]
 split-on-trailing-comma = false

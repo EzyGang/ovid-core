@@ -1,8 +1,8 @@
 from typing import Annotated, Literal
 
-from pydantic import Field, JsonValue, NonNegativeInt
+from pydantic import Field, NonNegativeInt
 
-from ovid_core.messages.models import AgentMessage, ToolArguments, ToolCallPart, ToolReturnPart
+from ovid_core.messages.models import AgentMessage, ToolCallData, ToolCallPart, ToolReturnData, ToolReturnPart
 from ovid_core.models import BaseModel
 from ovid_core.runtime.identifiers import ConversationId, RunId
 from ovid_core.usage.models import Usage
@@ -28,19 +28,12 @@ class TextDeltaEvent(EventIdentity):
     content: str
 
 
-class ToolCallEvent(EventIdentity):
+class ToolCallEvent(ToolCallData, EventIdentity):
     kind: Literal['tool_call'] = 'tool_call'
-    tool_name: str = Field(min_length=1)
-    arguments: ToolArguments = None
-    tool_call_id: str = Field(min_length=1)
 
 
-class ToolResultEvent(EventIdentity):
+class ToolResultEvent(ToolReturnData, EventIdentity):
     kind: Literal['tool_result'] = 'tool_result'
-    tool_name: str = Field(min_length=1)
-    content: JsonValue
-    tool_call_id: str = Field(min_length=1)
-    outcome: Literal['success', 'failed', 'denied', 'interrupted'] = 'success'
 
 
 class UsageUpdateEvent(EventIdentity):

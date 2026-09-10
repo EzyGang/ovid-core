@@ -19,13 +19,32 @@ async def test_persistent_auth_uses_keyring_store(mocker: MockerFixture) -> None
 
 
 @pytest.mark.asyncio
-async def test_keyring_write_delete_and_payload_failures_are_safe(mocker: MockerFixture) -> None:
+async def test_keyring_store_round_trip(mocker: MockerFixture) -> None:
+    values: dict[tuple[str, str], str] = {}
+    mocker.patch('keyring.get_password', side_effect=lambda service, account: values.get((service, account)))
+    mocker.patch(
+        'keyring.set_password',
+        side_effect=lambda service, account, value: values.__setitem__((service, account), value),
+    )
+    mocker.patch('keyring.delete_password', side_effect=lambda service, account: values.pop((service, account)))
+    store = KeyringCodexTokenStore(service='test', account='user')
+
+    assert await store.load() is None
+    await store.save(make_codex_tokens())
+    assert await store.load() == make_codex_tokens()
+    await store.delete()
+    assert await store.load() is None
+    await store.delete()
+
+
+@pytest.mark.asyncio
+async def test_keyring_failures_are_redacted(mocker: MockerFixture) -> None:
     store = KeyringCodexTokenStore(service='test', account='account')
-    get_password = mocker.patch('keyring.get_password', return_value='{"id_token":"only"}')
-    with pytest.raises(CodexAuthError):
+    get_password = mocker.patch('keyring.get_password', return_value='{"id_token":"backend-secret"}')
+    with pytest.raises(CodexAuthError) as load_error:
         await store.load()
 
-    def fail(*args: str) -> None:
+    def fail(*_args: str) -> None:
         raise KeyringError('backend-secret')
 
     mocker.patch('keyring.set_password', side_effect=fail)
@@ -35,5 +54,7 @@ async def test_keyring_write_delete_and_payload_failures_are_safe(mocker: Mocker
     mocker.patch('keyring.delete_password', side_effect=fail)
     with pytest.raises(CodexAuthError) as delete_error:
         await store.delete()
+
+    assert 'backend-secret' not in repr(load_error.value)
     assert 'backend-secret' not in repr(save_error.value)
     assert 'backend-secret' not in repr(delete_error.value)

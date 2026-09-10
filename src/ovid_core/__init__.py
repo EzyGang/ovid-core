@@ -1,14 +1,15 @@
 from ovid_core.adapters.pydantic_ai.agents import DefaultAgentCompiler as DefaultAgentCompiler
 from ovid_core.adapters.pydantic_ai.models import DefaultModelFactory as DefaultModelFactory
+from ovid_core.adapters.pydantic_ai.models import available_model_options as available_model_options
 from ovid_core.agent_build import AgentBuildContext as AgentBuildContext
+from ovid_core.agent_build import AgentConstructionDiagnostics as AgentConstructionDiagnostics
+from ovid_core.agent_build import AgentExtensionProvenance as AgentExtensionProvenance
+from ovid_core.agent_build import AgentServiceDiagnostic as AgentServiceDiagnostic
 from ovid_core.agents import AgentCompiler as AgentCompiler
-from ovid_core.agents import AgentConstructionDiagnostics as AgentConstructionDiagnostics
 from ovid_core.agents import AgentDefinition as AgentDefinition
-from ovid_core.agents import AgentExtensionProvenance as AgentExtensionProvenance
 from ovid_core.agents import AgentFactory as AgentFactory
 from ovid_core.agents import AgentModelSelector as AgentModelSelector
 from ovid_core.agents import AgentRuntime as AgentRuntime
-from ovid_core.agents import AgentServiceDiagnostic as AgentServiceDiagnostic
 from ovid_core.agents import AgentStream as AgentStream
 from ovid_core.agents import OvidAgent as OvidAgent
 from ovid_core.agents import PreparedAgentDefinition as PreparedAgentDefinition
@@ -17,6 +18,7 @@ from ovid_core.credentials.resolvers import ProviderAPIKeyResolver as ProviderAP
 from ovid_core.errors import AgentConstructionError as AgentConstructionError
 from ovid_core.errors import AgentRunError as AgentRunError
 from ovid_core.errors import AgentTimeoutError as AgentTimeoutError
+from ovid_core.errors import AuthenticationError as AuthenticationError
 from ovid_core.errors import CodexAuthError as CodexAuthError
 from ovid_core.errors import ConfigurationError as ConfigurationError
 from ovid_core.errors import CredentialError as CredentialError
@@ -49,6 +51,9 @@ from ovid_core.policy import AgentRetryPolicy as AgentRetryPolicy
 from ovid_core.policy import AgentRunPolicy as AgentRunPolicy
 from ovid_core.policy import AgentUsageLimits as AgentUsageLimits
 from ovid_core.policy import ProviderFailureKind as ProviderFailureKind
+from ovid_core.routing.options import ModelProviderOption as ModelProviderOption
+from ovid_core.routing.options import ModelSelectionOptions as ModelSelectionOptions
+from ovid_core.routing.options import SelectionOption as SelectionOption
 from ovid_core.services import AgentServiceBinding as AgentServiceBinding
 from ovid_core.services import AgentServiceCollisionError as AgentServiceCollisionError
 from ovid_core.services import AgentServiceCompatibilityError as AgentServiceCompatibilityError

@@ -199,12 +199,16 @@ uv run task ty-lint
 uv run ruff format --check ./src/ovid_core ./src/tests
 uv run ruff check ./src/ovid_core ./src/tests
 uv run task vulture
+uv run task aposlop
 uv run task tests
 uv run task docs-build
 uv build
 ```
 
 The Python integration layer requires 100% branch coverage. Do not weaken checks or thresholds. If a repository problem blocks a check, report the exact blocker.
+
+`uv run task checks` runs the static quality gates.
+Keep production duplicate, complexity, and file-length findings at zero without adding unreviewed ignores or weakening the policy.
 
 # Output
 

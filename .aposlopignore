@@ -1,0 +1,10 @@
+# Manually excluded Aposlop findings.
+# Remove an ID to report that finding again.
+# Different provider-specific compaction APIs and configuration contracts.
+wy2kN
+# Independent provider and model-alias lookups with domain-specific errors.
+iMxmR
+# Different optional HTTP/AG-UI adapters and lifecycle contracts.
+LhLtT
+# Different provider session factories; no shared session implementation in these declarations.
+g37zd

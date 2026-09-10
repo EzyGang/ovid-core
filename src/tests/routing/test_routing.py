@@ -9,11 +9,14 @@ from pydantic_ai.models import Model
 from pydantic_ai.models.concurrency import ConcurrencyLimitedModel
 from pydantic_ai.models.fallback import FallbackModel
 from pydantic_ai.models.function import AgentInfo, FunctionModel
+from pydantic_ai.models.openai import OpenAIResponsesModel
 from pydantic_ai.models.test import TestModel
+from pydantic_ai.providers.openai import OpenAIProvider
 from pytest_mock import MockerFixture
 
 from ovid_core import DefaultModelFactory, ModelResolutionError
 from ovid_core.adapters.pydantic_ai import known_models, result_from_pydantic
+from ovid_core.adapters.pydantic_ai.routing import compile_fallback_model
 from ovid_core.config import ModelConfig, OvidConfig
 from ovid_core.routing import (
     CandidateModelSelector,
@@ -135,6 +138,51 @@ async def test_generic_pydantic_factory_applies_settings_concurrency_and_capabil
 
 
 @pytest.mark.asyncio
+async def test_default_factory_discovers_context_window_from_model_metadata(mocker: MockerFixture) -> None:
+    model = OpenAIResponsesModel('gpt-5.4', provider=OpenAIProvider(api_key='test-key'))
+    mocker.patch('ovid_core.adapters.pydantic_ai.models.infer_model', return_value=model)
+
+    async with model:
+        handle = await DefaultModelFactory().build(
+            model_id='primary',
+            config=ModelConfig(provider='openai', model='gpt-5.4'),
+        )
+
+    assert handle.context_window == 1_050_000
+
+
+@pytest.mark.asyncio
+async def test_context_discovery_falls_back_from_custom_url_to_provider(mocker: MockerFixture) -> None:
+    provider = OpenAIProvider(base_url='https://models.example.test/v1', api_key='test-key')
+    model = OpenAIResponsesModel('gpt-5.4', provider=provider)
+    mocker.patch('ovid_core.adapters.pydantic_ai.models.infer_model', return_value=model)
+
+    async with model:
+        handle = await DefaultModelFactory().build(
+            model_id='primary',
+            config=ModelConfig(provider='openai', model='gpt-5.4'),
+        )
+
+    assert handle.context_window == 1_050_000
+
+
+@pytest.mark.asyncio
+async def test_application_gateway_key_preserves_gateway_endpoint(mocker: MockerFixture) -> None:
+    mocker.patch.dict('os.environ', {'PYDANTIC_AI_GATEWAY_BASE_URL': 'https://gateway.example.test/proxy'})
+
+    async def provider_api_key(model_id: str, provider: str) -> SecretStr:
+        return SecretStr('synthetic-gateway-key')
+
+    handle = await DefaultModelFactory(provider_api_key=provider_api_key).build(
+        model_id='gateway',
+        config=ModelConfig(provider='gateway/openai', model='gpt-4o'),
+    )
+    model = cast(Model, handle._runtime)
+    async with model:
+        assert str(model.base_url) == 'https://gateway.example.test/proxy/openai/'
+
+
+@pytest.mark.asyncio
 async def test_default_model_factory_accepts_application_api_keys(mocker: MockerFixture) -> None:
     calls: list[tuple[str, str]] = []
 
@@ -220,3 +268,43 @@ def test_selector_contracts_serialize() -> None:
     selector = CandidateModelSelector(models=(ModelRef(name='first'), ModelRef(name='second')))
 
     assert selector_adapter.validate_json(selector_adapter.dump_json(selector)) == selector
+
+
+def test_model_handle_rejects_non_positive_context_window() -> None:
+    with pytest.raises(ValueError, match='context window must be positive'):
+        ModelHandle(
+            model_id='invalid',
+            model_name='invalid',
+            capabilities=ModelCapabilities(
+                tools=True,
+                json_schema_output=False,
+                json_object_output=False,
+                image_output=False,
+                thinking=False,
+            ),
+            runtime=TestModel(),
+            context_window=0,
+        )
+
+
+@pytest.mark.parametrize(('secondary_context', 'expected'), ((128_000, 128_000), (None, None)))
+def test_fallback_context_is_safe_for_every_candidate(secondary_context: int | None, expected: int | None) -> None:
+    capabilities = ModelCapabilities(
+        tools=True,
+        json_schema_output=False,
+        json_object_output=False,
+        image_output=False,
+        thinking=False,
+    )
+    handles = tuple(
+        ModelHandle(
+            model_id=f'candidate-{index}',
+            model_name=f'candidate-{index}',
+            capabilities=capabilities,
+            runtime=TestModel(),
+            context_window=window,
+        )
+        for index, window in enumerate((512_000, secondary_context))
+    )
+
+    assert compile_fallback_model(model_id='route', handles=handles).context_window == expected

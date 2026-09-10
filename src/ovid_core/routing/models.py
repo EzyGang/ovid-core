@@ -34,10 +34,14 @@ class ModelHandle:
         model_name: str,
         capabilities: ModelCapabilities,
         runtime: ModelRuntime,
+        context_window: int | None = None,
     ) -> None:
+        if context_window is not None and context_window <= 0:
+            raise ValueError('model context window must be positive')
         self.model_id = model_id
         self.model_name = model_name
         self.capabilities = capabilities
+        self.context_window = context_window
         self._runtime = runtime
 
     def __repr__(self) -> str:

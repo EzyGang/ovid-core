@@ -1,16 +1,22 @@
+from collections.abc import Iterable
 from functools import partial
+from inspect import signature
 from typing import Any, cast
 
+from genai_prices import Usage as PriceUsage
+from genai_prices import calc_price
 from pydantic import SecretStr
 from pydantic_ai.models import Model, infer_model, known_model_names
 from pydantic_ai.models.concurrency import ConcurrencyLimitedModel
 from pydantic_ai.providers import Provider, infer_provider_class
+from pydantic_ai.providers.gateway import gateway_provider
 from pydantic_ai.settings import ModelSettings, merge_model_settings
 
 from ovid_core.config.models import ModelConfig
 from ovid_core.credentials.resolvers import ProviderAPIKeyResolver
 from ovid_core.errors import ModelResolutionError
 from ovid_core.routing.models import KnownModel, ModelCapabilities, ModelHandle
+from ovid_core.routing.options import ModelSelectionOptions, model_selection_options
 
 
 class DefaultModelFactory:
@@ -23,6 +29,7 @@ class DefaultModelFactory:
             if config.settings:
                 configured_settings = cast(ModelSettings, config.settings)
                 runtime._settings = merge_model_settings(runtime.settings, configured_settings)
+            context_window = _context_window(runtime)
             if config.concurrency_limit is not None:
                 runtime = ConcurrencyLimitedModel(runtime, limiter=config.concurrency_limit)
 
@@ -31,6 +38,7 @@ class DefaultModelFactory:
                 model_name=runtime.model_name,
                 capabilities=_capabilities(runtime),
                 runtime=runtime,
+                context_window=context_window,
             )
         except Exception:
             raise ModelResolutionError(f'model {model_id!r} construction failed') from None
@@ -48,14 +56,46 @@ class DefaultModelFactory:
         return infer_model(_model_identifier(config), provider_factory=provider_factory)
 
 
+def known_models() -> tuple[KnownModel, ...]:
+    return tuple(_split_known_model(identifier) for identifier in known_model_names())
+
+
+def available_api_key_models() -> tuple[KnownModel, ...]:
+    models = known_models()
+    available: set[str] = set()
+    for provider in {model.provider for model in models if model.provider != 'test'}:
+        try:
+            provider_class = infer_provider_class(provider)
+        except ImportError, ValueError:
+            continue
+        if 'api_key' in signature(provider_class).parameters:
+            available.add(provider)
+
+    return tuple(model for model in models if model.provider in available)
+
+
+def available_api_key_model_options() -> ModelSelectionOptions:
+    return model_selection_options(models=available_api_key_models())
+
+
+def available_model_options(*, additional_models: Iterable[KnownModel] = ()) -> ModelSelectionOptions:
+    return model_selection_options(models=(*known_models(), *additional_models))
+
+
+def _split_known_model(identifier: str) -> KnownModel:
+    if identifier == 'test':
+        return KnownModel(provider='test', model='test')
+    provider, model = identifier.split(':', maxsplit=1)
+    return KnownModel(provider=provider, model=model)
+
+
 def _provider_with_api_key(provider: str, *, api_key: SecretStr) -> Provider[Any]:
+    if provider.startswith('gateway/'):
+        return gateway_provider(provider, api_key=api_key.get_secret_value())
+
     provider_class = infer_provider_class(provider)
 
     return cast(Any, provider_class)(api_key=api_key.get_secret_value())
-
-
-def known_models() -> tuple[KnownModel, ...]:
-    return tuple(_split_known_model(identifier) for identifier in known_model_names())
 
 
 def _model_identifier(config: ModelConfig) -> str:
@@ -65,13 +105,25 @@ def _model_identifier(config: ModelConfig) -> str:
     return f'{config.provider}:{config.model}'
 
 
-def _split_known_model(identifier: str) -> KnownModel:
-    if identifier == 'test':
-        return KnownModel(provider='test', model='test')
+def _context_window(runtime: Model) -> int | None:
+    if runtime.base_url is not None:
+        try:
+            return calc_price(
+                PriceUsage(),
+                runtime.model_name,
+                provider_api_url=runtime.base_url,
+            ).model.context_window
+        except LookupError:
+            pass
 
-    provider, model = identifier.split(':', maxsplit=1)
-
-    return KnownModel(provider=provider, model=model)
+    try:
+        return calc_price(
+            PriceUsage(),
+            runtime.model_name,
+            provider_id=runtime.system,
+        ).model.context_window
+    except LookupError:
+        return None
 
 
 def _capabilities(runtime: Model) -> ModelCapabilities:

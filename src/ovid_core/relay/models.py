@@ -1,9 +1,8 @@
-from typing import Annotated, Self
-from uuid import UUID, uuid4
+from typing import Annotated
 
 from pydantic import AwareDatetime, Field
 
-from ovid_core.models import BaseModel, BaseRootModel
+from ovid_core.models import BaseModel, BaseRootModel, UUIDRootModel
 
 
 type _OpaqueAddress = Annotated[str, Field(min_length=1)]
@@ -19,13 +18,8 @@ class RelayIdentity(BaseModel):
     display_name: str
 
 
-class RelayMessageId(BaseRootModel[UUID]):
-    @classmethod
-    def new(cls) -> Self:
-        return cls(root=uuid4())
-
-    def __str__(self) -> str:
-        return str(self.root)
+class RelayMessageId(UUIDRootModel):
+    pass
 
 
 class RelayMessage(BaseModel):

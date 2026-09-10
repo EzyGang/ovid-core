@@ -3,11 +3,9 @@ from abc import abstractmethod
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import dataclass, replace
-from typing import Any, Literal, Protocol, Self, cast
+from typing import Any, Protocol, Self, cast
 
-from pydantic import Field
-
-from ovid_core.agent_build import AgentBuildContext, AgentServiceDiagnostic, build_agent_context
+from ovid_core.agent_build import AgentBuildContext, AgentConstructionDiagnostics, build_agent_context, diagnostics
 from ovid_core.capabilities.base import AgentExtensionSource, BaseCapability
 from ovid_core.config.models import OvidConfig
 from ovid_core.credentials.resolvers import CredentialResolver, ProviderAPIKeyResolver
@@ -15,7 +13,6 @@ from ovid_core.errors import ModelResolutionError
 from ovid_core.hooks.base import BaseToolHook
 from ovid_core.mcp.capability import create_mcp_capability
 from ovid_core.messages.models import AgentMessage
-from ovid_core.models import BaseModel
 from ovid_core.observability import ObservabilityConfig
 from ovid_core.policy import AgentRunPolicy
 from ovid_core.routing.factory import ModelFactory
@@ -56,25 +53,6 @@ class PreparedAgentDefinition[Deps, Output]:
 
     def with_instructions(self, instructions: tuple[str, ...]) -> Self:
         return replace(self, definition=replace(self.definition, instructions=instructions))
-
-
-class AgentExtensionProvenance(BaseModel):
-    kind: Literal['capability', 'tool', 'toolset', 'hook', 'instructions']
-    id: str = Field(min_length=1)
-    source: str = Field(min_length=1)
-
-
-class AgentConstructionDiagnostics(BaseModel):
-    provider: str = Field(min_length=1)
-    model: str = Field(min_length=1)
-    requested: AgentModelSelector
-    selected_model: str = Field(min_length=1)
-    fallback_order: tuple[str, ...] = Field(min_length=1)
-    policy: AgentRunPolicy
-    observability: ObservabilityConfig
-    tool_approval: ToolApproval | None = None
-    extensions: tuple[AgentExtensionProvenance, ...]
-    services: tuple[AgentServiceDiagnostic, ...] = ()
 
 
 class AgentStream[Output](AsyncIterator[AgentEvent], Protocol):
@@ -276,7 +254,7 @@ class AgentFactory:
 
         return OvidAgent(
             runtime=runtime,
-            diagnostics=_diagnostics(definition, prepared._resolved, prepared.context),
+            diagnostics=diagnostics(definition, prepared._resolved, prepared.context),
             runtime_resolver=lambda selector: self._runtime_for_model(definition, selector),
         )
 
@@ -313,54 +291,3 @@ class AgentFactory:
 def _bind_definition[Deps, Output](definition: AgentDefinition[Deps, Output]) -> AgentDefinition[Deps, Output]:
     capabilities = tuple(capability.bind(definition.services) for capability in definition.capabilities)
     return replace(definition, capabilities=capabilities)
-
-
-def _diagnostics[Deps, Output](
-    definition: AgentDefinition[Deps, Output],
-    resolved: ResolvedModel,
-    context: AgentBuildContext,
-) -> AgentConstructionDiagnostics:
-    extensions: list[AgentExtensionProvenance] = []
-    if definition.instructions:
-        extensions.append(AgentExtensionProvenance(kind='instructions', id='caller', source='caller'))
-
-    capability_sources = {descriptor.id: descriptor.source for descriptor in context.capabilities}
-    for capability in definition.capabilities:
-        extensions.append(
-            AgentExtensionProvenance(
-                kind='capability',
-                id=capability.id,
-                source=capability_sources[capability.id],
-            )
-        )
-        contributions = capability.contributions
-        extensions.extend(
-            AgentExtensionProvenance(kind='tool', id=tool.id, source=capability.id) for tool in contributions.tools
-        )
-        extensions.extend(
-            AgentExtensionProvenance(kind='toolset', id=toolset.id, source=capability.id)
-            for toolset in contributions.toolsets
-        )
-        extensions.extend(
-            AgentExtensionProvenance(kind='hook', id=type(hook).__qualname__, source=capability.id)
-            for hook in contributions.hooks
-        )
-    extensions.extend(
-        AgentExtensionProvenance(kind='toolset', id=toolset.id, source='caller') for toolset in definition.toolsets
-    )
-    extensions.extend(
-        AgentExtensionProvenance(kind='hook', id=type(hook).__qualname__, source='caller') for hook in definition.hooks
-    )
-
-    return AgentConstructionDiagnostics(
-        provider=resolved.provider,
-        model=resolved.model,
-        requested=definition.model,
-        selected_model=resolved.selected_model,
-        fallback_order=resolved.fallback_order,
-        policy=definition.policy,
-        observability=definition.observability,
-        tool_approval=definition.tool_approval,
-        extensions=tuple(extensions),
-        services=context.services,
-    )
