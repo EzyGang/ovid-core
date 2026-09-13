@@ -5,16 +5,16 @@ from dataclasses import replace
 import httpx
 from pydantic_ai.messages import ModelMessage, ModelResponse, TextPart
 from pydantic_ai.models.function import AgentInfo, FunctionModel
-from starlette.applications import Starlette
 
 from ovid_core import AgentRunPolicy
 from ovid_core.server import AgentRegistration, AuthorizationResult, RequestContext
+from ovid_core.server.contracts import ASGIApplication
 from tests.support.agent_consumer import AgentDependencies, text_definition
 from tests.support.agent_helpers import agent_factory
 
 
 @asynccontextmanager
-async def server_client(app: Starlette) -> AsyncIterator[httpx.AsyncClient]:
+async def server_client(app: ASGIApplication) -> AsyncIterator[httpx.AsyncClient]:
     transport = httpx.ASGITransport(app=app)
 
     async with httpx.AsyncClient(transport=transport, base_url='http://test') as client:

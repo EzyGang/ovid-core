@@ -68,19 +68,21 @@ async def test_server_contract_validation_and_optional_dependency_failures(mocke
 async def test_server_masks_persistence_failures(mocker: MockerFixture) -> None:
     registration = await build_registration()
     store = mocker.Mock()
-    store.load = mocker.AsyncMock(side_effect=PersistenceError('database secret'))
-    store.append = mocker.AsyncMock()
+    store.load = mocker.AsyncMock(return_value=())
+    store.append = mocker.AsyncMock(side_effect=PersistenceError('database secret'))
     app = cast(Starlette, create_agent_app(agents=(registration,), authorize=allow, store=store))
 
     async with server_client(app) as client:
         persistence = await client.post(
-            '/agents/writer/runs',
+            '/agents/writer/events',
             headers={'Authorization': 'Bearer allowed'},
             json={'prompt': 'Write.'},
         )
 
-    assert persistence.status_code == 500
-    assert persistence.json()['message'] == 'Server operation failed'
+    assert '"code":"server_failure"' in persistence.text
+    assert persistence.text.count('event: run_failed\n') == 1
+    assert 'event: run_completed\n' not in persistence.text
+    assert 'event: run_result\n' not in persistence.text
     assert 'database secret' not in persistence.text
 
 
@@ -102,12 +104,12 @@ async def test_server_bounds_streamed_bodies_and_normalizes_stream_timeout_and_i
     async with app.router.lifespan_context(app):
         async with server_client(app) as client:
             streamed = await client.post(
-                '/agents/writer/runs',
+                '/agents/writer/events',
                 headers={'Authorization': 'Bearer allowed', 'Content-Type': 'application/json'},
                 content=oversized_body(),
             )
             invalid_length = await client.post(
-                '/agents/writer/runs',
+                '/agents/writer/events',
                 headers={
                     'Authorization': 'Bearer allowed',
                     'Content-Type': 'application/json',
@@ -145,7 +147,7 @@ async def test_server_bounds_streamed_bodies_and_normalizes_stream_timeout_and_i
     )
     async with server_client(body_timeout_app) as client:
         body_timeout = await client.post(
-            '/agents/writer/runs',
+            '/agents/writer/events',
             headers={'Authorization': 'Bearer allowed', 'Content-Type': 'application/json'},
             content=slow_body(),
         )
@@ -167,7 +169,7 @@ async def test_server_bounds_streamed_bodies_and_normalizes_stream_timeout_and_i
         ),
     )
     async with server_client(timeout_app) as client:
-        timeout = await client.post('/agents/writer/runs', json={'prompt': 'Write.'})
+        timeout = await client.post('/agents/writer/events', json={'prompt': 'Write.'})
 
     async def broken_dependencies(context: RequestContext, authorization: AuthorizationResult) -> None:
         del context, authorization
@@ -177,11 +179,11 @@ async def test_server_bounds_streamed_bodies_and_normalizes_stream_timeout_and_i
     broken_app = cast(Starlette, create_agent_app(agents=(broken,), authorize=allow))
     async with server_client(broken_app) as client:
         internal = await client.post(
-            '/agents/writer/runs',
+            '/agents/writer/events',
             headers={'Authorization': 'Bearer allowed'},
             json={'prompt': 'Write.'},
         )
 
-    assert timeout.status_code == 504
-    assert internal.status_code == 500
+    assert '"code":"timeout"' in timeout.text
+    assert '"code":"internal_error"' in internal.text
     assert 'private dependency failure' not in internal.text

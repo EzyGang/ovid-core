@@ -1,6 +1,6 @@
 import asyncio
-from collections.abc import AsyncIterator, Sequence
-from contextlib import asynccontextmanager
+from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
+from contextlib import asynccontextmanager, nullcontext
 from dataclasses import dataclass
 from typing import Any
 
@@ -8,12 +8,14 @@ from pydantic import JsonValue, TypeAdapter
 from pydantic_core import to_jsonable_python
 
 from ovid_core.agents import AgentStream, OvidAgent
-from ovid_core.errors import AgentRunError, OvidCoreError, TransportError
 from ovid_core.messages.models import AgentMessage
 from ovid_core.persistence import ConversationStore
-from ovid_core.runtime.identifiers import ConversationId
+from ovid_core.runtime.events import AgentEvent, RunCompletedEvent, RunFailedEvent
+from ovid_core.runtime.identifiers import ConversationId, RunId
 from ovid_core.runtime.results import RunResult
+from ovid_core.server.active_runs import _ActiveRun, _ActiveRuns, _ConnectionOwner
 from ovid_core.server.contracts import AgentRegistration, AuthorizationCallback, LifecycleCallback, RequestContext
+from ovid_core.server.errors import _AuthorizationDeniedError, _server_error_from_exception, _UnknownAgentError
 from ovid_core.server.models import AgentRunRequest, AgentRunResponse, ServerConfig, ServerErrorResponse
 
 
@@ -41,27 +43,63 @@ class _AgentServerRuntime:
         self._authorize = authorize
         self._config = config
         self._store = store
+        self._active_runs = _ActiveRuns()
         self._global_limit = asyncio.Semaphore(config.max_concurrency)
         self._agent_limits = {
             agent.id: asyncio.Semaphore(_agent_concurrency(agent, config.max_concurrency)) for agent in agents
         }
 
-    async def run(
+    def start(
+        self,
+        agent_id: str,
+        owner: _ConnectionOwner | None,
+        tasks: asyncio.TaskGroup,
+        execute: Callable[[_ActiveRun], Awaitable[None]],
+    ) -> _ActiveRun:
+        return self._active_runs.start(agent_id, owner, tasks, execute)
+
+    async def events(
         self,
         agent_id: str,
         request: AgentRunRequest,
         context: RequestContext,
-    ) -> AgentRunResponse:
-        async with self.session(agent_id, request.conversation_id, context) as session:
-            result = await session.agent.run(
-                request.prompt,
-                deps=session.deps,
-                messages=session.messages,
-                conversation_id=session.conversation_id,
-            )
-            await self.persist(result)
+        *,
+        send: Callable[[AgentEvent | AgentRunResponse | ServerErrorResponse], Awaitable[None]],
+        operation: _ActiveRun,
+    ) -> None:
+        last_event: AgentEvent | None = None
+        completion: RunCompletedEvent | None = None
+        try:
+            async with self.stream(agent_id, request, context, operation=operation) as stream:
+                async for event in stream:
+                    if isinstance(event, RunCompletedEvent):
+                        completion = event
+                    else:
+                        last_event = event
+                        await send(event)
 
-        return _response_from_result(result)
+                result = _response_from_result(stream.result)
+
+        except (Exception, asyncio.CancelledError) as error:
+            if isinstance(error, asyncio.CancelledError) and not operation.cancelled:
+                raise
+            operation.terminal = True
+            failure = _server_error_from_exception(error)
+            if last_event is not None and not isinstance(last_event, RunFailedEvent):
+                await send(
+                    RunFailedEvent(
+                        run_id=last_event.run_id,
+                        conversation_id=last_event.conversation_id,
+                        sequence=last_event.sequence + 1,
+                        error_type='CancelledError' if failure.code == 'run_cancelled' else type(error).__name__,
+                        message=failure.message,
+                    )
+                )
+            await send(failure)
+            return
+        if completion is not None:
+            await send(completion)
+        await send(result)
 
     @asynccontextmanager
     async def stream(
@@ -69,17 +107,23 @@ class _AgentServerRuntime:
         agent_id: str,
         request: AgentRunRequest,
         context: RequestContext,
+        *,
+        operation: _ActiveRun | None = None,
     ) -> AsyncIterator[AgentStream[Any]]:
-        async with self.session(agent_id, request.conversation_id, context) as session:
-            async with session.agent.stream(
-                request.prompt,
-                deps=session.deps,
-                messages=session.messages,
-                conversation_id=session.conversation_id,
-            ) as stream:
-                yield stream
+        lifetime = self._active_runs.run(agent_id) if operation is None else nullcontext(operation)
+        async with lifetime as active:
+            async with self.session(agent_id, request.conversation_id, context, operation=active) as session:
+                async with session.agent.stream(
+                    request.prompt,
+                    deps=session.deps,
+                    messages=session.messages,
+                    conversation_id=session.conversation_id,
+                    run_id=active.run_id,
+                ) as stream:
+                    yield stream
 
-            await self.persist(stream.result)
+                await self.persist(stream.result)
+                active.terminal = True
 
     @asynccontextmanager
     async def session(
@@ -87,16 +131,17 @@ class _AgentServerRuntime:
         agent_id: str,
         conversation_id: ConversationId | None,
         context: RequestContext,
+        *,
+        operation: _ActiveRun | None = None,
     ) -> AsyncIterator[_AgentServerSession]:
         registration = self._registration(agent_id)
-
         async with self._global_limit, self._agent_limits[agent_id]:
             async with asyncio.timeout(self._timeout(registration)):
                 authorization = await self._authorize(context, registration.id)
-
                 if not authorization.allowed:
                     raise _AuthorizationDeniedError
-
+                if operation is not None:
+                    operation.authorization = authorization
                 conversation_id = conversation_id or ConversationId.new()
                 messages = await self._store.load(conversation_id) if self._store is not None else ()
                 deps = await registration.dependencies(context, authorization)
@@ -107,6 +152,23 @@ class _AgentServerRuntime:
                     messages=messages,
                     conversation_id=conversation_id,
                 )
+
+    async def cancel(self, agent_id: str, run_id: RunId, context: RequestContext) -> None:
+        registration = self._registration(agent_id)
+        async with asyncio.timeout(self._timeout(registration)):
+            authorization = await self._authorize(context, registration.id)
+            if not authorization.allowed or authorization.principal is None:
+                raise _AuthorizationDeniedError
+            self._active_runs.cancel(run_id, agent_id, authorization.principal)
+
+    async def cancel_owned(self, run_id: RunId, owner: _ConnectionOwner) -> None:
+        await self._active_runs.cancel_owned(run_id, owner)
+
+    async def disconnect(self, operation: _ActiveRun) -> None:
+        await self._active_runs.disconnect(operation)
+
+    async def close(self) -> None:
+        await self._active_runs.close()
 
     async def persist(self, result: RunResult[Any]) -> None:
         if self._store is not None:
@@ -128,47 +190,6 @@ class _AgentServerRuntime:
             return self._config.request_timeout_seconds
 
         return min(agent_timeout, self._config.request_timeout_seconds)
-
-
-class _UnknownAgentError(TransportError):
-    pass
-
-
-class _AuthorizationDeniedError(TransportError):
-    pass
-
-
-class _UnknownCommandError(TransportError):
-    pass
-
-
-class _CommandExecutionError(TransportError):
-    pass
-
-
-def _server_error_from_exception(error: Exception) -> ServerErrorResponse:
-    if isinstance(error, _UnknownAgentError):
-        return ServerErrorResponse(code='agent_not_found', message='Agent was not found')
-
-    if isinstance(error, _UnknownCommandError):
-        return ServerErrorResponse(code='command_not_found', message='Command was not found')
-
-    if isinstance(error, _AuthorizationDeniedError):
-        return ServerErrorResponse(code='forbidden', message='Request is not authorized')
-
-    if isinstance(error, TimeoutError):
-        return ServerErrorResponse(code='timeout', message='Request timed out')
-
-    if isinstance(error, _CommandExecutionError):
-        return ServerErrorResponse(code='command_failed', message='Command execution failed')
-
-    if isinstance(error, AgentRunError):
-        return ServerErrorResponse(code='agent_run_failed', message=str(error))
-
-    if isinstance(error, OvidCoreError):
-        return ServerErrorResponse(code='server_failure', message='Server operation failed')
-
-    return ServerErrorResponse(code='internal_error', message='Internal server error')
 
 
 def _agent_map(
@@ -204,6 +225,7 @@ async def _server_lifespan(
     startup: LifecycleCallback | None,
     shutdown: LifecycleCallback | None,
     shutdown_grace_seconds: int,
+    close: LifecycleCallback | None = None,
 ) -> AsyncIterator[None]:
     if startup is not None:
         await startup()
@@ -211,6 +233,10 @@ async def _server_lifespan(
     try:
         yield
     finally:
-        if shutdown is not None:
-            async with asyncio.timeout(shutdown_grace_seconds):
-                await shutdown()
+        async with asyncio.timeout(shutdown_grace_seconds):
+            try:
+                if close is not None:
+                    await close()
+            finally:
+                if shutdown is not None:
+                    await shutdown()

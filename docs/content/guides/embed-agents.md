@@ -129,8 +129,26 @@ The app exposes:
 
 - `GET /health` gives process health.
 - `GET /ready` gives optional dependency readiness.
-- `POST /agents/{agent_id}/runs` gives one JSON result.
-- `POST /agents/{agent_id}/events` gives server-sent events and a final result.
+- `POST /agents/{agent_id}/events` returns an SSE stream with a final result.
+- `DELETE /agents/{agent_id}/runs/{run_id}` requests cancellation of a run that belongs to the authorized principal.
+
+Native HTTP runs use an SSE stream rather than a separate synchronous JSON endpoint.
+The `run_started` event contains a server-generated run ID of type `RunId`.
+
+1. Read the run ID from the `run_id` field in `run_started`.
+2. Send a cancellation request to `DELETE /agents/{agent_id}/runs/{run_id}` with the run ID.
+
+The authorizer must return a stable, non-`None` authorized principal for cancellation.
+The server returns a bodyless HTTP 204 response to an authorized cancellation request.
+The original SSE stream delivers the terminal cancellation result asynchronously.
+Unauthorized callers and callers without a principal receive HTTP 403.
+
+The server also returns HTTP 204 for these targets without changing another run:
+
+- A stale run ID.
+- A completed run.
+- A run that belongs to another authorized principal.
+- A run for another agent.
 
 ### What the server does for you
 
@@ -143,9 +161,14 @@ For every run, the shared runtime uses this sequence:
 5. The runtime loads normalized history from the optional store.
 6. The runtime constructs typed dependencies after authorization.
 7. The runtime selects the smaller server or agent timeout.
-8. The runtime runs or streams the registered agent.
-9. The runtime appends new messages after completion.
-10. The runtime converts errors to source-safe transport responses.
+8. The runtime streams the registered agent.
+9. The runtime appends new messages before emitting `run_completed`.
+10. The runtime emits the final `run_result` after `run_completed`.
+
+Cancellation or failure before durable completion produces at most one `run_failed` event before `server_error`.
+The runtime does not emit `run_completed` for cancellation or failure before durable completion.
+Failures before streaming starts produce only `server_error`.
+The server removes sensitive source details from transport errors.
 
 The server does not supply user authentication, a database, TLS termination, principal rate limits, or deployment configuration.
 

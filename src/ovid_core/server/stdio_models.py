@@ -27,6 +27,11 @@ class StdioRunRequest(_StdioRequest):
     request: AgentRunRequest
 
 
+class StdioCancelRequest(_StdioRequest):
+    type: Literal['cancel'] = 'cancel'
+    target_request_id: str = Field(min_length=1)
+
+
 class StdioCommandRequest(_StdioRequest):
     type: Literal['command'] = 'command'
     command_id: str = Field(min_length=1)
@@ -34,7 +39,7 @@ class StdioCommandRequest(_StdioRequest):
 
 
 StdioRequest = Annotated[
-    StdioInitializeRequest | StdioRunRequest | StdioCommandRequest,
+    StdioInitializeRequest | StdioRunRequest | StdioCommandRequest | StdioCancelRequest,
     Field(discriminator='type'),
 ]
 

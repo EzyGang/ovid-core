@@ -10,8 +10,8 @@ from starlette.requests import Request
 from starlette.responses import Response
 
 from ovid_core.server.contracts import RequestContext
+from ovid_core.server.errors import _server_error_from_exception
 from ovid_core.server.models import ServerErrorResponse
-from ovid_core.server.runtime import _server_error_from_exception
 
 
 _SERVER_ERROR_STATUS = {
@@ -71,7 +71,7 @@ def _apply_cors(app: Starlette, allowed_origins: Sequence[str]) -> None:
     app.add_middleware(
         CORSMiddleware,
         allow_origins=allowed_origins,
-        allow_methods=('GET', 'POST'),
+        allow_methods=('GET', 'POST', 'DELETE'),
         allow_headers=('Authorization', 'Content-Type', 'Traceparent'),
     )
 

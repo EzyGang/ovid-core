@@ -26,10 +26,27 @@ async def test_versioned_stdio_subprocess_streams_agent_and_command_results() ->
     )
     stdin = ''.join(f'{request.model_dump_json()}\n' for request in requests).encode()
 
-    async with asyncio.timeout(10):
-        stdout, stderr = await process.communicate(stdin)
+    assert process.stdin is not None
+    assert process.stdout is not None
+    payloads: list[dict[str, JsonValue]] = []
+    try:
+        async with asyncio.timeout(10):
+            process.stdin.write(stdin)
+            await process.stdin.drain()
+            while True:
+                line = await process.stdout.readline()
+                assert line, 'Server exited before the command result'
+                payload = _PAYLOAD_ADAPTER.validate_json(line)
+                payloads.append(payload)
+                if payload['type'] == 'command_result':
+                    break
+            stdout, stderr = await process.communicate()
+            assert stdout == b''
+    finally:
+        if process.returncode is None:
+            process.kill()
+            await process.wait()
 
-    payloads = [_PAYLOAD_ADAPTER.validate_json(line) for line in stdout.splitlines()]
     run_payloads = [payload for payload in payloads if payload['request_id'] == 'run']
 
     assert process.returncode == 0

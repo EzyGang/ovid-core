@@ -1,3 +1,4 @@
+import asyncio
 from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
 from functools import partial
@@ -10,14 +11,11 @@ from starlette.requests import Request
 from starlette.responses import Response, StreamingResponse
 from starlette.routing import Route
 
-from ovid_core.adapters.starlette.http import (
-    _apply_cors,
-    _error_payload,
-    _error_response,
-    read_json_body,
-    request_context,
-)
+from ovid_core.adapters.starlette.http import _apply_cors, _error_response, read_json_body, request_context
 from ovid_core.persistence import ConversationStore
+from ovid_core.runtime.events import AgentEvent
+from ovid_core.runtime.identifiers import RunId
+from ovid_core.server.active_runs import _ActiveRun
 from ovid_core.server.contracts import (
     AgentRegistration,
     AuthorizationCallback,
@@ -27,12 +25,14 @@ from ovid_core.server.contracts import (
 )
 from ovid_core.server.models import (
     AgentRunRequest,
+    AgentRunResponse,
     HealthResponse,
     RunResultSSEEvent,
     ServerConfig,
+    ServerErrorResponse,
     ServerErrorSSEEvent,
 )
-from ovid_core.server.runtime import _AgentServerRuntime, _response_from_result, _server_lifespan
+from ovid_core.server.runtime import _AgentServerRuntime, _server_lifespan
 
 
 def create_starlette_app(
@@ -50,11 +50,12 @@ def create_starlette_app(
         routes=[
             Route('/health', _health, methods=['GET']),
             Route('/ready', partial(_ready, readiness=readiness), methods=['GET']),
-            Route('/agents/{agent_id:str}/runs', partial(_run, runtime=runtime, config=config), methods=['POST']),
             Route('/agents/{agent_id:str}/events', partial(_stream, runtime=runtime, config=config), methods=['POST']),
+            Route('/agents/{agent_id:str}/runs/{run_id:str}', partial(_cancel, runtime=runtime), methods=['DELETE']),
         ],
         lifespan=partial(
             _lifespan,
+            runtime=runtime,
             startup=startup,
             shutdown=shutdown,
             shutdown_grace_seconds=config.shutdown_grace_seconds,
@@ -77,14 +78,16 @@ async def _ready(_: Request, *, readiness: ReadinessCallback | None) -> Response
     return _model_response(payload, status=status)
 
 
-async def _run(request: Request, *, runtime: _AgentServerRuntime, config: ServerConfig) -> Response:
+async def _cancel(request: Request, *, runtime: _AgentServerRuntime) -> Response:
     try:
-        payload = await _request_payload(request, config)
-        result = await runtime.run(request.path_params['agent_id'], payload, request_context(request))
+        await runtime.cancel(
+            request.path_params['agent_id'],
+            RunId.model_validate(request.path_params['run_id']),
+            request_context(request),
+        )
     except Exception as error:
         return _error_response(error)
-
-    return _model_response(result)
+    return Response(status_code=HTTPStatus.NO_CONTENT)
 
 
 async def _stream(request: Request, *, runtime: _AgentServerRuntime, config: ServerConfig) -> Response:
@@ -111,6 +114,7 @@ async def _stream(request: Request, *, runtime: _AgentServerRuntime, config: Ser
 async def _lifespan(
     _: Starlette,
     *,
+    runtime: _AgentServerRuntime,
     startup: LifecycleCallback | None,
     shutdown: LifecycleCallback | None,
     shutdown_grace_seconds: int,
@@ -119,6 +123,7 @@ async def _lifespan(
         startup=startup,
         shutdown=shutdown,
         shutdown_grace_seconds=shutdown_grace_seconds,
+        close=runtime.close,
     ):
         yield
 
@@ -140,19 +145,46 @@ async def _event_stream(
     payload: AgentRunRequest,
     context: RequestContext,
 ) -> AsyncIterator[str]:
-    try:
-        async with runtime.stream(agent_id, payload, context) as stream:
-            async for event in stream:
-                yield _encode_sse(event.kind, event)
+    queue: asyncio.Queue[str | None] = asyncio.Queue(maxsize=1)
+    disconnected = asyncio.Event()
 
-            result = _response_from_result(stream.result)
+    async def produce(operation: _ActiveRun) -> None:
+        try:
+            await runtime.events(
+                agent_id,
+                payload,
+                context,
+                send=partial(_run_frame, queue, disconnected),
+                operation=operation,
+            )
+        finally:
+            if not disconnected.is_set():
+                await queue.put(None)
 
-        final = RunResultSSEEvent.model_validate(result, from_attributes=True)
-        yield _encode_sse(final.kind, final)
-    except Exception as error:
-        failure, _ = _error_payload(error)
-        event = ServerErrorSSEEvent.model_validate(failure, from_attributes=True)
-        yield _encode_sse(event.kind, event)
+    async with asyncio.TaskGroup() as tasks:
+        operation = runtime.start(agent_id, None, tasks, produce)
+        try:
+            while (frame := await queue.get()) is not None:
+                yield frame
+        finally:
+            disconnected.set()
+            await runtime.disconnect(operation)
+
+
+async def _run_frame(
+    queue: asyncio.Queue[str | None],
+    disconnected: asyncio.Event,
+    event: AgentEvent | AgentRunResponse | ServerErrorResponse,
+) -> None:
+    if disconnected.is_set():
+        return
+    if isinstance(event, AgentRunResponse):
+        payload = RunResultSSEEvent.model_validate(event, from_attributes=True)
+    elif isinstance(event, ServerErrorResponse):
+        payload = ServerErrorSSEEvent.model_validate(event, from_attributes=True)
+    else:
+        payload = event
+    await queue.put(_encode_sse(payload.kind, payload))
 
 
 def _encode_sse(kind: str, payload: PydanticModel) -> str:

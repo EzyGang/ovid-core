@@ -113,8 +113,8 @@ serve(app, config=ServerConfig())
 | --- | --- |
 | `GET /health` | Returns `HealthResponse(status='ok')`. |
 | `GET /ready` | Returns `ok`, or `not_ready` with HTTP 503 when the readiness callback returns false. |
-| `POST /agents/{agent_id}/runs` | Accepts `AgentRunRequest` JSON and returns `AgentRunResponse` JSON. |
-| `POST /agents/{agent_id}/events` | Accepts the same request. Returns `AgentEvent` records, then `run_result`. Transport failures become `server_error`. |
+| `POST /agents/{agent_id}/events` | Accepts `AgentRunRequest` JSON and returns an SSE stream. |
+| `DELETE /agents/{agent_id}/runs/{run_id}` | Requests cancellation of an active run that belongs to the authorized principal. |
 
 Requests require `Content-Type: application/json`. Body size must not exceed `max_body_bytes`.
 
@@ -125,6 +125,31 @@ The runtime applies global and agent concurrency limits. It authorizes the agent
 The runtime creates a conversation ID when necessary. It loads history and appends new messages through the optional store.
 
 The effective timeout is the smaller server or agent timeout.
+
+Native HTTP runs use an SSE stream.
+Native HTTP has no synchronous run endpoint.
+The SSE stream carries `AgentEvent` records and a final `run_result` with the `AgentRunResponse` fields.
+The `run_started` event contains a server-generated run ID of type `RunId`.
+
+Use the run ID with `DELETE /agents/{agent_id}/runs/{run_id}` to send a cancellation request.
+
+A cancellation request requires a stable, non-`None` authorized principal.
+The server returns a bodyless HTTP 204 response to an authorized cancellation request.
+The original SSE stream delivers the terminal cancellation result asynchronously.
+Unauthorized callers and callers without a principal receive HTTP 403.
+
+The server also returns HTTP 204 for these targets without changing another run:
+
+- A run that belongs to another authorized principal.
+- A run for another agent.
+- A stale run ID.
+- A completed run.
+
+The runtime emits `run_completed` only after persistence succeeds.
+The runtime emits `run_result` after `run_completed`.
+Cancellation or failure before durable completion produces at most one `run_failed` event before `server_error`.
+The runtime does not emit `run_completed` for cancellation or failure before durable completion.
+The runtime emits only `server_error` for failures before streaming starts.
 
 ## AG-UI
 
@@ -175,6 +200,7 @@ Import from `ovid_core.server.stdio_models`. Every request has `version=1` and n
 | `StdioInitializeRequest` | `type='initialize'` |
 | `StdioRunRequest` | `type='run'`, non-empty `agent_id`, `request: AgentRunRequest` |
 | `StdioCommandRequest` | `type='command'`, non-empty `command_id`, `arguments: JsonValue=None` |
+| `StdioCancelRequest` | `type='cancel'`, non-empty `target_request_id` |
 
 `StdioRequest` is the discriminated union on `type`.
 
@@ -191,3 +217,26 @@ Every response has `version=1` and `request_id: str | None`.
 | `StdioErrorResponse` | `type='error'`, `error: ServerErrorResponse` |
 
 `StdioResponse` is their union. Initialization enumerates registrations. A run may emit multiple event responses and exactly one final result or error response. Commands return one command result or error.
+
+Runs and commands execute in FIFO order.
+Initialization and cancellation requests remain available while a run executes.
+A cancellation request targets only a run request from the same stdio connection.
+The target can be a queued run or a run before streaming starts.
+The stdio server does not repeat authorization or compare principals for cancellation requests.
+
+The stdio server does not acknowledge successful or stale cancellation requests.
+The stdio server sends terminal frames for cancellation on the original run request.
+An internal cancellation failure produces an error that contains the cancellation request ID instead.
+
+The stdio server uses the same durable completion ordering as the native HTTP SSE stream.
+The stdio server starts cleanup when any of these conditions occurs:
+
+- The input reaches EOF.
+- An input line exceeds the size limit.
+- The server shuts down.
+
+Cleanup follows this sequence:
+
+1. The stdio server cancels active runs.
+2. The stdio server waits for the run tasks.
+3. The stdio server invokes the shutdown callback.
