@@ -17,6 +17,7 @@ from ovid_core.server.active_runs import _ActiveRun, _ActiveRuns, _ConnectionOwn
 from ovid_core.server.contracts import AgentRegistration, AuthorizationCallback, LifecycleCallback, RequestContext
 from ovid_core.server.errors import _AuthorizationDeniedError, _server_error_from_exception, _UnknownAgentError
 from ovid_core.server.models import AgentRunRequest, AgentRunResponse, ServerConfig, ServerErrorResponse
+from ovid_core.server.registry import AgentRegistry
 
 
 _JSON_VALUE_ADAPTER = TypeAdapter(JsonValue)
@@ -39,15 +40,13 @@ class _AgentServerRuntime:
         config: ServerConfig,
         store: ConversationStore | None,
     ) -> None:
-        self._agents = _agent_map(agents)
+        self._agents = agents if isinstance(agents, AgentRegistry) else AgentRegistry(agents)
         self._authorize = authorize
         self._config = config
         self._store = store
         self._active_runs = _ActiveRuns()
         self._global_limit = asyncio.Semaphore(config.max_concurrency)
-        self._agent_limits = {
-            agent.id: asyncio.Semaphore(_agent_concurrency(agent, config.max_concurrency)) for agent in agents
-        }
+        self._agent_limits: dict[str, asyncio.Semaphore] = {}
 
     def start(
         self,
@@ -135,6 +134,11 @@ class _AgentServerRuntime:
         operation: _ActiveRun | None = None,
     ) -> AsyncIterator[_AgentServerSession]:
         registration = self._registration(agent_id)
+        if agent_id not in self._agent_limits:
+            self._agent_limits[agent_id] = asyncio.Semaphore(
+                _agent_concurrency(registration, self._config.max_concurrency)
+            )
+
         async with self._global_limit, self._agent_limits[agent_id]:
             async with asyncio.timeout(self._timeout(registration)):
                 authorization = await self._authorize(context, registration.id)
@@ -178,10 +182,11 @@ class _AgentServerRuntime:
         return self._registration(agent_id).agent
 
     def _registration(self, agent_id: str) -> AgentRegistration[Any, Any]:
-        try:
-            return self._agents[agent_id]
-        except KeyError as error:
-            raise _UnknownAgentError from error
+        registration = self._agents.get(agent_id)
+        if registration is None:
+            raise _UnknownAgentError
+
+        return registration
 
     def _timeout(self, registration: AgentRegistration[Any, Any]) -> float:
         agent_timeout = registration.agent.diagnostics.policy.timeout_seconds
@@ -190,17 +195,6 @@ class _AgentServerRuntime:
             return self._config.request_timeout_seconds
 
         return min(agent_timeout, self._config.request_timeout_seconds)
-
-
-def _agent_map(
-    agents: Sequence[AgentRegistration[Any, Any]],
-) -> dict[str, AgentRegistration[Any, Any]]:
-    mapped = {agent.id: agent for agent in agents}
-
-    if len(mapped) != len(agents):
-        raise ValueError('agent registration ids must be unique')
-
-    return mapped
 
 
 def _agent_concurrency(registration: AgentRegistration[Any, Any], server_limit: int) -> int:

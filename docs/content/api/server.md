@@ -86,6 +86,66 @@ IDs accept only letters, digits, `_`, and `-`. Descriptions must contain non-spa
 
 The server rejects duplicate registration IDs during construction.
 
+### Deferred registration
+
+Import `AgentRegistry` from `ovid_core.server`.
+Pass the same registry as `agents` to `create_agent_app` or `create_stdio_server`.
+Both native transports resolve agents added after server construction.
+
+Use a configured `factory` with a `primary` model, as shown in [Getting started](../getting-started.md).
+Supply the application's `authorize` callback.
+`AgentRegistration` associates a constructed agent with its server ID, description, and per-request dependency callback.
+
+```python
+from ovid_core.agents import AgentDefinition
+from ovid_core.routing import ModelRef
+from ovid_core.server import (
+    AgentRegistration,
+    AgentRegistry,
+    AuthorizationResult,
+    RequestContext,
+    create_agent_app,
+    create_stdio_server,
+)
+
+
+async def dependencies(
+    context: RequestContext,
+    authorization: AuthorizationResult,
+) -> None:
+    return None
+
+
+registry = AgentRegistry()
+app = create_agent_app(agents=registry, authorize=authorize)
+stdio = create_stdio_server(agents=registry, authorize=authorize)
+
+agent = await factory.build(
+    AgentDefinition[None, str](
+        model=ModelRef(name='primary'),
+        deps_type=type(None),
+        output_type=str,
+        instructions=('Answer writing requests concisely.',),
+    )
+)
+registration = AgentRegistration(
+    id='writer',
+    description='Answer writing requests.',
+    agent=agent,
+    dependencies=dependencies,
+)
+registry.register((registration,))
+```
+
+Register on the server event loop.
+Each batch is atomic and rejects duplicate IDs, including IDs that already exist.
+Registrations cannot be replaced or removed.
+The registry implements `Sequence`, so existing static registration sequences remain supported.
+`registry.get(agent_id)` returns the matching registration or `None` through indexed lookup.
+An empty registry advertises no agents and rejects agent runs until registration.
+Stdio initialization returns the current registry contents.
+Authorization, agent diagnostics, concurrency limits, cancellation, and persistence apply to newly registered agents without special cases.
+
 ## Native HTTP and SSE
 
 Import from `ovid_core.server.app`.

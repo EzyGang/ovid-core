@@ -6,6 +6,7 @@ from typing import Any
 from ovid_core.persistence import ConversationStore
 from ovid_core.server.contracts import AgentRegistration, AuthorizationCallback, CommandRegistration, LifecycleCallback
 from ovid_core.server.models import ServerConfig
+from ovid_core.server.registry import AgentRegistry
 from ovid_core.server.runtime import _AgentServerRuntime, _server_lifespan
 from ovid_core.server.stdio_connection import _StdioConnection, _StdioWrite
 
@@ -25,7 +26,7 @@ class StdioAgentServer:
         startup: LifecycleCallback | None,
         shutdown: LifecycleCallback | None,
     ) -> None:
-        self._agents = tuple(agents)
+        self._agents = agents if isinstance(agents, AgentRegistry) else tuple(agents)
         self._commands = _command_map(commands)
         self._authorize = authorize
         self._config = config

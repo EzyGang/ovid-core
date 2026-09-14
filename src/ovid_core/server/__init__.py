@@ -22,6 +22,7 @@ from ovid_core.server.models import RunResultSSEEvent as RunResultSSEEvent
 from ovid_core.server.models import ServerConfig as ServerConfig
 from ovid_core.server.models import ServerErrorResponse as ServerErrorResponse
 from ovid_core.server.models import ServerErrorSSEEvent as ServerErrorSSEEvent
+from ovid_core.server.registry import AgentRegistry as AgentRegistry
 from ovid_core.server.stdio import StdioAgentServer as StdioAgentServer
 from ovid_core.server.stdio import create_stdio_server as create_stdio_server
 from ovid_core.server.stdio_models import StdioCancelRequest as StdioCancelRequest

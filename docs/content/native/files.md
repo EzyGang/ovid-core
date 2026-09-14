@@ -92,6 +92,9 @@ Reads reject these inputs:
 - absolute paths and root traversal
 - descendant symlink traversal
 
+The model-facing `read` tool returns expected path, selector, and workspace read errors as diagnostic results instead of aborting the run.
+Direct workspace provider calls still raise typed exceptions, and unexpected tool exceptions and cancellation still propagate.
+
 Accepted `.` components and both path separators use one normalized `/`-separated identity.
 The ledger, result, event, and conflict use this identity.
 
