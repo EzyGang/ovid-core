@@ -1,4 +1,5 @@
 from abc import abstractmethod
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Annotated, Literal, Protocol
 
@@ -35,6 +36,7 @@ class ModelHandle:
         capabilities: ModelCapabilities,
         runtime: ModelRuntime,
         context_window: int | None = None,
+        resolve: Callable[[], Awaitable[ModelRuntime]] | None = None,
     ) -> None:
         if context_window is not None and context_window <= 0:
             raise ValueError('model context window must be positive')
@@ -43,6 +45,7 @@ class ModelHandle:
         self.capabilities = capabilities
         self.context_window = context_window
         self._runtime = runtime
+        self.resolve = resolve
 
     def __repr__(self) -> str:
         return f'ModelHandle(model_id={self.model_id!r}, model_name={self.model_name!r})'

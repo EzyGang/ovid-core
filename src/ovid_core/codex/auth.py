@@ -1,14 +1,14 @@
 from __future__ import annotations
 
 import asyncio
-from abc import ABC, abstractmethod
 from types import TracebackType
-from typing import Self, cast
+from typing import Self
 
 import httpx
 
 from ovid_core.codex._browser import BrowserCallbackServer
 from ovid_core.codex._device import _DeviceAuthorization, _DeviceLoginFlow
+from ovid_core.codex._login import _CodexLogin
 from ovid_core.codex._oauth import exchange_authorization_code
 from ovid_core.codex.keyring import KeyringCodexTokenStore
 from ovid_core.codex.models import CodexOAuthConfig, CodexTokens
@@ -85,8 +85,9 @@ class CodexAuth:
     async def start_browser_login(self) -> CodexBrowserLogin:
         async with self._login_lock:
             self._ensure_login_available()
+            revision = (await self._tokens.snapshot()).revision
             callback = await BrowserCallbackServer.start(config=self._config)
-            login = CodexBrowserLogin(auth=self, callback=callback)
+            login = CodexBrowserLogin(auth=self, callback=callback, expected_revision=revision)
             self._login = login
 
             return login
@@ -94,13 +95,14 @@ class CodexAuth:
     async def start_device_login(self) -> CodexDeviceLogin:
         async with self._login_lock:
             self._ensure_login_available()
+            revision = (await self._tokens.snapshot()).revision
             flow = _DeviceLoginFlow(http_client=self._client, config=self._config)
             try:
                 async with asyncio.timeout(self._config.login_timeout_seconds):
                     authorization = await flow.start()
             except TimeoutError:
                 raise CodexAuthError('Codex device authorization timed out') from None
-            login = CodexDeviceLogin(auth=self, flow=flow, authorization=authorization)
+            login = CodexDeviceLogin(auth=self, flow=flow, authorization=authorization, expected_revision=revision)
             self._login = login
 
             return login
@@ -114,9 +116,15 @@ class CodexAuth:
 
         return await self._tokens.tokens(force_refresh=force_refresh)
 
-    async def _save(self, tokens: CodexTokens) -> None:
+    async def _credential_revision(self) -> int:
         self._ensure_active()
-        await self._tokens.save(tokens)
+        return (await self._tokens.snapshot()).revision
+
+    async def _save(self, tokens: CodexTokens, login: _CodexLogin) -> None:
+        self._ensure_active()
+        if login._cancelled or self._login is not login:
+            raise CodexAuthError('Codex login was cancelled')
+        await self._tokens.save(expected_revision=login._expected_revision, tokens=tokens)
 
     async def _release(self) -> None:
         async with self._login_lock:
@@ -132,36 +140,9 @@ class CodexAuth:
             raise CodexAuthError('Codex authentication service is not active')
 
 
-class _CodexLogin(ABC):
-    def __init__(self, *, auth: CodexAuth) -> None:
-        self._auth = auth
-        self._wait_task: asyncio.Task[None] | None = None
-        self._cancelled = False
-        self._finished = False
-
-    async def cancel(self) -> None:
-        if self._finished:
-            return
-
-        self._cancelled = True
-        task = self._wait_task
-        if task is not None and task is not asyncio.current_task():
-            task.cancel()
-        await self._finish()
-
-    def _begin_wait(self) -> None:
-        if self._finished or self._wait_task is not None:
-            raise CodexAuthError('Codex login is not pending')
-
-        self._wait_task = cast(asyncio.Task[None], asyncio.current_task())
-
-    @abstractmethod
-    async def _finish(self) -> None: ...
-
-
 class CodexBrowserLogin(_CodexLogin):
-    def __init__(self, *, auth: CodexAuth, callback: BrowserCallbackServer) -> None:
-        super().__init__(auth=auth)
+    def __init__(self, *, auth: CodexAuth, callback: BrowserCallbackServer, expected_revision: int) -> None:
+        super().__init__(auth=auth, expected_revision=expected_revision)
         self._callback = callback
 
     @property
@@ -181,7 +162,7 @@ class CodexBrowserLogin(_CodexLogin):
                     redirect_uri=self._callback.redirect_uri,
                     code_verifier=self._callback.code_verifier,
                 )
-                await self._auth._save(tokens)
+                await self._auth._save(tokens, self)
             submission.finish(success=True)
         except TimeoutError:
             if submission is not None:
@@ -210,8 +191,15 @@ class CodexBrowserLogin(_CodexLogin):
 
 
 class CodexDeviceLogin(_CodexLogin):
-    def __init__(self, *, auth: CodexAuth, flow: _DeviceLoginFlow, authorization: _DeviceAuthorization) -> None:
-        super().__init__(auth=auth)
+    def __init__(
+        self,
+        *,
+        auth: CodexAuth,
+        flow: _DeviceLoginFlow,
+        authorization: _DeviceAuthorization,
+        expected_revision: int,
+    ) -> None:
+        super().__init__(auth=auth, expected_revision=expected_revision)
         self._flow = flow
         self._authorization = authorization
 
@@ -228,7 +216,7 @@ class CodexDeviceLogin(_CodexLogin):
         try:
             async with asyncio.timeout(self._auth._config.login_timeout_seconds):
                 tokens = await self._flow.complete(self._authorization)
-                await self._auth._save(tokens)
+                await self._auth._save(tokens, self)
         except TimeoutError:
             raise CodexAuthError('Codex device authorization timed out') from None
         except asyncio.CancelledError:

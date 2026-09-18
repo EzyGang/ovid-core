@@ -7,7 +7,7 @@ from uuid import UUID
 import httpx
 from pydantic import JsonValue, SecretStr, TypeAdapter
 
-from ovid_core.codex import CodexTokens
+from ovid_core.codex import CodexTokens, CodexTokenSnapshot
 from ovid_core.runtime import ConversationId, RunId
 from ovid_core.usage import RequestUsage
 
@@ -22,15 +22,27 @@ _JSON_OBJECT_ADAPTER = TypeAdapter(dict[str, JsonValue])
 class MemoryTokenStore:
     def __init__(self, tokens: CodexTokens | None = None) -> None:
         self.value = tokens
+        self._revision = 0
 
     async def load(self) -> CodexTokens | None:
         return self.value
 
     async def save(self, tokens: CodexTokens) -> None:
         self.value = tokens
+        self._revision += 1
 
     async def delete(self) -> None:
         self.value = None
+        self._revision += 1
+
+    async def snapshot(self) -> CodexTokenSnapshot:
+        return CodexTokenSnapshot(revision=self._revision, tokens=self.value)
+
+    async def compare_and_swap(self, expected_revision: int, tokens: CodexTokens) -> bool:
+        if self._revision != expected_revision:
+            return False
+        await self.save(tokens)
+        return True
 
 
 def make_jwt(payload: dict[str, JsonValue]) -> str:

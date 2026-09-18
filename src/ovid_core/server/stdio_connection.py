@@ -5,6 +5,7 @@ from typing import Any, cast
 
 from pydantic import JsonValue, TypeAdapter, ValidationError
 
+from ovid_core.errors import CredentialError
 from ovid_core.runtime.events import AgentEvent
 from ovid_core.runtime.identifiers import RunId
 from ovid_core.server.active_runs import _ActiveRun, _ConnectionOwner
@@ -205,7 +206,7 @@ class _StdioConnection:
             async with asyncio.timeout(self._config.request_timeout_seconds):
                 value = await command.handler(context, authorization, request.arguments)
                 result = _JSON_VALUE_ADAPTER.validate_python(value)
-        except asyncio.CancelledError, TimeoutError:
+        except asyncio.CancelledError, TimeoutError, CredentialError:
             raise
         except Exception as error:
             raise _CommandExecutionError from error

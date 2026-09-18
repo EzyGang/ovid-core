@@ -9,7 +9,7 @@ from typing import Literal, Protocol, cast
 import httpx
 from pydantic import Field, JsonValue, SecretStr, TypeAdapter, ValidationError
 
-from ovid_core.codex.models import CodexOAuthConfig, CodexTokens
+from ovid_core.codex.models import CodexOAuthConfig, CodexTokens, CodexTokenSnapshot
 from ovid_core.errors import CodexAuthError
 from ovid_core.models import BaseModel
 
@@ -29,19 +29,38 @@ class CodexTokenStore(Protocol):
     @abstractmethod
     async def delete(self) -> None: ...
 
+    @abstractmethod
+    async def snapshot(self) -> CodexTokenSnapshot: ...
+
+    @abstractmethod
+    async def compare_and_swap(self, expected_revision: int, tokens: CodexTokens) -> bool: ...
+
 
 class MemoryCodexTokenStore:
     def __init__(self) -> None:
         self._tokens: CodexTokens | None = None
+        self._revision = 0
 
     async def load(self) -> CodexTokens | None:
         return self._tokens
 
     async def save(self, tokens: CodexTokens) -> None:
         self._tokens = tokens
+        self._revision += 1
 
     async def delete(self) -> None:
         self._tokens = None
+        self._revision += 1
+
+    async def snapshot(self) -> CodexTokenSnapshot:
+        return CodexTokenSnapshot(revision=self._revision, tokens=self._tokens)
+
+    async def compare_and_swap(self, expected_revision: int, tokens: CodexTokens) -> bool:
+        if self._revision != expected_revision:
+            return False
+        self._tokens = tokens
+        self._revision += 1
+        return True
 
 
 class _RefreshResponse(BaseModel):
@@ -61,29 +80,40 @@ class _CodexTokenManager:
         self._store = store
         self._client = http_client
         self._config = config
-        self._tokens: CodexTokens | None = None
         self._lock = asyncio.Lock()
 
     async def tokens(self, *, force_refresh: bool = False) -> CodexTokens:
         async with self._lock:
-            tokens = self._tokens or await self._store.load()
+            snapshot = await self._store.snapshot()
+            tokens = snapshot.tokens
             if tokens is None:
                 raise CodexAuthError('Codex subscription authentication is required')
             if force_refresh or _expires_soon(tokens.access_token, self._config.refresh_window_seconds):
-                tokens = await self._refresh(tokens)
-            self._tokens = tokens
-
+                updated = await self._refresh(tokens)
+                if await self._store.compare_and_swap(snapshot.revision, updated):
+                    return updated
+                tokens = (await self._store.snapshot()).tokens
+                if tokens is None:
+                    raise CodexAuthError('Codex subscription authentication is required')
+                if _expires_soon(tokens.access_token, self._config.refresh_window_seconds):
+                    raise CodexAuthError('Codex credentials changed during refresh')
             return tokens
 
-    async def save(self, tokens: CodexTokens) -> None:
-        async with self._lock:
-            await self._store.save(tokens)
-            self._tokens = tokens
+    async def snapshot(self) -> CodexTokenSnapshot:
+        return await self._store.snapshot()
+
+    async def save(self, *, expected_revision: int, tokens: CodexTokens) -> None:
+        commit = asyncio.create_task(self._store.compare_and_swap(expected_revision, tokens))
+        try:
+            saved = await asyncio.shield(commit)
+        except asyncio.CancelledError:
+            await commit
+            raise
+        if not saved:
+            raise CodexAuthError('Codex login was superseded')
 
     async def logout(self) -> None:
-        async with self._lock:
-            await self._store.delete()
-            self._tokens = None
+        await self._store.delete()
 
     async def _refresh(self, tokens: CodexTokens) -> CodexTokens:
         try:
@@ -107,7 +137,6 @@ class _CodexTokenManager:
             access_token=refreshed.access_token or tokens.access_token,
             refresh_token=refreshed.refresh_token or tokens.refresh_token,
         )
-        await self._store.save(updated)
 
         return updated
 

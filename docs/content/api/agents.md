@@ -12,9 +12,16 @@ class ModelRuntime(Protocol):
     def model_name(self) -> str: ...
 ```
 
-`ModelRuntime` is deliberately opaque. Domain code can identify it but cannot depend on Pydantic AI types.
+`ModelRuntime` is deliberately opaque.
+Domain code can identify it but cannot depend on Pydantic AI types.
 
-`ModelCapabilities` contains five required booleans: `tools`, `json_schema_output`, `json_object_output`, `image_output`, and `thinking`.
+`ModelCapabilities` contains five required booleans:
+
+- `tools`
+- `json_schema_output`
+- `json_object_output`
+- `image_output`
+- `thinking`
 
 `KnownModel(provider, model)` is one catalog entry returned by the default adapter's `known_models()`.
 
@@ -28,13 +35,27 @@ ModelHandle(
     capabilities: ModelCapabilities,
     runtime: ModelRuntime,
     context_window: int | None = None,
+    resolve: Callable[[], Awaitable[ModelRuntime]] | None = None,
 )
 ```
 
-Public attributes are `model_id`, `model_name`, `capabilities`, and `context_window`.
+Public attributes are:
+
+- `model_id`
+- `model_name`
+- `capabilities`
+- `context_window`
+- `resolve`
+
 `context_window` contains discovered model metadata when the provider or `genai-prices` supplies it.
-The read-only `runtime` property exposes the opaque `ModelRuntime` for adapters.
+The read-only `runtime` property exposes the initial model snapshot for adapters.
 `repr(handle)` includes only the model ID and name.
+
+The optional `resolve` callback returns the current runtime for the same configured model.
+`DefaultAgentCompiler` connects this callback to Pydantic AI `SelectModel`.
+Pydantic AI selects the model before each new logical request and manages its lifetime.
+Existing requests keep their selected model until they finish.
+Static handles use `resolve=None`.
 
 ### Selectors
 
@@ -44,7 +65,8 @@ The read-only `runtime` property exposes the opaque `ModelRuntime` for adapters.
 | `ModelRouteRef` | `kind='route'`, non-empty `name` | Resolve an ordered configured route. |
 | `CandidateModelSelector` | `kind='candidates'`, non-empty `models: tuple[ModelRef, ...]` | Resolve an explicit ordered fallback list. |
 
-`ModelSelector` is the discriminated union of all three. `AgentModelSelector` in `ovid_core.agents` intentionally narrows agent definitions to `ModelRef | ModelRouteRef`.
+`ModelSelector` is the discriminated union of all three selectors.
+`AgentModelSelector` in `ovid_core.agents` restricts agent definitions to `ModelRef | ModelRouteRef`.
 
 ### `ResolvedModel`
 
@@ -80,10 +102,12 @@ The router:
 1. Resolves canonical model IDs and aliases.
 2. Rejects aliases assigned to multiple models at construction.
 3. Resolves route entries and explicit candidates in order.
-4. Builds and caches each handle once per router.
-5. Compiles multiple handles into a Pydantic AI fallback model.
+4. Builds each handle once per router.
+5. Caches each handle.
+6. Compiles multiple handles into a Pydantic AI fallback model.
 
-Unknown model or route names raise `ModelResolutionError`. Provider SDK retries finish inside one candidate.
+Unknown model or route names raise `ModelResolutionError`.
+Provider SDK retries finish inside one candidate.
 
 The fallback model moves to the next candidate only after an applicable final failure.
 
@@ -109,7 +133,15 @@ class AgentDefinition[Deps, Output]:
 
 The definition contains all immutable construction input.
 
-Capabilities can add instructions, tools, toolsets, hooks, and model settings. The compiler also adds direct toolsets and hooks.
+Capabilities can add these values:
+
+- Instructions
+- Tools
+- Toolsets
+- Hooks
+- Model settings
+
+The compiler also adds direct toolsets and hooks.
 
 ### Ovid tool approval
 
@@ -129,7 +161,13 @@ AgentDefinition[AppDeps, Answer](
 ```
 
 The proxy advertises these tools as normal Pydantic AI function tools.
-Workspace policy, path validation, observations, timeouts, and cancellation still apply.
+These controls still apply:
+
+- Workspace policy
+- Path validation
+- Observations
+- Timeouts
+- Cancellation
 
 Set `required=True` to require approval for all Ovid tools.
 This override does not change tools from a Pydantic AI capability passthrough.
@@ -170,7 +208,8 @@ def stream(
 ) -> AbstractAsyncContextManager[AgentStream[Output]]
 ```
 
-`AgentStream[Output]` is an `AsyncIterator[AgentEvent]` with a `result: RunResult[Output]` property. The result is available after complete consumption inside the context manager.
+`AgentStream[Output]` is an `AsyncIterator[AgentEvent]` with a `result: RunResult[Output]` property.
+The result becomes available after complete consumption inside the context manager.
 
 ## Constructing and running agents
 
@@ -185,9 +224,14 @@ factory = AgentFactory(
 agent = await factory.build(definition, model=None)
 ```
 
-The factory creates `DefaultModelFactory`, `ModelRouter`, and `DefaultAgentCompiler` when their arguments are absent.
+The factory supplies these defaults when their arguments are absent:
 
-It also converts `config.mcp_servers` to capabilities. `credential_resolver` resolves credential references inside MCP environment variables and headers.
+- `DefaultModelFactory`
+- `ModelRouter`
+- `DefaultAgentCompiler`
+
+The factory converts `config.mcp_servers` to capabilities.
+`credential_resolver` resolves credential references inside MCP environment variables and headers.
 
 The optional `model` argument overrides the definition model for the constructed agent.
 
@@ -200,15 +244,48 @@ prepared = prepared.with_instructions((*definition.instructions, render_extensio
 agent = factory.build_prepared(prepared)
 ```
 
-`prepare` resolves the model, constructs configured capabilities, validates service requirements, and binds each capability once.
-It returns a frozen `PreparedAgentDefinition` with the bound definition and an `AgentBuildContext`.
-The context describes the selected model, capabilities, static Ovid tools, dynamic Ovid toolsets, and bound services.
-Tool descriptors include effective wire names, descriptions, argument JSON Schemas, approval policy, timeouts, input formats, and deferred-loading state.
+`prepare` returns a frozen `PreparedAgentDefinition` with the bound definition and an `AgentBuildContext`.
+Preparation performs these actions:
+
+- Resolves the model
+- Constructs configured capabilities
+- Validates service requirements
+- Binds each capability once
+
+The context describes these values:
+
+- Selected model
+- Capabilities
+- Static Ovid tools
+- Dynamic Ovid toolsets
+- Bound services
+
+Tool descriptors include these fields:
+
+- Effective wire name
+- Description
+- Argument JSON Schema
+- Approval policy
+- Timeout
+- Input format
+- Deferred-loading state
+
 Dynamic toolset descriptors expose identity and ownership because their concrete tools can change between model steps.
-Each `BaseCapability`, `BaseTool`, and `BaseToolset` produces its own descriptor from its effective bound state.
+Each bound component produces its own descriptor:
+
+- `BaseCapability`
+- `BaseTool`
+- `BaseToolset`
+
 `with_instructions` replaces only the prepared definition instructions.
-`build_prepared` compiles that prepared definition without repeating capability construction, service binding, or model resolution.
-`build` remains the shorthand for `prepare` followed immediately by `build_prepared`.
+`build_prepared` compiles the prepared definition.
+It does not repeat these actions:
+
+- Capability construction
+- Service binding
+- Model resolution
+
+`build` calls `prepare` followed by `build_prepared`.
 
 `OvidAgent.run` and `OvidAgent.stream` accept the same optional override:
 
@@ -220,9 +297,12 @@ result = await agent.run(
 )
 ```
 
-The override applies only to that run or stream. The factory router builds each configured model once and caches its handle.
+The override applies only to that run or stream.
+The router builds each configured model handle once.
+Its resolver can replace the underlying model when credentials change.
 
-The public `diagnostics` value describes the model selected when the factory built the agent. A run override does not mutate this value.
+The public `diagnostics` value describes the model selected when the factory built the agent.
+A run override does not mutate this value.
 
 ## Construction diagnostics
 
@@ -238,4 +318,19 @@ Import diagnostic models from `ovid_core.agent_build` or the high-level `ovid_co
 - `policy`, `observability`: effective definition values.
 - `extensions`: ordered `AgentExtensionProvenance` entries.
 
-Each provenance entry has `kind` (`capability`, `tool`, `toolset`, `hook`, or `instructions`), a non-empty `id`, and a non-empty `source`. Diagnostics contain configuration and source names, not credentials or upstream runtime objects.
+Each provenance entry contains these values:
+
+- A `kind` identifying the component type
+- A non-empty `id`
+- A non-empty `source`
+
+The supported component types are:
+
+- `capability`
+- `tool`
+- `toolset`
+- `hook`
+- `instructions`
+
+Diagnostics contain configuration and source names.
+They do not contain credentials or upstream runtime objects.

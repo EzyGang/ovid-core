@@ -2,10 +2,12 @@ from typing import cast
 
 from pydantic_ai import Agent, InstrumentationSettings
 from pydantic_ai.agent import AgentRetries
-from pydantic_ai.models import Model
+from pydantic_ai.capabilities import SelectModel
+from pydantic_ai.models import Model, ModelSelectionContext
 
 from ovid_core.adapters.pydantic_ai._agent_runtime import PydanticAIAgentRuntime
 from ovid_core.adapters.pydantic_ai.extensions import adapt_agent_extensions
+from ovid_core.adapters.pydantic_ai.models import _resolve_model
 from ovid_core.agents import AgentDefinition, AgentRuntime
 from ovid_core.errors import AgentConstructionError, OvidCoreError
 from ovid_core.routing.models import ResolvedModel
@@ -28,6 +30,13 @@ class DefaultAgentCompiler:
                 definition.hooks,
                 tool_approval=definition.tool_approval,
             )
+            capabilities = extensions.capabilities
+            if resolved.handle.resolve is not None:
+
+                async def select_model(_ctx: ModelSelectionContext[Deps]) -> Model:
+                    return await _resolve_model(resolved.handle)
+
+                capabilities = (SelectModel(select_model), *capabilities)
             policy = definition.policy
             agent = Agent[Deps, Output](
                 runtime,
@@ -36,7 +45,7 @@ class DefaultAgentCompiler:
                 deps_type=definition.deps_type,
                 retries=cast(AgentRetries, policy.retries.model_dump()),
                 toolsets=extensions.toolsets,
-                capabilities=extensions.capabilities,
+                capabilities=capabilities,
                 end_strategy=policy.end_strategy,
                 tool_timeout=policy.tool_timeout_seconds,
                 max_concurrency=policy.max_concurrency,

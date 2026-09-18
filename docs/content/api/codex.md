@@ -1,6 +1,7 @@
 # Codex subscription
 
-The Codex integration uses ChatGPT subscription authentication and the undocumented ChatGPT Codex backend. Keep it behind `CodexSubscriptionModelFactory`.
+The Codex integration uses ChatGPT subscription authentication and the undocumented ChatGPT Codex backend.
+Keep it behind `CodexSubscriptionModelFactory`.
 
 Ovid does not change a failed subscription request to API-key billing.
 
@@ -8,7 +9,14 @@ Ovid does not change a failed subscription request to API-key billing.
 
 Import `CodexAuth` from `ovid_core.codex`.
 
-`CodexAuth` owns login, token refresh, logout, and its optional HTTP client. Keep the service open while Codex models can make requests.
+`CodexAuth` owns:
+
+- login
+- token refresh
+- logout
+- the HTTP client that it creates
+
+Keep the service open while Codex models can make requests.
 
 ```python
 async with CodexAuth.persistent() as auth:
@@ -19,7 +27,8 @@ async with CodexAuth.persistent() as auth:
         result = await agent.run('Complete the task')
 ```
 
-Objects created in the context remain in Python scope after exit. They must not make Codex requests after the authentication service closes.
+Objects created in the context remain in Python scope after exit.
+They must not make Codex requests after the authentication service closes.
 
 Pass an `httpx.AsyncClient` when the application owns the client lifecycle:
 
@@ -39,7 +48,13 @@ auth = CodexAuth.persistent(
 )
 ```
 
-This mode stores ID, access, and refresh tokens in the system keyring. It never falls back to a plaintext file.
+Persistent authentication stores these tokens in the system keyring:
+
+- ID tokens
+- access tokens
+- refresh tokens
+
+It never falls back to a plaintext file.
 
 ### Ephemeral authentication
 
@@ -47,7 +62,8 @@ This mode stores ID, access, and refresh tokens in the system keyring. It never 
 auth = CodexAuth.ephemeral(config=oauth_config)
 ```
 
-This mode stores tokens in process memory. Closing the process removes the login.
+Ephemeral authentication stores tokens in process memory.
+Closing the process removes the login.
 
 ### Custom storage
 
@@ -68,11 +84,33 @@ class CodexTokenStore(Protocol):
     async def load(self) -> CodexTokens | None: ...
     async def save(self, tokens: CodexTokens) -> None: ...
     async def delete(self) -> None: ...
+    async def snapshot(self) -> CodexTokenSnapshot: ...
+    async def compare_and_swap(self, expected_revision: int, tokens: CodexTokens) -> bool: ...
 ```
+
+Import `CodexTokenSnapshot` from `ovid_core.codex`.
+`CodexTokenSnapshot` contains a nonnegative `revision` and optional `tokens`.
+Its representation excludes `tokens`.
+`snapshot()` reads both values atomically, including the retained revision after deletion.
+
+Every committed `save()` or `delete()` advances the revision, including deletion of an empty store.
+`compare_and_swap()` replaces tokens and advances the revision only when `expected_revision` matches.
+A conflict returns `False` without changing stored state.
+Custom stores must enforce these guarantees across all writers, not only one service instance.
+
+The memory store updates state atomically within the event loop.
+The keyring store holds a process-shared lock for the same service and account during every read or mutation.
+It stores revision and tokens in one record and retains a token-free record after deletion.
+The keyring store assigns revision zero when it reads a flat token record.
+Keyring lock acquisition has a five-second timeout and never falls back to unlocked access.
 
 ## Browser login
 
-Browser login uses a temporary localhost callback server, OAuth state, and PKCE.
+Browser login uses:
+
+- a temporary localhost callback server
+- OAuth state
+- PKCE
 
 ```python
 async with CodexAuth.persistent() as auth:
@@ -83,9 +121,18 @@ async with CodexAuth.persistent() as auth:
 
 The application decides how to display or open `authorization_url`.
 
-`wait()` closes the callback server after success, rejection, timeout, failure, or cancellation. Use `await login.cancel()` when the user abandons login.
+`wait()` closes the callback server after:
 
-The default callback ports are `1455` and `1457`. OpenAI must allow each configured callback port.
+- success
+- rejection
+- timeout
+- failure
+- cancellation
+
+Use `await login.cancel()` when the user abandons login.
+
+The default callback ports are `1455` and `1457`.
+OpenAI must allow each configured callback port.
 
 ## Device-code login
 
@@ -98,9 +145,20 @@ async with CodexAuth.persistent() as auth:
     await login.wait()
 ```
 
-`wait()` polls for approval, exchanges the authorization code, and stores the tokens. Use `await login.cancel()` to stop polling.
+`wait()`:
+
+- polls for approval
+- exchanges the authorization code
+- stores the tokens
+
+Use `await login.cancel()` to stop polling.
 
 Only one login attempt can run for one `CodexAuth` service.
+
+Each login captures the stored revision before starting authorization.
+A replacement or deletion supersedes that login, so its late result cannot overwrite the new state.
+Cancellation stops pending authorization before releasing the login.
+A storage commit that has already started completes before cancellation returns.
 
 ## OAuth configuration
 
@@ -123,10 +181,10 @@ Applications do not need to handle tokens during normal use.
 
 `CodexAuth`:
 
-- loads stored tokens
+- reads authoritative stored tokens before each token request
 - refreshes tokens before expiry
-- saves rotating tokens
-- serializes token changes
+- saves rotating tokens only if their original revision remains current
+- discards obsolete refresh results and honors replacement or deletion
 - retries one request after a `401`
 - deletes stored tokens through `logout()`
 
@@ -134,7 +192,20 @@ Applications do not need to handle tokens during normal use.
 await auth.logout()
 ```
 
-Token, protocol, HTTP, validation, and timeout failures raise redacted `CodexAuthError` values.
+These failures raise redacted `CodexAuthError` values:
+
+- token failures
+- protocol failures
+- HTTP failures
+- validation failures
+- timeout failures
+
+Provider or network failure does not delete stored credentials.
+After a refresh conflict, an already-expired replacement fails without another refresh attempt.
+
+Server responses use `authentication_error` with `Provider authentication failed` for known authentication rejection.
+Unavailable credentials use `credential_error` with `Provider credentials are unavailable`.
+These errors use the error envelope and do not close the stdio connection.
 
 ## Subscription model factory
 
@@ -152,18 +223,25 @@ factory = CodexSubscriptionModelFactory(
 The provider registry uses it directly as the Codex model loader.
 It does not enumerate fallback providers or assemble global reasoning-effort options.
 
-Use `provider='codex-subscription'` in `ModelConfig`. Other providers delegate to `fallback`.
+Use `provider='codex-subscription'` in `ModelConfig`.
+The factory delegates other providers to `fallback`.
 
 For subscription models, the factory:
 
 1. Uses `CodexAuth` for current credentials.
 2. Creates an authenticated OpenAI HTTP client.
-3. Loads and caches the validated model catalog.
-4. Constructs an `OpenAIResponsesModel` for the Codex backend.
-5. Preserves catalog instructions as Responses API instructions.
-6. Requires stateless Responses API operation.
-7. Adds the Codex account and authentication headers.
+3. Loads the model catalog.
+4. Caches the catalog for the credential revision observed before loading.
+5. Constructs an `OpenAIResponsesModel` for the Codex backend.
+6. Preserves catalog instructions as Responses API instructions.
+7. Requires stateless Responses API operation.
+8. Adds the Codex account and authentication headers.
 
 The model owns its HTTP client after successful construction.
 
-The factory rejects stateful Responses API settings. These settings include `openai_store`, background mode, conversation IDs, and previous-response IDs.
+The factory rejects stateful Responses API settings, including:
+
+- `openai_store`
+- background mode
+- conversation IDs
+- previous-response IDs

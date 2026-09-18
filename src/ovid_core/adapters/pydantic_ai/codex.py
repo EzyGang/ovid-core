@@ -16,13 +16,12 @@ from pydantic_ai.profiles.openai import OpenAIModelProfile, openai_model_profile
 from pydantic_ai.providers.openai import OpenAIProvider
 from pydantic_ai.settings import ModelSettings, merge_model_settings
 
+from ovid_core.adapters.pydantic_ai._codex_http import _CodexHttpxAuth, _RedactingTransport
 from ovid_core.adapters.pydantic_ai.models import DefaultModelFactory, _capabilities
 from ovid_core.codex.auth import CodexAuth
 from ovid_core.codex.catalog import CodexInstructionCatalog, load_instruction_catalog
-from ovid_core.codex.models import CodexTokens
-from ovid_core.codex.tokens import codex_account_id
 from ovid_core.config.models import ModelConfig
-from ovid_core.errors import ModelResolutionError
+from ovid_core.errors import CredentialError, ModelResolutionError
 from ovid_core.routing.models import ModelHandle
 from ovid_core.routing.options import ModelProviderOption, SelectionOption
 
@@ -44,6 +43,7 @@ class CodexSubscriptionModelFactory:
         self._fallback = fallback or DefaultModelFactory()
         self._backend_transport = backend_transport
         self._instruction_catalog: CodexInstructionCatalog | None = None
+        self._instruction_revision: int | None = None
         self._instruction_lock = asyncio.Lock()
 
     async def provider_options(self) -> ModelProviderOption:
@@ -76,13 +76,15 @@ class CodexSubscriptionModelFactory:
 
     async def _catalog(self, *, http_client: httpx.AsyncClient) -> CodexInstructionCatalog:
         async with self._instruction_lock:
+            revision = await self._auth._credential_revision()
             catalog = self._instruction_catalog
-            if catalog is None:
+            if catalog is None or revision != self._instruction_revision:
                 catalog = await load_instruction_catalog(
                     http_client=http_client,
                     backend_url=self._config.backend_url,
                 )
                 self._instruction_catalog = catalog
+                self._instruction_revision = revision
             return catalog
 
     async def build(self, *, model_id: str, config: ModelConfig) -> ModelHandle:
@@ -119,9 +121,11 @@ class CodexSubscriptionModelFactory:
                 runtime=runtime,
                 context_window=context_window,
             )
-        except Exception:
+        except BaseException as error:
             if http_client is not None:
                 await http_client.aclose()
+            if not isinstance(error, Exception) or isinstance(error, CredentialError):
+                raise
             raise ModelResolutionError(f'model {model_id!r} construction failed') from None
 
 
@@ -194,55 +198,6 @@ class _CodexResponsesModel(OpenAIResponsesModel):
             run_context,
         ) as stream:
             yield stream
-
-
-class _RedactingTransport(httpx.AsyncBaseTransport):
-    def __init__(self, wrapped: httpx.AsyncBaseTransport) -> None:
-        self._wrapped = wrapped
-
-    async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
-        try:
-            response = await self._wrapped.handle_async_request(request)
-        except httpx.HTTPError:
-            raise httpx.TransportError('Codex backend request failed') from None
-        if response.status_code < 400:
-            return response
-
-        await response.aread()
-        await response.aclose()
-
-        return httpx.Response(
-            status_code=response.status_code,
-            content=b'{"error":"Codex backend request failed"}',
-            headers={'content-type': 'application/json'},
-            request=request,
-        )
-
-    async def aclose(self) -> None:
-        await self._wrapped.aclose()
-
-
-class _CodexHttpxAuth(httpx.Auth):
-    def __init__(self, auth: CodexAuth) -> None:
-        self._auth = auth
-
-    async def async_auth_flow(self, request: httpx.Request) -> AsyncGenerator[httpx.Request, httpx.Response]:
-        tokens = await self._auth._request_tokens()
-        response = yield _prepare_request(request, tokens)
-        if response.status_code == 401:
-            await response.aread()
-            tokens = await self._auth._request_tokens(force_refresh=True)
-            yield _prepare_request(request, tokens)
-
-
-def _prepare_request(request: httpx.Request, tokens: CodexTokens) -> httpx.Request:
-    request.headers.pop('x-api-key', None)
-    request.headers['authorization'] = f'Bearer {tokens.access_token.get_secret_value()}'
-    request.headers['chatgpt-account-id'] = codex_account_id(tokens)
-    request.headers['openai-beta'] = 'responses=experimental'
-    request.headers['originator'] = 'ovid_core'
-
-    return request
 
 
 def _validate_settings(settings: dict[str, JsonValue]) -> None:

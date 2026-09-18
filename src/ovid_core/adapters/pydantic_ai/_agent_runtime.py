@@ -12,6 +12,7 @@ from ovid_core.adapters.pydantic_ai._usage_tracking import RunUsageRecorder, Usa
 from ovid_core.adapters.pydantic_ai.messages import message_to_pydantic
 from ovid_core.adapters.pydantic_ai.results import result_from_pydantic
 from ovid_core.agents import AgentRuntime, AgentStream
+from ovid_core.errors import CredentialError
 from ovid_core.messages.models import AgentMessage
 from ovid_core.policy import AgentRunPolicy
 from ovid_core.runtime.identifiers import ConversationId, RunId
@@ -154,5 +155,7 @@ def _raise_normalized(error: Exception) -> Never:
     normalized = normalize_run_error(error)
     if normalized is error:
         raise error
+    if isinstance(normalized, CredentialError):
+        raise normalized from None
 
     raise normalized from error

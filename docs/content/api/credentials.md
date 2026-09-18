@@ -1,10 +1,12 @@
 # Credentials
 
-Configuration stores serializable references, never resolved secrets. Resolver implementations return Pydantic `SecretStr` values.
+Configuration stores serializable references, never resolved secrets.
+Resolver implementations return Pydantic `SecretStr` values.
 
 ## Credential references
 
-Import from `ovid_core.credentials.models`. `CredentialRef` is a Pydantic discriminated union on `kind`.
+Import credential reference types from `ovid_core.credentials.models`.
+`CredentialRef` is a Pydantic discriminated union on `kind`.
 
 | Model | Fields | Serialized example |
 | --- | --- | --- |
@@ -14,9 +16,15 @@ Import from `ovid_core.credentials.models`. `CredentialRef` is a Pydantic discri
 | `CallbackCredentialRef` | `kind='callback'`, non-empty `callback` | `{'kind': 'callback', 'callback': 'application-resolver'}` |
 | `StoreCredentialRef` | `kind='store'`, non-empty `store` and `name` | `{'kind': 'store', 'store': 'vault', 'name': 'openai'}` |
 
-`FileCredentialRef` expands `~` during validation. The reference does not read the file.
+`FileCredentialRef` expands `~` during validation.
+The reference does not read the file.
 
-The application defines named, callback, file-reference, and external-store behavior.
+The application defines behavior for these references:
+
+- named references
+- callback references
+- file references
+- external-store references
 
 ```python
 from ovid_core.credentials.models import CredentialRef
@@ -38,7 +46,12 @@ class CredentialResolver(Protocol):
 
 A resolver raises `CredentialError` when it cannot resolve a supported reference.
 
-Do not put secret values in exceptions, configuration, logs, or serialized DTOs.
+Do not put secret values in these locations:
+
+- exceptions
+- configuration
+- logs
+- serialized DTOs
 
 ## Provider API-key callback
 
@@ -50,18 +63,38 @@ async def provider_api_key(model_id: str, provider: str) -> SecretStr | None: ..
 
 Pass this callable to `AgentFactory(provider_api_key=...)`.
 
-The default model factory calls it when it constructs a configured model. Return a `SecretStr` to inject the key into the provider.
+The default model factory calls `provider_api_key` during construction.
+Compiled agents use Pydantic AI `SelectModel` to resolve credentials before each new logical model request.
+This applies to normal and streamed agent runs.
+
+Return a `SecretStr` to inject the current key into the provider.
+
+Changed keys apply to subsequent requests without restarting the agent turn.
+Active requests and streams keep their original provider until they finish.
+The factory reuses the model when the resolved key is unchanged.
+Configured settings and concurrency limits remain effective after rotation.
+Resolver failures stop the request instead of reusing a stale key.
+
+Pydantic AI owns the selected models and their lifetimes.
+Same-step continuations keep their selected model.
+Direct calls to `handle.runtime` use the initial model snapshot and do not resolve credentials again.
 
 Return `None` to use the provider environment or native authentication.
 
-This callback supports application-owned storage. It does not put the key in `OvidConfig` or modify process environment variables.
+This callback supports application-owned storage.
+It does not put the key in `OvidConfig` or modify process environment variables.
 
 
 ## Provider authentication registry
 
 Import provider authentication contracts from `ovid_core.authentication`.
 
-`ProviderRegistry` is the source of enabled providers, authentication flows, connection state, and authenticated model options.
+`ProviderRegistry` supplies:
+
+- enabled providers
+- authentication flows
+- connection state
+- authenticated model options
 
 Each `ProviderDefinition` supplies:
 
@@ -70,11 +103,27 @@ Each `ProviderDefinition` supplies:
 - a `ProviderCredentialBinding`
 - an async model-option loader
 
-`AuthenticationFlowSession` returns transport-neutral interactions for URL display, secret input, progress, completion, and failure.
+`AuthenticationFlowSession` returns transport-neutral interactions for:
 
-Interactions contain semantic input kinds, progress stages, and failure reasons only.
+- URL display
+- secret input
+- progress
+- completion
+- failure
 
-They do not contain UI messages, prompts, placeholders, instructions, or completion text.
+Interactions contain only:
+
+- semantic input kinds
+- progress stages
+- failure reasons
+
+They do not contain:
+
+- UI messages
+- prompts
+- placeholders
+- instructions
+- completion text
 
 Applications render these interactions and provide concrete credential stores.
 
@@ -103,9 +152,11 @@ class EnvironmentCredentialResolver:
     async def resolve(self, reference: CredentialRef) -> SecretStr: ...
 ```
 
-With no mapping, the constructor copies `os.environ`. A supplied mapping gives deterministic behavior in tests and applications.
+With no mapping, the constructor copies `os.environ`.
+A supplied mapping gives deterministic behavior in tests and applications.
 
-`resolve` accepts only `EnvironmentCredentialRef`. Unsupported kinds and missing variables raise `CredentialError`.
+`resolve` accepts only `EnvironmentCredentialRef`.
+It raises `CredentialError` for unsupported kinds or missing variables.
 
 ```python
 from ovid_core.credentials.models import EnvironmentCredentialRef

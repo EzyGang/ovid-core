@@ -6,7 +6,7 @@ from pydantic import SecretStr
 
 from ovid_core import CodexAuthError, ModelResolutionError
 from ovid_core.adapters.pydantic_ai import CodexSubscriptionModelFactory
-from ovid_core.adapters.pydantic_ai.codex import _prepare_request, _RedactingTransport
+from ovid_core.adapters.pydantic_ai._codex_http import _prepare_request, _RedactingTransport
 from ovid_core.codex import CodexAuth, CodexOAuthConfig, CodexTokens, codex_account_id
 from ovid_core.config import ModelConfig
 from tests.support.helpers import MemoryTokenStore, make_codex_tokens, make_jwt, oauth_client
@@ -127,6 +127,7 @@ async def test_auth_rejects_missing_malformed_and_failed_refreshes() -> None:
             with pytest.raises(CodexAuthError, match='status 500') as captured:
                 await failed._request_tokens()
             assert 'refresh-secret' not in repr(captured.value)
+            assert await store.load() is not None
 
     async with oauth_client(lambda request: httpx.Response(200, content=b'invalid')) as client:
         store = MemoryTokenStore(make_codex_tokens(expired=True))

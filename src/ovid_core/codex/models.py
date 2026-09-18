@@ -20,6 +20,11 @@ class CodexTokens(BaseModel):
     refresh_token: SecretStr = Field(repr=False)
 
 
+class CodexTokenSnapshot(BaseModel):
+    revision: int = Field(ge=0)
+    tokens: CodexTokens | None = Field(repr=False)
+
+
 class _UserCodeRequest(BaseModel):
     client_id: str = Field(min_length=1)
 

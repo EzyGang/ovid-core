@@ -1,6 +1,8 @@
 # Pydantic AI adapters
 
-Third-party runtime objects live under `ovid_core.adapters`. Domain code should depend on Ovid-owned values and use these APIs only at composition boundaries.
+Third-party runtime objects live under `ovid_core.adapters`.
+Domain code should depend on Ovid-owned values.
+Applications should use these APIs only at composition boundaries.
 
 ## Model construction
 
@@ -8,18 +10,35 @@ Import from `ovid_core.adapters.pydantic_ai.models`.
 
 ### `DefaultModelFactory`
 
-Implements `ModelFactory`:
+`DefaultModelFactory` implements `ModelFactory`:
 
 ```python
 factory = DefaultModelFactory(provider_api_key=None)
 handle = await factory.build(model_id=model_id, config=model_config)
 ```
 
-The factory passes `provider:model` to upstream model inference. The built-in test model maps to `test`.
+The factory passes `provider:model` to upstream model inference.
+The built-in test model maps to `test`.
 
-It merges model settings, applies model concurrency, normalizes capabilities, and returns an opaque handle.
+The factory:
 
-When `provider_api_key` returns a key, the factory passes that key to the inferred provider constructor. Construction failures become source-safe `ModelResolutionError` values.
+- merges model settings
+- applies model concurrency
+- normalizes capabilities
+- returns an opaque handle
+
+The factory resolves `provider_api_key` during construction.
+The agent compiler uses Pydantic AI `SelectModel` to resolve it before each new logical model request.
+When the key changes, the factory builds a replacement model.
+Active requests keep their original provider until they finish.
+The factory reuses the current model when the key does not change.
+
+Pydantic AI manages model lifetimes.
+Credential versions share the configured concurrency limiter.
+
+The factory preserves `CredentialError` exceptions.
+It converts other construction failures to `ModelResolutionError`.
+Each converted exception omits the original message and cause.
 
 Gateway-prefixed providers use the upstream gateway factory, so the application key remains scoped to the gateway endpoint.
 
@@ -29,9 +48,11 @@ Gateway-prefixed providers use the upstream gateway factory, so the application 
 def known_models() -> tuple[KnownModel, ...]
 ```
 
-Delegates to the Pydantic AI model catalog. It divides each identifier into a typed provider and model pair.
+`known_models()` delegates to the Pydantic AI model catalog.
+It divides each identifier into a typed provider and model pair.
 
-The catalog gives information only. An unknown future pair remains valid until model construction cannot resolve it.
+The catalog gives information only.
+An unknown future pair remains valid until model construction cannot resolve it.
 
 ### `available_api_key_models`
 
@@ -39,7 +60,7 @@ The catalog gives information only. An unknown future pair remains valid until m
 def available_api_key_models() -> tuple[KnownModel, ...]
 ```
 
-Returns catalog models whose provider adapter is installed and accepts an explicit `api_key` argument.
+`available_api_key_models()` returns catalog models whose provider adapter is installed and accepts an explicit `api_key` argument.
 
 `available_api_key_model_options()` returns the same installed subset as grouped `ModelSelectionOptions`.
 
@@ -48,16 +69,35 @@ Provider-specific environment requirements still apply, including AWS region con
 
 ## Agent compilation
 
-`DefaultAgentCompiler.compile(definition, resolved)` implements `AgentCompiler`. It returns an Ovid `AgentRuntime`.
+`DefaultAgentCompiler.compile(definition, resolved)` implements `AgentCompiler`.
+It returns an Ovid `AgentRuntime`.
 
-Compilation maps types, instructions, retries, extensions, policy, concurrency, and observability. Invalid runtime values or construction failures raise `AgentConstructionError`.
+Compilation maps:
+
+- types
+- instructions
+- retries
+- extensions
+- policy
+- concurrency
+- observability
+
+Invalid runtime values or construction failures raise `AgentConstructionError`.
 
 ## Extension adaptation
 
 Import from `ovid_core.adapters.pydantic_ai.extensions`.
 
 - `PydanticAIExtensions[Deps]` is a frozen dataclass containing adapted `capabilities` and `toolsets`.
-- `adapt_agent_extensions(capabilities, toolsets, hooks)` validates IDs, adapts provider/skills/MCP integrations, combines capability and direct toolsets, and returns the adapter bundle.
+- `adapt_agent_extensions(capabilities, toolsets, hooks)` returns the adapter bundle.
+
+`adapt_agent_extensions`:
+
+- validates IDs
+- adapts provider integrations
+- adapts skills integrations
+- adapts MCP integrations
+- combines capability and direct toolsets
 
 Import from `ovid_core.adapters.pydantic_ai.tools`:
 
@@ -67,11 +107,24 @@ Import from `ovid_core.adapters.pydantic_ai.tools`:
 
 Import `adapt_integration_capability` from `ovid_core.adapters.pydantic_ai.integrations`.
 
-This function adapts `ProviderCapability`, `SkillsCapability`, and `MCPServerCapability`. It returns `None` for other capability types.
+`adapt_integration_capability` adapts these capability types:
 
-Adapter execution validates argument and result models. It applies approval policy, timeouts, and hooks.
+- `ProviderCapability`
+- `SkillsCapability`
+- `MCPServerCapability`
 
-The adapter maps `ToolResult` to JSON and preserves cancellation. Duplicate tool or extension IDs raise `ExtensionCollisionError`.
+It returns `None` for other capability types.
+
+During execution, the adapter:
+
+- validates argument and result models
+- applies approval policy
+- applies timeouts
+- applies hooks
+- maps `ToolResult` to JSON
+- preserves cancellation
+
+Duplicate tool or extension IDs raise `ExtensionCollisionError`.
 
 ## Message conversion
 
@@ -82,9 +135,17 @@ def message_from_pydantic(value: ModelMessage) -> AgentMessage
 def message_to_pydantic(value: AgentMessage) -> ModelMessage
 ```
 
-Both functions convert message parts, identities, timestamps, usage, provider metadata, and finish reasons.
+Both functions convert:
 
-Unsupported or invalid upstream messages raise `ProviderError`. Invalid normalized conversions also raise `ProviderError`.
+- message parts
+- identities
+- timestamps
+- usage
+- provider metadata
+- finish reasons
+
+Both functions raise `ProviderError` for unsupported or invalid upstream messages.
+They also raise `ProviderError` for invalid normalized conversions.
 
 ## Result conversion
 
@@ -96,7 +157,12 @@ def result_from_pydantic[Output](
 ) -> RunResult[Output]
 ```
 
-Converts the new messages and their usage. It also converts UUIDs, sorts metadata keys, and validates the complete Ovid result.
+`result_from_pydantic`:
+
+- converts the new messages and their usage
+- converts UUIDs
+- sorts metadata keys
+- validates the complete Ovid result
 
 Invalid upstream state raises `ProviderError`.
 
@@ -106,7 +172,15 @@ Import from `ovid_core.adapters.pydantic_ai.usage`.
 
 ### Upstream field classification
 
-`UpstreamUsageField(name, classification)` is a frozen dataclass. Classification is `stable`, `optional`, `provider_specific`, or `upstream_private`. `PYDANTIC_AI_USAGE_FIELDS` describes the exact upstream fields currently normalized.
+`UpstreamUsageField(name, classification)` is a frozen dataclass.
+The classification is one of:
+
+- `stable`
+- `optional`
+- `provider_specific`
+- `upstream_private`
+
+`PYDANTIC_AI_USAGE_FIELDS` describes the exact upstream fields that the adapter normalizes.
 
 ### Functions
 
@@ -133,12 +207,17 @@ def compile_fallback_model(
 
 The function returns one handle without a change.
 
-For multiple handles, it makes a Pydantic AI `FallbackModel`. The new handle reports capabilities that all candidates support.
+For multiple handles, the function creates a Pydantic AI `FallbackModel`.
+The new handle reports capabilities that all candidates support.
+For handles with resolvers, the compiler selects current candidate models before each new logical request.
+It creates a replacement `FallbackModel` only when a candidate changes.
+The candidate order and fallback policy remain unchanged.
 
 Its context window is the smallest candidate window when every candidate supplies metadata.
 It is unknown when any candidate window is unknown.
 
-Authentication and invalid-request errors stop the route. Other applicable final errors can move to the next model.
+Authentication and invalid-request errors stop the route.
+Other applicable final errors can move to the next model.
 
 ## AG-UI bridge
 
@@ -149,7 +228,14 @@ Import from `ovid_core.adapters.pydantic_ai.ag_ui` when building a custom transp
 - `AGUIAuthorityError` reports client attempts to control server-authoritative run state.
 - `PydanticAIAGUIRun(agent, agent_id, body, accept)` parses trusted AG-UI input and requires a Pydantic AI runtime.
 
-`PydanticAIAGUIRun` exposes the deterministic `conversation_id`, `native_stream(deps, messages, conversation_id)`, `stream(events, on_complete=...)`, and `streaming_response(events)`. Most applications should use `create_ag_ui_app` instead.
+`PydanticAIAGUIRun` exposes:
+
+- the deterministic `conversation_id`
+- `native_stream(deps, messages, conversation_id)`
+- `stream(events, on_complete=...)`
+- `streaming_response(events)`
+
+Most applications should use `create_ag_ui_app` instead.
 
 ## Starlette boundary
 
@@ -158,7 +244,8 @@ Low-level Starlette factories are available for applications that require a conc
 - `ovid_core.adapters.starlette.app.create_starlette_app(...)`
 - `ovid_core.adapters.starlette.ag_ui.create_starlette_ag_ui_app(...)`
 
-These factories use the same arguments as the high-level server factories. They do not check optional dependencies.
+These factories use the same arguments as the high-level server factories.
+They do not check optional dependencies.
 
 Use the high-level factories unless your application needs a concrete Starlette object.
 
@@ -166,7 +253,10 @@ Use the high-level factories unless your application needs a concrete Starlette 
 
 - `read_json_body(request, *, max_body_bytes, timeout_seconds) -> bytes`
 - `request_context(request) -> RequestContext`
-- `BodyTooLargeError`, `ClientAuthorityError`, `InvalidRequestError`, and `UnsupportedMediaTypeError`
+- `BodyTooLargeError`
+- `ClientAuthorityError`
+- `InvalidRequestError`
+- `UnsupportedMediaTypeError`
 
 These helpers enforce the same request-body and authority rules as the built-in transports.
 

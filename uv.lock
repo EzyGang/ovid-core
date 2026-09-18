@@ -1238,6 +1238,7 @@ name = "ovid-core"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "filelock" },
     { name = "genai-prices" },
     { name = "httpx" },
     { name = "keyring" },
@@ -1273,6 +1274,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "filelock", specifier = ">=3.32.4,<4.0.0" },
     { name = "genai-prices", specifier = ">=0.1.1,<0.2.0" },
     { name = "httpx", specifier = ">=0.28.1,<0.29.0" },
     { name = "keyring", specifier = ">=25.6.0,<26.0.0" },

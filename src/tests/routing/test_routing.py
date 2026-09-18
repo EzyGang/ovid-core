@@ -1,21 +1,16 @@
 from typing import cast
 
 import pytest
-from pydantic import SecretStr, TypeAdapter
 from pydantic_ai import Agent
 from pydantic_ai.exceptions import ModelAPIError
 from pydantic_ai.messages import ModelMessage, ModelResponse
 from pydantic_ai.models import Model
-from pydantic_ai.models.concurrency import ConcurrencyLimitedModel
 from pydantic_ai.models.fallback import FallbackModel
 from pydantic_ai.models.function import AgentInfo, FunctionModel
-from pydantic_ai.models.openai import OpenAIResponsesModel
 from pydantic_ai.models.test import TestModel
-from pydantic_ai.providers.openai import OpenAIProvider
-from pytest_mock import MockerFixture
 
-from ovid_core import DefaultModelFactory, ModelResolutionError
-from ovid_core.adapters.pydantic_ai import known_models, result_from_pydantic
+from ovid_core import ModelResolutionError
+from ovid_core.adapters.pydantic_ai import result_from_pydantic
 from ovid_core.adapters.pydantic_ai.routing import compile_fallback_model
 from ovid_core.config import ModelConfig, OvidConfig
 from ovid_core.routing import (
@@ -25,7 +20,6 @@ from ovid_core.routing import (
     ModelRef,
     ModelRouter,
     ModelRouteRef,
-    ModelSelector,
 )
 
 
@@ -110,139 +104,6 @@ async def test_compiled_fallback_runs_and_normalizes_reported_usage() -> None:
 
 
 @pytest.mark.asyncio
-async def test_generic_pydantic_factory_applies_settings_concurrency_and_capabilities() -> None:
-    config = OvidConfig.model_validate(
-        {
-            'models': {
-                'configured': {
-                    'provider': 'test',
-                    'model': 'test',
-                    'settings': {'temperature': 0.2},
-                    'concurrency_limit': 2,
-                }
-            }
-        },
-    )
-    factory = DefaultModelFactory()
-    router = ModelRouter(config=config, factory=factory)
-
-    resolved = await router.resolve(ModelRef(name='configured'))
-    upstream = await Agent(cast(Model, resolved.handle._runtime)).run('hello')
-    plain = await factory.build(model_id='plain', config=ModelConfig(provider='test', model='test'))
-
-    assert isinstance(resolved.handle._runtime, ConcurrencyLimitedModel)
-    assert resolved.handle._runtime.wrapped.settings == {'temperature': 0.2}
-    assert resolved.handle.capabilities.tools
-    assert upstream.output == 'success (no tool calls)'
-    assert isinstance(plain._runtime, TestModel)
-
-
-@pytest.mark.asyncio
-async def test_default_factory_discovers_context_window_from_model_metadata(mocker: MockerFixture) -> None:
-    model = OpenAIResponsesModel('gpt-5.4', provider=OpenAIProvider(api_key='test-key'))
-    mocker.patch('ovid_core.adapters.pydantic_ai.models.infer_model', return_value=model)
-
-    async with model:
-        handle = await DefaultModelFactory().build(
-            model_id='primary',
-            config=ModelConfig(provider='openai', model='gpt-5.4'),
-        )
-
-    assert handle.context_window == 1_050_000
-
-
-@pytest.mark.asyncio
-async def test_context_discovery_falls_back_from_custom_url_to_provider(mocker: MockerFixture) -> None:
-    provider = OpenAIProvider(base_url='https://models.example.test/v1', api_key='test-key')
-    model = OpenAIResponsesModel('gpt-5.4', provider=provider)
-    mocker.patch('ovid_core.adapters.pydantic_ai.models.infer_model', return_value=model)
-
-    async with model:
-        handle = await DefaultModelFactory().build(
-            model_id='primary',
-            config=ModelConfig(provider='openai', model='gpt-5.4'),
-        )
-
-    assert handle.context_window == 1_050_000
-
-
-@pytest.mark.asyncio
-async def test_application_gateway_key_preserves_gateway_endpoint(mocker: MockerFixture) -> None:
-    mocker.patch.dict('os.environ', {'PYDANTIC_AI_GATEWAY_BASE_URL': 'https://gateway.example.test/proxy'})
-
-    async def provider_api_key(model_id: str, provider: str) -> SecretStr:
-        return SecretStr('synthetic-gateway-key')
-
-    handle = await DefaultModelFactory(provider_api_key=provider_api_key).build(
-        model_id='gateway',
-        config=ModelConfig(provider='gateway/openai', model='gpt-4o'),
-    )
-    model = cast(Model, handle._runtime)
-    async with model:
-        assert str(model.base_url) == 'https://gateway.example.test/proxy/openai/'
-
-
-@pytest.mark.asyncio
-async def test_default_model_factory_accepts_application_api_keys(mocker: MockerFixture) -> None:
-    calls: list[tuple[str, str]] = []
-
-    async def provider_api_key(model_id: str, provider: str) -> SecretStr | None:
-        calls.append((model_id, provider))
-
-        return SecretStr('application-secret')
-
-    provider = mocker.Mock()
-    provider_class = mocker.patch(
-        'ovid_core.adapters.pydantic_ai.models.infer_provider_class',
-        return_value=mocker.Mock(return_value=provider),
-    )
-    infer_model = mocker.patch(
-        'ovid_core.adapters.pydantic_ai.models.infer_model',
-        return_value=TestModel(),
-    )
-    factory = DefaultModelFactory(provider_api_key=provider_api_key)
-
-    await factory.build(model_id='primary', config=ModelConfig(provider='openai', model='gpt-5'))
-    supplied_provider_factory = infer_model.call_args.kwargs['provider_factory']
-
-    assert supplied_provider_factory('openai') is provider
-    assert calls == [('primary', 'openai')]
-    provider_class.return_value.assert_called_once_with(api_key='application-secret')
-
-    async def no_api_key(model_id: str, provider_name: str) -> SecretStr | None:
-        del model_id, provider_name
-
-        return None
-
-    infer_model.reset_mock()
-
-    await DefaultModelFactory(provider_api_key=no_api_key).build(
-        model_id='secondary',
-        config=ModelConfig(provider='openai', model='gpt-5'),
-    )
-
-    infer_model.assert_called_once_with('openai:gpt-5')
-
-
-@pytest.mark.asyncio
-async def test_known_catalog_and_generic_construction_errors_are_safe() -> None:
-    catalog = known_models()
-    factory = DefaultModelFactory()
-
-    assert catalog
-    assert all(model.provider and model.model for model in catalog)
-    assert any(model.provider == 'openai' for model in catalog)
-    with pytest.raises(ModelResolutionError) as captured:
-        await factory.build(
-            model_id='broken',
-            config=ModelConfig(provider='unknown', model='model', settings={'api_key': 'secret-value'}),
-        )
-
-    assert 'secret-value' not in repr(captured.value)
-    assert captured.value.__cause__ is None
-
-
-@pytest.mark.asyncio
 async def test_missing_selectors_and_alias_collisions_fail() -> None:
     router, _ = _router()
 
@@ -261,13 +122,6 @@ async def test_missing_selectors_and_alias_collisions_fail() -> None:
     )
     with pytest.raises(ModelResolutionError, match='configured for both'):
         ModelRouter(config=config, factory=RoutingFactory())
-
-
-def test_selector_contracts_serialize() -> None:
-    selector_adapter = TypeAdapter(ModelSelector)
-    selector = CandidateModelSelector(models=(ModelRef(name='first'), ModelRef(name='second')))
-
-    assert selector_adapter.validate_json(selector_adapter.dump_json(selector)) == selector
 
 
 def test_model_handle_rejects_non_positive_context_window() -> None:

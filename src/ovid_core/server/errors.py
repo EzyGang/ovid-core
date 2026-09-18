@@ -1,6 +1,6 @@
 import asyncio
 
-from ovid_core.errors import AgentRunError, OvidCoreError, TransportError
+from ovid_core.errors import AgentRunError, AuthenticationError, CredentialError, OvidCoreError, TransportError
 from ovid_core.server.models import ServerErrorResponse
 
 
@@ -23,6 +23,12 @@ class _CommandExecutionError(TransportError):
 def _server_error_from_exception(error: BaseException) -> ServerErrorResponse:
     if isinstance(error, asyncio.CancelledError):
         return ServerErrorResponse(code='run_cancelled', message='Run cancelled')
+
+    if isinstance(error, AuthenticationError):
+        return ServerErrorResponse(code='authentication_error', message='Provider authentication failed')
+
+    if isinstance(error, CredentialError):
+        return ServerErrorResponse(code='credential_error', message='Provider credentials are unavailable')
 
     if isinstance(error, _UnknownAgentError):
         return ServerErrorResponse(code='agent_not_found', message='Agent was not found')
