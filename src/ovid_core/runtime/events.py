@@ -5,7 +5,7 @@ from pydantic import Field, NonNegativeInt
 from ovid_core.messages.models import AgentMessage, ToolCallData, ToolCallPart, ToolReturnData, ToolReturnPart
 from ovid_core.models import BaseModel
 from ovid_core.runtime.identifiers import ConversationId, RunId
-from ovid_core.usage.models import Usage
+from ovid_core.usage.models import RequestUsage, Usage
 
 
 class EventIdentity(BaseModel):
@@ -39,6 +39,7 @@ class ToolResultEvent(ToolReturnData, EventIdentity):
 class UsageUpdateEvent(EventIdentity):
     kind: Literal['usage_update'] = 'usage_update'
     usage: Usage
+    request_usage: RequestUsage | None = None
     is_final: bool = False
 
 

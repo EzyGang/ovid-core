@@ -6,7 +6,11 @@ from pydantic_ai.usage import RunUsage as PydanticRunUsage
 
 from ovid_core import AgentUsageLimits, ProviderError, ProviderFailureKind, UsageLimitError
 from ovid_core.adapters.pydantic_ai import aggregate_usage_from_pydantic
-from ovid_core.adapters.pydantic_ai._provider_errors import provider_failure_kind, should_fallback
+from ovid_core.adapters.pydantic_ai._provider_errors import (
+    is_context_window_error,
+    provider_failure_kind,
+    should_fallback,
+)
 from ovid_core.usage import Usage, UsageTracker
 
 
@@ -29,6 +33,28 @@ def test_provider_http_failures_have_stable_fallback_classification(
 
     assert provider_failure_kind(error) is kind
     assert should_fallback(error) is fallback
+
+
+@pytest.mark.parametrize(
+    ('error', 'expected'),
+    (
+        (
+            ModelHTTPError(
+                400,
+                'model',
+                {'error': {'code': 'context_length_exceeded', 'message': 'private prompt detail'}},
+            ),
+            True,
+        ),
+        (ModelHTTPError(413, 'model', {'message': 'Prompt is too long'}), True),
+        (ModelHTTPError(400, 'model', {'error': {'message': 'invalid input'}}), False),
+        (ModelHTTPError(400, 'model'), False),
+        (ModelHTTPError(500, 'model', {'message': 'maximum context length'}), False),
+        (RuntimeError('context_length_exceeded'), False),
+    ),
+)
+def test_context_window_failures_use_bounded_structured_detection(error: Exception, expected: bool) -> None:
+    assert is_context_window_error(error) is expected
 
 
 def test_non_http_provider_failure_classification_is_stable() -> None:

@@ -18,6 +18,7 @@ from ovid_core import (
     ObservabilityConfig,
     OvidAgent,
 )
+from ovid_core.capabilities import BaseCapability
 from ovid_core.config import ModelConfig, OvidConfig
 from ovid_core.mcp import MCPHTTPTransportConfig, MCPServerConfig
 from ovid_core.routing import ModelRef, ModelRouteRef
@@ -129,10 +130,16 @@ async def test_factory_exposes_extension_context_before_compilation() -> None:
         'source': 'caller',
     }
 
-    prepared = prepared.with_instructions(('Rendered application prompt.',))
+    assert factory.extend_prepared(prepared, ()) is prepared
+    prepared = factory.extend_prepared(prepared, (BaseCapability(id='late-capability'),))
+    prepared = prepared.with_instructions(('Rendered application prompt.',)).with_policy(
+        AgentRunPolicy(max_concurrency=2)
+    )
     agent = factory.build_prepared(prepared)
 
     assert prepared.definition.instructions == ('Rendered application prompt.',)
+    assert prepared.definition.policy.max_concurrency == 2
+    assert prepared.context.capabilities[-1].id == 'late-capability'
     assert agent.diagnostics.selected_model == 'primary'
     assert agent.diagnostics.context_window == 1_000
 

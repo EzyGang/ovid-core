@@ -91,7 +91,13 @@ def test_all_normalized_events_serialize_through_discriminated_union() -> None:
             content={'found': True},
             tool_call_id='call-1',
         ),
-        UsageUpdateEvent(run_id=RUN_ID, conversation_id=CONVERSATION_ID, sequence=5, usage=usage),
+        UsageUpdateEvent(
+            run_id=RUN_ID,
+            conversation_id=CONVERSATION_ID,
+            sequence=5,
+            usage=usage,
+            request_usage=make_request_usage(),
+        ),
         RunCompletedEvent(run_id=RUN_ID, conversation_id=CONVERSATION_ID, sequence=6, usage=usage),
         RunFailedEvent(
             run_id=RUN_ID,

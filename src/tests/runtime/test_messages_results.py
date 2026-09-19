@@ -3,6 +3,7 @@ from datetime import UTC, datetime
 import pytest
 from pydantic import ValidationError
 from pydantic_ai import Agent
+from pydantic_ai.messages import CompactionPart as PydanticCompactionPart
 from pydantic_ai.messages import ImageUrl, ModelRequest, ModelResponse, ThinkingPart
 from pydantic_ai.messages import SystemPromptPart as PydanticSystemPromptPart
 from pydantic_ai.messages import TextPart as PydanticTextPart
@@ -16,6 +17,7 @@ from ovid_core import ProviderError
 from ovid_core.adapters.pydantic_ai import message_from_pydantic, message_to_pydantic, result_from_pydantic
 from ovid_core.messages import (
     AgentMessage,
+    CompactionPart,
     RetryPromptPart,
     SystemPromptPart,
     TextPart,
@@ -77,12 +79,18 @@ def test_response_message_adapter_round_trip_with_usage() -> None:
     upstream = ModelResponse(
         parts=(
             PydanticTextPart('answer'),
+            PydanticCompactionPart(
+                id='compact-1',
+                provider_name='test-provider',
+                provider_details={'encrypted_content': 'opaque'},
+            ),
             PydanticToolCallPart('lookup', {'key': 1}, 'call-1'),
         ),
         usage=PydanticRequestUsage(input_tokens=8, output_tokens=3, details={'reasoning_tokens': 1}),
         model_name='test-model',
         provider_name='test-provider',
         provider_response_id='response-1',
+        provider_details={'compaction': True},
         finish_reason='tool_call',
         run_id=str(RUN_ID),
         conversation_id=str(CONVERSATION_ID),
@@ -93,7 +101,7 @@ def test_response_message_adapter_round_trip_with_usage() -> None:
     normalized_again = message_from_pydantic(restored)
 
     assert normalized_again == normalized
-    assert tuple(type(part) for part in normalized.parts) == (TextPart, ToolCallPart)
+    assert tuple(type(part) for part in normalized.parts) == (TextPart, CompactionPart, ToolCallPart)
     assert normalized.request_usage is not None
     assert normalized.request_usage.input_tokens == 8
 
@@ -159,6 +167,7 @@ def test_real_pydantic_ai_result_maps_to_stable_serializable_values() -> None:
     assert result.output == 'success (no tool calls)'
     assert result.usage.request_count == 1
     assert len(result.messages) == 2
+    assert result.history == result.messages
     assert result.usage == Usage.from_requests((result.messages[1].request_usage,))
 
 
@@ -185,6 +194,7 @@ def test_run_result_invariants_and_non_secret_metadata() -> None:
     result = RunResult[str](
         output='answer',
         messages=(response,),
+        history=(response,),
         usage=usage,
         run_id=RUN_ID,
         conversation_id=CONVERSATION_ID,
@@ -194,6 +204,15 @@ def test_run_result_invariants_and_non_secret_metadata() -> None:
     assert RunResult[str].model_validate_json(result.model_dump_json()) == result
     with pytest.raises(ValidationError, match='secret values'):
         ResultMetadataEntry(key='api-key', value='secret')
+    with pytest.raises(ValidationError, match='messages must end'):
+        RunResult[str](
+            output='answer',
+            messages=(response,),
+            history=(response.model_copy(update={'run_id': None}),),
+            usage=usage,
+            run_id=RUN_ID,
+            conversation_id=CONVERSATION_ID,
+        )
     with pytest.raises(ValidationError, match='metadata keys must be unique'):
         RunResult[str](
             output='answer',

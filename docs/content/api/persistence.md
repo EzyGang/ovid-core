@@ -20,18 +20,37 @@ class ConversationStore(Protocol):
 
 `load` returns messages in conversation order. `append` adds the supplied messages in order. Implementations should treat an empty append as a no-op and must not persist upstream Pydantic AI message objects.
 
+## `ConversationHistoryStore`
+
+`ConversationHistoryStore` extends `ConversationStore` with one method:
+
+```python
+async def commit(
+    self,
+    conversation_id: ConversationId,
+    messages: tuple[AgentMessage, ...],
+    history: tuple[AgentMessage, ...],
+) -> None: ...
+```
+
+`messages` contains the current run delta. `history` contains the effective model history after compaction or history processing.
+
+Servers use `commit` when the store supports this protocol. Other stores continue to receive `append`.
+
+Applications can keep an append-only transcript from `messages` while replacing a separate active context projection with `history`.
+
 ## `MessageCodec`
 
 ```python
 codec = MessageCodec()
-codec.version  # 2
+codec.version  # 3
 payload = codec.encode(message)
 message = codec.decode(payload)
 ```
 
-- `version` returns the current integer codec version, `2`.
+- `version` returns the current integer codec version, `3`.
 - `encode(message)` returns UTF-8 JSON bytes containing the codec version and normalized `AgentMessage`.
-- `decode(payload)` accepts persisted versions 1 and 2 and returns the normalized message.
+- `decode(payload)` accepts persisted versions 1, 2, and 3 and returns the normalized message.
 - Invalid JSON, an invalid message, or an unsupported version raises `PersistenceError` with a source-safe message.
 
 The version wrapper allows storage migrations without exposing the private encoded-record model as public API.
@@ -46,7 +65,7 @@ await store.append(conversation_id, messages)
 loaded = await store.load(conversation_id)
 ```
 
-An unknown conversation loads as `()`. Empty append operations do nothing.
+An unknown conversation loads as `()`. Empty append operations do nothing. `commit` replaces the active in-memory history.
 
 Use this store for tests and temporary applications. It has no durability or external concurrency control.
 

@@ -168,7 +168,7 @@ async def test_ag_ui_masks_adapter_run_and_persistence_failures(mocker: MockerFi
         )
 
     store = InMemoryConversationStore()
-    mocker.patch.object(store, 'append', side_effect=PersistenceError('private persistence failure'))
+    mocker.patch.object(store, 'commit', side_effect=PersistenceError('private persistence failure'))
     persistence_app = cast(
         Starlette, create_ag_ui_app(agents=(await build_registration(),), authorize=allow, store=store)
     )
@@ -195,7 +195,7 @@ async def test_ag_ui_propagates_persistence_cancellation(mocker: MockerFixture) 
         await asyncio.Event().wait()
 
     store = InMemoryConversationStore()
-    mocker.patch.object(store, 'append', side_effect=wait_for_cancellation)
+    mocker.patch.object(store, 'commit', side_effect=wait_for_cancellation)
     app = cast(Starlette, create_ag_ui_app(agents=(await build_registration(),), authorize=allow, store=store))
 
     async with server_client(app) as client:

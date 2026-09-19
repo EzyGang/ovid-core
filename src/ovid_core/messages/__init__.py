@@ -1,6 +1,7 @@
 from ovid_core.messages.models import AgentMessage as AgentMessage
 from ovid_core.messages.models import CapabilityLoadCallPart as CapabilityLoadCallPart
 from ovid_core.messages.models import CapabilityLoadReturnPart as CapabilityLoadReturnPart
+from ovid_core.messages.models import CompactionPart as CompactionPart
 from ovid_core.messages.models import MessagePart as MessagePart
 from ovid_core.messages.models import RetryPromptPart as RetryPromptPart
 from ovid_core.messages.models import SystemPromptPart as SystemPromptPart

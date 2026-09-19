@@ -3,6 +3,7 @@ import sys
 import pytest
 from pydantic import ValidationError
 from pydantic_ai.capabilities import ImageGeneration, Thinking, ToolSearch, WebFetch, WebSearch, XSearch
+from pydantic_ai.messages import ModelRequest, UserPromptPart
 from pydantic_ai.models.anthropic import AnthropicCompaction
 from pydantic_ai.models.openai import OpenAICompaction
 from pytest_mock import MockerFixture
@@ -59,10 +60,22 @@ def test_provider_capability_identity_and_configuration_validation_are_stable() 
     for values in (
         {'stateless': True, 'token_threshold': 1},
         {'stateless': False, 'message_count_threshold': 1},
+        {'stateless': False, 'estimated_token_threshold': 1},
+        {'stateless': True, 'message_count_threshold': 1, 'estimated_token_threshold': 1},
         {'stateless': True},
     ):
         with pytest.raises(ValidationError):
             OpenAICompactionCapabilityConfig.model_validate(values)
+
+    estimated = ProviderCapability[None](
+        id='estimated-compaction',
+        config=OpenAICompactionCapabilityConfig(stateless=True, estimated_token_threshold=1_000),
+    )
+    native = adapt_capabilities((estimated,))[0]
+    assert isinstance(native, OpenAICompaction)
+    assert native.trigger is not None
+    assert native.trigger([ModelRequest(parts=(UserPromptPart('x' * 10_000),))])
+    assert not native.trigger([ModelRequest(parts=(UserPromptPart('x'),))])
 
 
 @pytest.mark.parametrize(

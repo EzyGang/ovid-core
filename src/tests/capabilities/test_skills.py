@@ -92,7 +92,7 @@ async def test_skill_loading_round_trips_and_continues_from_normalized_history(t
     assert requests == 3
     assert any(isinstance(part, CapabilityLoadCallPart) for message in history for part in message.parts)
     assert any(isinstance(part, CapabilityLoadReturnPart) for message in history for part in message.parts)
-    assert codec.version == 2
+    assert codec.version == 3
 
 
 def test_skill_adapter_safely_rejects_invalid_library_and_capability_call(tmp_path: Path) -> None:

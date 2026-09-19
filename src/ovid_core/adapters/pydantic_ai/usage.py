@@ -91,4 +91,5 @@ def usage_update_event_from_pydantic(
         conversation_id=conversation_id,
         sequence=sequence,
         usage=Usage.from_requests((*completed_requests, current_request)),
+        request_usage=current_request,
     )

@@ -47,4 +47,5 @@ def _shared_capabilities(handles: Sequence[ModelHandle]) -> ModelCapabilities:
         json_object_output=all(handle.capabilities.json_object_output for handle in handles),
         image_output=all(handle.capabilities.image_output for handle in handles),
         thinking=all(handle.capabilities.thinking for handle in handles),
+        input_token_counting=all(handle.capabilities.input_token_counting for handle in handles),
     )

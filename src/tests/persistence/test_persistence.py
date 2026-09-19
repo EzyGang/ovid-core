@@ -7,7 +7,7 @@ from pydantic_ai.models.function import AgentInfo, FunctionModel
 from pydantic_ai.usage import RequestUsage as PydanticRequestUsage
 
 import tests.support.agent_consumer as consumer
-from ovid_core import ConversationStore, InMemoryConversationStore, MessageCodec, PersistenceError
+from ovid_core import ConversationHistoryStore, InMemoryConversationStore, MessageCodec, PersistenceError
 from ovid_core.adapters.pydantic_ai import message_from_pydantic, message_to_pydantic
 from ovid_core.messages import AgentMessage
 from ovid_core.runtime import ConversationId
@@ -34,16 +34,17 @@ def test_message_codec_round_trips_normalized_adapter_values() -> None:
         restored = message_from_pydantic(message_to_pydantic(codec.decode(payload)))
 
         assert restored == normalized
-        assert b'"version":2' in payload
-        assert codec.decode(payload.replace(b'"version":2', b'"version":1')) == normalized
+        assert b'"version":3' in payload
+        assert codec.decode(payload.replace(b'"version":3', b'"version":1')) == normalized
+        assert codec.decode(payload.replace(b'"version":3', b'"version":2')) == normalized
 
-    assert codec.version == 2
+    assert codec.version == 3
 
 
 def test_message_codec_rejects_invalid_and_unsupported_payloads_safely() -> None:
     codec = MessageCodec()
     message = message_from_pydantic(ModelRequest(parts=(PydanticUserPromptPart('secret-value'),)))
-    unsupported = codec.encode(message).replace(b'"version":2', b'"version":3')
+    unsupported = codec.encode(message).replace(b'"version":3', b'"version":4')
 
     for payload in (b'{"content":"secret-value"}', unsupported):
         with pytest.raises(PersistenceError, match='invalid or uses an unsupported') as error:
@@ -55,7 +56,7 @@ def test_message_codec_rejects_invalid_and_unsupported_payloads_safely() -> None
 
 @pytest.mark.asyncio
 async def test_in_memory_store_loads_snapshots_and_appends_ordered_batches() -> None:
-    store: ConversationStore = InMemoryConversationStore()
+    store: ConversationHistoryStore = InMemoryConversationStore()
     other_conversation_id = ConversationId.new()
     first = message_from_pydantic(
         ModelRequest(parts=(PydanticUserPromptPart('first'),), conversation_id=str(CONVERSATION_ID))
@@ -73,6 +74,9 @@ async def test_in_memory_store_loads_snapshots_and_appends_ordered_batches() -> 
     assert snapshot == (first,)
     assert await store.load(CONVERSATION_ID) == (first, second)
     assert await store.load(other_conversation_id) == ()
+
+    await store.commit(CONVERSATION_ID, (second,), (second,))
+    assert await store.load(CONVERSATION_ID) == (second,)
 
 
 async def continuation_response(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:

@@ -1,5 +1,5 @@
 from abc import abstractmethod
-from typing import Literal, Protocol
+from typing import Literal, Protocol, runtime_checkable
 
 from pydantic import ValidationError
 
@@ -17,15 +17,26 @@ class ConversationStore(Protocol):
     async def append(self, conversation_id: ConversationId, messages: tuple[AgentMessage, ...]) -> None: ...
 
 
+@runtime_checkable
+class ConversationHistoryStore(ConversationStore, Protocol):
+    @abstractmethod
+    async def commit(
+        self,
+        conversation_id: ConversationId,
+        messages: tuple[AgentMessage, ...],
+        history: tuple[AgentMessage, ...],
+    ) -> None: ...
+
+
 class _EncodedMessage(BaseModel):
-    version: Literal[1, 2] = 2
+    version: Literal[1, 2, 3] = 3
     message: AgentMessage
 
 
 class MessageCodec:
     @property
     def version(self) -> int:
-        return 2
+        return 3
 
     def encode(self, message: AgentMessage) -> bytes:
         return _EncodedMessage(message=message).model_dump_json().encode()
@@ -52,3 +63,12 @@ class InMemoryConversationStore:
             return
 
         self._messages[conversation_id] = self._messages.get(conversation_id, ()) + messages
+
+    async def commit(
+        self,
+        conversation_id: ConversationId,
+        messages: tuple[AgentMessage, ...],
+        history: tuple[AgentMessage, ...],
+    ) -> None:
+        del messages
+        self._messages[conversation_id] = history

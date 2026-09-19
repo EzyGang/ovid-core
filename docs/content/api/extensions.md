@@ -278,6 +278,14 @@ These values change only the tool definitions presented to the model. Put broade
 `AgentDefinition.instructions`.
 
 
+## History processing
+
+`HistoryProcessorCapability[Deps]` accepts an asynchronous `MessageHistoryProcessor`.
+The processor receives normalized Ovid messages before each model request and returns the effective history.
+
+The adapter runs history processing after other request capabilities, so provider-native preprocessing remains authoritative.
+Processed history becomes `RunResult.history` and can be committed through `ConversationHistoryStore`.
+
 ## Provider capabilities
 
 Import from `ovid_core.capabilities.integrations`.
@@ -294,7 +302,7 @@ Import from `ovid_core.capabilities.integrations`.
 | `ImageGenerationCapabilityConfig` | optional `action` (`generate`, `edit`, `auto`), `output_format`, `quality`, and supported `size`. |
 | `XSearchCapabilityConfig` | optional allowed/excluded handles, date range, image/video understanding, and output inclusion. |
 | `ToolSearchCapabilityConfig` | optional `strategy` (`keywords`, `bm25`, `regex`) and `max_results=10`. |
-| `OpenAICompactionCapabilityConfig` | optional `stateless`, positive token threshold, and positive message-count threshold. Mode validation enforces the matching threshold. |
+| `OpenAICompactionCapabilityConfig` | optional `stateless`, stateful token threshold, stateless message-count threshold, or stateless estimated-token threshold. Mode validation accepts one matching threshold. |
 | `AnthropicCompactionCapabilityConfig` | `token_threshold=150000` with minimum 50000, optional instructions, and `pause_after_compaction=False`. |
 
 The adapter rejects a provider capability unsupported by the selected upstream provider.

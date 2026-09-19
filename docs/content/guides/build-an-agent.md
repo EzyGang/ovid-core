@@ -170,12 +170,14 @@ first = await agent.run(
 second = await agent.run(
     'When is the release window?',
     deps=deps,
-    messages=first.messages,
+    messages=first.history or first.messages,
     conversation_id=conversation_id,
 )
 ```
 
-`first.messages` contains messages created by the first run. If a longer history already exists, the application supplies the complete history it wants the model to see. This makes trimming, retention, and session rules explicit.
+`first.messages` contains the current run delta. `first.history` contains the effective history after compaction or history processing.
+
+If a custom runtime does not provide `history`, the caller appends `messages` to its existing history.
 
 Use `ConversationStore` when the caller does not manage history. Ovid server transports can manage this sequence with a store.
 

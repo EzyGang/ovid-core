@@ -141,6 +141,7 @@ def test_pydantic_usage_adapter_aggregates_and_streams_snapshots() -> None:
     assert usage == Usage.from_requests((first, second), tool_calls=1)
     assert event.kind == 'usage_update'
     assert event.usage.input_tokens == 5
+    assert event.request_usage == second
 
 
 def test_upstream_usage_inventory_classifies_active_fields() -> None:

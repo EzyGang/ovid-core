@@ -2,57 +2,26 @@ import asyncio
 from abc import abstractmethod
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
-from dataclasses import dataclass, replace
-from typing import Any, Protocol, Self, cast
+from dataclasses import replace
+from typing import Any, Protocol, cast
 
-from ovid_core.agent_build import AgentBuildContext, AgentConstructionDiagnostics, build_agent_context, diagnostics
+from ovid_core.agent_build import AgentConstructionDiagnostics, build_agent_context, diagnostics
+from ovid_core.agent_definition import AgentDefinition as AgentDefinition
+from ovid_core.agent_definition import AgentModelSelector as AgentModelSelector
+from ovid_core.agent_definition import PreparedAgentDefinition as PreparedAgentDefinition
 from ovid_core.capabilities.base import AgentExtensionSource, BaseCapability
 from ovid_core.config.models import OvidConfig
 from ovid_core.credentials.resolvers import CredentialResolver, ProviderAPIKeyResolver
 from ovid_core.errors import ModelResolutionError
-from ovid_core.hooks.base import BaseToolHook
 from ovid_core.mcp.capability import create_mcp_capability
 from ovid_core.messages.models import AgentMessage
-from ovid_core.observability import ObservabilityConfig
-from ovid_core.policy import AgentRunPolicy
 from ovid_core.routing.factory import ModelFactory
-from ovid_core.routing.models import ModelRef, ModelRouteRef, ResolvedModel
+from ovid_core.routing.models import ResolvedModel
 from ovid_core.routing.router import ModelRouter
 from ovid_core.runtime.events import AgentEvent
 from ovid_core.runtime.identifiers import ConversationId, RunId
 from ovid_core.runtime.results import RunResult
-from ovid_core.services import AgentServices
-from ovid_core.tools.base import BaseToolset
-from ovid_core.tools.models import ToolApproval
 from ovid_core.usage.tracking import UsageTracker
-
-
-type AgentModelSelector = ModelRef | ModelRouteRef
-
-
-@dataclass(frozen=True, slots=True)
-class AgentDefinition[Deps, Output]:
-    model: AgentModelSelector
-    deps_type: type[Deps]
-    output_type: type[Output]
-    instructions: tuple[str, ...] = ()
-    capabilities: tuple[BaseCapability[Deps], ...] = ()
-    toolsets: tuple[BaseToolset[Deps], ...] = ()
-    tool_approval: ToolApproval | None = None
-    hooks: tuple[BaseToolHook[Deps], ...] = ()
-    policy: AgentRunPolicy = AgentRunPolicy()
-    observability: ObservabilityConfig = ObservabilityConfig()
-    services: AgentServices = AgentServices()
-
-
-@dataclass(frozen=True, slots=True)
-class PreparedAgentDefinition[Deps, Output]:
-    definition: AgentDefinition[Deps, Output]
-    context: AgentBuildContext
-    _resolved: ResolvedModel
-
-    def with_instructions(self, instructions: tuple[str, ...]) -> Self:
-        return replace(self, definition=replace(self.definition, instructions=instructions))
 
 
 class AgentStream[Output](AsyncIterator[AgentEvent], Protocol):
@@ -244,6 +213,34 @@ class AgentFactory:
         )
 
         return PreparedAgentDefinition(definition=effective_definition, context=context, _resolved=resolved)
+
+    def extend_prepared[Deps, Output](
+        self,
+        prepared: PreparedAgentDefinition[Deps, Output],
+        capabilities: tuple[BaseCapability[Deps], ...],
+    ) -> PreparedAgentDefinition[Deps, Output]:
+        if not capabilities:
+            return prepared
+
+        definition = _bind_definition(
+            replace(
+                prepared.definition,
+                capabilities=(*prepared.definition.capabilities, *capabilities),
+            )
+        )
+        sources: tuple[AgentExtensionSource, ...] = (
+            *(descriptor.source for descriptor in prepared.context.capabilities),
+            *('caller' for _ in capabilities),
+        )
+        context = build_agent_context(
+            resolved=prepared._resolved,
+            capabilities=tuple(zip(definition.capabilities, sources, strict=True)),
+            direct_toolsets=definition.toolsets,
+            tool_approval=definition.tool_approval,
+            services=definition.services,
+        )
+
+        return PreparedAgentDefinition(definition=definition, context=context, _resolved=prepared._resolved)
 
     def build_prepared[Deps, Output](
         self,

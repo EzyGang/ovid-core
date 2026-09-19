@@ -4,15 +4,17 @@ from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from typing import Never
 
 from pydantic_ai import Agent
+from pydantic_ai.exceptions import UsageLimitExceeded
 from pydantic_ai.usage import UsageLimits
 
 from ovid_core.adapters.pydantic_ai._agent_errors import normalize_run_error
 from ovid_core.adapters.pydantic_ai._agent_stream import PydanticAIStream
+from ovid_core.adapters.pydantic_ai._provider_errors import is_context_window_error
 from ovid_core.adapters.pydantic_ai._usage_tracking import RunUsageRecorder, UsageTrackingCapability
 from ovid_core.adapters.pydantic_ai.messages import message_to_pydantic
 from ovid_core.adapters.pydantic_ai.results import result_from_pydantic
 from ovid_core.agents import AgentRuntime, AgentStream
-from ovid_core.errors import CredentialError
+from ovid_core.errors import ContextWindowError, CredentialError
 from ovid_core.messages.models import AgentMessage
 from ovid_core.policy import AgentRunPolicy
 from ovid_core.runtime.identifiers import ConversationId, RunId
@@ -152,6 +154,10 @@ def _usage_limits(policy: AgentRunPolicy) -> UsageLimits:
 
 
 def _raise_normalized(error: Exception) -> Never:
+    input_limit_exceeded = isinstance(error, UsageLimitExceeded) and 'per_request_input_tokens_limit' in str(error)
+    if input_limit_exceeded or is_context_window_error(error):
+        raise ContextWindowError('Model context window is full. Compact the conversation or start a new one') from error
+
     normalized = normalize_run_error(error)
     if normalized is error:
         raise error

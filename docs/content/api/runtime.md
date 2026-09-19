@@ -9,6 +9,7 @@ Import from `ovid_core.messages.models`. `MessagePart` is a Pydantic discriminat
 | `SystemPromptPart` | `content: str` | request |
 | `UserPromptPart` | `content: str` | request |
 | `TextPart` | `content: str` | response |
+| `CompactionPart` | optional readable `content`, ID, provider name, and opaque JSON provider details | response |
 | `ToolCallPart` | non-empty `tool_name`, `arguments`, non-empty `tool_call_id` | response |
 | `ToolReturnPart` | non-empty `tool_name`, JSON `content`, non-empty `tool_call_id`, `outcome='success'` | request |
 | `CapabilityLoadCallPart` | non-empty `capability_id`, non-empty `tool_call_id` | response |
@@ -29,6 +30,7 @@ Import from `ovid_core.messages.models`. `MessagePart` is a Pydantic discriminat
 | `request_usage` | `RequestUsage | None` | `None` |
 | `instructions` | `str | None` | `None` |
 | `model_name`, `provider_name`, `provider_response_id` | `str | None` | `None` |
+| `provider_details` | `dict[str, JsonValue] | None` | `None` |
 | `finish_reason` | `stop | length | content_filter | tool_call | error | None` | `None` |
 
 Validation rejects parts for the other role. Request messages cannot contain `request_usage`. Response messages must contain it.
@@ -54,7 +56,7 @@ Import from `ovid_core.runtime.events`. Every event extends `EventIdentity` and 
 | `TextDeltaEvent` | `text_delta` | `content` |
 | `ToolCallEvent` | `tool_call` | `tool_name`, `arguments`, `tool_call_id` |
 | `ToolResultEvent` | `tool_result` | `tool_name`, JSON `content`, `tool_call_id`, `outcome` |
-| `UsageUpdateEvent` | `usage_update` | `usage`, `is_final=False` |
+| `UsageUpdateEvent` | `usage_update` | aggregate `usage`, optional latest `request_usage`, `is_final=False` |
 | `RunCompletedEvent` | `run_completed` | final `usage` |
 | `RunFailedEvent` | `run_failed` | non-empty `error_type`, non-empty `message` |
 
@@ -89,6 +91,7 @@ Ovid Core rejects metadata keys that identify secret data. This check includes n
 | --- | --- | --- |
 | `output` | `Output` | required |
 | `messages` | `tuple[AgentMessage, ...]` | required |
+| `history` | `tuple[AgentMessage, ...]` | `()` |
 | `usage` | `Usage` | required |
 | `run_id` | `RunId` | required |
 | `conversation_id` | `ConversationId` | required |
@@ -96,8 +99,11 @@ Ovid Core rejects metadata keys that identify secret data. This check includes n
 
 Validation enforces three invariants:
 
-1. Any message identity present must equal the result identity.
-2. Result usage must equal normalized response-message request usage plus the result's tool-call count.
-3. Metadata keys must be unique and must not identify secrets.
+1. Any current-run message identity present must equal the result identity.
+2. Current-run messages must end a non-empty active history.
+3. Result usage must equal normalized current-run response usage plus the result's tool-call count.
+4. Metadata keys must be unique and must not identify secrets.
+
+`messages` is the current run delta. `history` is the effective model history after provider compaction or history processing.
 
 A result contains only the current run's usage. A parent `UsageTracker` may separately contain aggregate nested usage.

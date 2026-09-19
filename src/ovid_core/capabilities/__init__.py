@@ -2,6 +2,8 @@ from ovid_core.capabilities.base import AgentCapabilityDescriptor as AgentCapabi
 from ovid_core.capabilities.base import BaseCapability as BaseCapability
 from ovid_core.capabilities.base import CapabilityContributions as CapabilityContributions
 from ovid_core.capabilities.base import CapabilityModelSettings as CapabilityModelSettings
+from ovid_core.capabilities.history import HistoryProcessorCapability as HistoryProcessorCapability
+from ovid_core.capabilities.history import MessageHistoryProcessor as MessageHistoryProcessor
 from ovid_core.capabilities.integrations import (
     AnthropicCompactionCapabilityConfig as AnthropicCompactionCapabilityConfig,
 )

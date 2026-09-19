@@ -25,6 +25,7 @@ class ResultMetadataEntry(BaseModel):
 class RunResult[Output](BaseModel):
     output: Output
     messages: tuple[AgentMessage, ...]
+    history: tuple[AgentMessage, ...] = ()
     usage: Usage
     run_id: RunId
     conversation_id: ConversationId
@@ -37,6 +38,9 @@ class RunResult[Output](BaseModel):
                 raise ValueError('message run_id must match result run_id')
             if message.conversation_id is not None and message.conversation_id != self.conversation_id:
                 raise ValueError('message conversation_id must match result conversation_id')
+
+        if self.history and self.messages and self.history[-len(self.messages) :] != self.messages:
+            raise ValueError('result messages must end the active history')
 
         request_usage = (
             message.request_usage

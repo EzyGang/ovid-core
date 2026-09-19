@@ -143,6 +143,8 @@ PluginRegistrar.select_capability_factories
 parameters_json_schema
 dynamic
 _.with_instructions
+_.with_policy
+_.extend_prepared
 credential
 configured
 input

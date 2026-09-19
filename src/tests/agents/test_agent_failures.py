@@ -1,13 +1,18 @@
 import asyncio
 from collections.abc import AsyncIterator
+from dataclasses import replace
 from typing import Any, cast
 
 import pytest
 from pydantic import ValidationError
-from pydantic_ai.messages import AgentStreamEvent, PartStartEvent
+from pydantic_ai.exceptions import ModelHTTPError
+from pydantic_ai.messages import AgentStreamEvent, ModelMessage, ModelResponse, PartStartEvent
 from pydantic_ai.messages import ToolCallPart as PydanticToolCallPart
-from pydantic_ai.models.function import FunctionModel
+from pydantic_ai.models import ModelRequestParameters
+from pydantic_ai.models.function import AgentInfo, FunctionModel
 from pydantic_ai.models.test import TestModel
+from pydantic_ai.settings import ModelSettings
+from pydantic_ai.usage import RequestUsage
 
 import tests.support.agent_consumer as consumer
 from ovid_core import (
@@ -18,6 +23,7 @@ from ovid_core import (
     AgentStream,
     AgentTimeoutError,
     AgentUsageLimits,
+    ContextWindowError,
     ExtensionCollisionError,
     OvidAgent,
     UsageLimitError,
@@ -70,6 +76,42 @@ async def test_run_cancellation_timeout_limits_and_failures_are_stable() -> None
     )
     with pytest.raises(UsageLimitError, match='Agent usage limit exceeded'):
         await limited_agent.run('Add.', deps=AgentDependencies(prefix='limited'))
+
+    class CountedModel(TestModel):
+        async def count_tokens(
+            self,
+            messages: list[ModelMessage],
+            model_settings: ModelSettings | None,
+            model_request_parameters: ModelRequestParameters,
+        ) -> RequestUsage:
+            del messages, model_settings, model_request_parameters
+            return RequestUsage(input_tokens=2)
+
+    context_agent = await agent_factory({'primary': CountedModel()}).build(
+        replace(
+            consumer.text_definition(),
+            policy=AgentRunPolicy(
+                limits=AgentUsageLimits(per_request_input_tokens=1, count_tokens_before_request=True)
+            ),
+        )
+    )
+    with pytest.raises(ContextWindowError, match='Compact the conversation'):
+        await context_agent.run('Too large.', deps=AgentDependencies(prefix='context'))
+
+    def overflow(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        del messages, info
+        raise ModelHTTPError(
+            400,
+            'overflow',
+            {'error': {'code': 'context_length_exceeded', 'message': 'private prompt detail'}},
+        )
+
+    overflow_agent = await agent_factory({'primary': FunctionModel(overflow, model_name='overflow')}).build(
+        consumer.text_definition()
+    )
+    with pytest.raises(ContextWindowError) as context_error:
+        await overflow_agent.run('Overflow.', deps=AgentDependencies(prefix='context'))
+    assert 'private prompt detail' not in str(context_error.value)
 
     failing_factory = agent_factory({'primary': FunctionModel(failing_request, model_name='failing')})
     failing_agent = await failing_factory.build(consumer.waiting_definition(tool=WaitTool()))

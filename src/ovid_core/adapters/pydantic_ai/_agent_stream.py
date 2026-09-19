@@ -139,6 +139,14 @@ class PydanticAIStream[Output](AgentStream[Output]):
         if isinstance(event, AgentRunResultEvent):
             result = result_from_pydantic(cast(AgentRunResult[Output], event.result))
             self._result = result
+            request_usage = next(
+                (
+                    message.request_usage
+                    for message in reversed(result.history or result.messages)
+                    if message.role == 'response'
+                ),
+                None,
+            )
 
             return (
                 UsageUpdateEvent(
@@ -146,6 +154,7 @@ class PydanticAIStream[Output](AgentStream[Output]):
                     conversation_id=self._conversation_id,
                     sequence=self._next_sequence(),
                     usage=result.usage,
+                    request_usage=request_usage,
                     is_final=True,
                 ),
                 RunCompletedEvent(

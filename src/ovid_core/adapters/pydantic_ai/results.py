@@ -11,6 +11,7 @@ from ovid_core.runtime.results import ResultMetadataEntry, RunResult
 def result_from_pydantic[Output](value: AgentRunResult[Output]) -> RunResult[Output]:
     try:
         messages = tuple(message_from_pydantic(message) for message in value.new_messages())
+        history = tuple(message_from_pydantic(message) for message in value.all_messages())
         request_usage = tuple(
             message.request_usage
             for message in messages
@@ -20,6 +21,7 @@ def result_from_pydantic[Output](value: AgentRunResult[Output]) -> RunResult[Out
         return RunResult[Output](
             output=value.output,
             messages=messages,
+            history=history,
             usage=usage_from_pydantic(value.usage, request_usage),
             run_id=RunId(value.run_id),
             conversation_id=ConversationId(value.conversation_id),

@@ -46,6 +46,10 @@ class UsageLimitError(AgentRunError):
     pass
 
 
+class ContextWindowError(UsageLimitError):
+    pass
+
+
 class ToolError(OvidCoreError):
     pass
 

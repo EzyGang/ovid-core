@@ -256,7 +256,7 @@ A server request uses this sequence:
 4. The store loads normalized history.
 5. The dependency factory makes request dependencies.
 6. The agent uses the history and dependencies.
-7. The store appends the new messages.
+7. The store appends new messages or commits the effective compacted history.
 8. The transport sends Ovid responses or events.
 
 Authorization occurs before history access and dependency construction.

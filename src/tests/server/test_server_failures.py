@@ -9,8 +9,9 @@ from pydantic import ValidationError
 from pytest_mock import MockerFixture
 from starlette.applications import Starlette
 
-from ovid_core import PersistenceError, ServerConstructionError
+from ovid_core import ContextWindowError, PersistenceError, ServerConstructionError
 from ovid_core.server import AuthorizationResult, RequestContext, ServerConfig, create_agent_app, serve
+from ovid_core.server.errors import _server_error_from_exception
 from ovid_core.server.runtime import _AgentServerRuntime
 from tests.server.server_helpers import allow, build_registration, server_client
 
@@ -63,6 +64,13 @@ async def test_server_contract_validation_and_optional_dependency_failures(mocke
     mocker.patch.dict(sys.modules, {'ovid_core.adapters.starlette.app': None})
     with pytest.raises(ServerConstructionError, match='server extra'):
         create_agent_app(agents=(registration,), authorize=allow)
+
+
+def test_server_reports_context_limit_as_recoverable_code() -> None:
+    error = _server_error_from_exception(ContextWindowError('Context is full'))
+
+    assert error.code == 'context_window_exceeded'
+    assert error.message == 'Context is full'
 
 
 async def test_server_masks_persistence_failures(mocker: MockerFixture) -> None:

@@ -88,7 +88,8 @@ print(result.conversation_id)
 Pydantic AI performs the provider request and agent loop. Ovid Core normalizes the outcome into `RunResult[str]`:
 
 - `output` contains the validated output.
-- `messages` contain stable Ovid conversation values.
+- `messages` contain stable Ovid values produced by this run.
+- `history` contains the effective model history after history processing.
 - `usage` contains all reported model requests in this run.
 - `run_id` and `conversation_id` identify the run and conversation.
 - `metadata` contains JSON-compatible values. Ovid Core rejects secret-related metadata keys.

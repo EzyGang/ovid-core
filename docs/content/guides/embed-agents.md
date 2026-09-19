@@ -226,7 +226,9 @@ AG-UI requires agents from `DefaultAgentCompiler`. Use native HTTP/SSE for a run
 
 ## Persistence choices
 
-`ConversationStore` intentionally has only `load` and `append`. That makes SQLite, PostgreSQL, object storage, event logs, and encrypted stores application choices.
+`ConversationStore` provides `load` and `append`. `ConversationHistoryStore` adds `commit` for stores that preserve compacted active history.
+
+This keeps SQLite, PostgreSQL, object storage, event logs, and encrypted stores as application choices.
 
 A durable store should decide:
 
@@ -235,7 +237,7 @@ A durable store should decide:
 - Retention and truncation.
 - Tenant separation.
 - Storage encryption.
-- Authorization outside the server load and append operations.
+- Authorization outside the server load, append, and commit operations.
 - Codec-version migration.
 
 Store the output from `MessageCodec.encode(message)`. Do not make a second normalized schema.

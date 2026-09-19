@@ -64,15 +64,22 @@ class OpenAICompactionCapabilityConfig(BaseModel):
     stateless: bool | None = None
     token_threshold: int | None = Field(default=None, ge=1)
     message_count_threshold: int | None = Field(default=None, ge=1)
+    estimated_token_threshold: int | None = Field(default=None, ge=1)
 
     @model_validator(mode='after')
     def validate_mode(self) -> Self:
-        if self.stateless is True and self.token_threshold is not None:
+        if self.stateless and self.token_threshold is not None:
             raise ValueError('stateless OpenAI compaction cannot use token_threshold')
-        if self.stateless is False and self.message_count_threshold is not None:
-            raise ValueError('stateful OpenAI compaction cannot use message_count_threshold')
-        if self.stateless is True and self.message_count_threshold is None:
-            raise ValueError('stateless OpenAI compaction requires message_count_threshold')
+        if (
+            self.stateless is not None
+            and not self.stateless
+            and (self.message_count_threshold is not None or self.estimated_token_threshold is not None)
+        ):
+            raise ValueError('stateful OpenAI compaction cannot use stateless thresholds')
+        if self.message_count_threshold is not None and self.estimated_token_threshold is not None:
+            raise ValueError('stateless OpenAI compaction accepts one threshold')
+        if self.stateless and self.message_count_threshold is None and self.estimated_token_threshold is None:
+            raise ValueError('stateless OpenAI compaction requires a threshold')
 
         return self
 

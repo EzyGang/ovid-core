@@ -1,3 +1,4 @@
+import json
 from typing import Any, cast
 
 from fastmcp.client.transports import StdioTransport
@@ -16,9 +17,12 @@ from pydantic_ai.mcp import MCPToolset
 from pydantic_ai.tools import ToolDefinition
 from pydantic_ai.toolsets import AbstractToolset
 from pydantic_ai_harness.skills import Skills
+from pydantic_core import to_jsonable_python
 
 from ovid_core.adapters.pydantic_ai.capabilities import _pydantic_ai_capability
+from ovid_core.adapters.pydantic_ai.history import HistoryProcessorAdapter
 from ovid_core.capabilities.base import BaseCapability
+from ovid_core.capabilities.history import HistoryProcessorCapability
 from ovid_core.capabilities.integrations import (
     AnthropicCompactionCapabilityConfig,
     ImageGenerationCapabilityConfig,
@@ -41,6 +45,8 @@ def adapt_integration_capability[Deps](source: BaseCapability[Deps]) -> Abstract
     if capability is not None:
         return capability
 
+    if isinstance(source, HistoryProcessorCapability):
+        return HistoryProcessorAdapter(source)
     if isinstance(source, ProviderCapability):
         return cast(AbstractCapability[Deps], _adapt_provider_capability(source))
     if isinstance(source, MCPServerCapability):
@@ -112,10 +118,19 @@ def _openai_compaction(config: OpenAICompactionCapabilityConfig) -> AbstractCapa
     except ImportError:
         raise AgentConstructionError('OpenAI compaction requires the OpenAI provider integration') from None
 
+    estimated_threshold = config.estimated_token_threshold
     return OpenAICompaction(
         stateless=config.stateless,
         token_threshold=config.token_threshold,
         message_count_threshold=config.message_count_threshold,
+        trigger=(
+            lambda messages: (
+                len(json.dumps(to_jsonable_python(messages), ensure_ascii=False, separators=(',', ':')).encode()) // 4
+                > estimated_threshold
+            )
+        )
+        if estimated_threshold is not None
+        else None,
     )
 
 

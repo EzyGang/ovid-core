@@ -20,6 +20,7 @@ class ModelCapabilities(BaseModel):
     json_object_output: bool
     image_output: bool
     thinking: bool
+    input_token_counting: bool = False
 
 
 class KnownModel(BaseModel):

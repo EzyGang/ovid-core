@@ -172,4 +172,5 @@ def _capabilities(runtime: Model) -> ModelCapabilities:
         json_object_output=bool(profile.get('supports_json_object_output', False)),
         image_output=bool(profile.get('supports_image_output', False)),
         thinking=bool(profile.get('supports_thinking', False)),
+        input_token_counting=type(runtime).count_tokens is not Model.count_tokens,
     )

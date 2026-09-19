@@ -1,6 +1,13 @@
 import asyncio
 
-from ovid_core.errors import AgentRunError, AuthenticationError, CredentialError, OvidCoreError, TransportError
+from ovid_core.errors import (
+    AgentRunError,
+    AuthenticationError,
+    ContextWindowError,
+    CredentialError,
+    OvidCoreError,
+    TransportError,
+)
 from ovid_core.server.models import ServerErrorResponse
 
 
@@ -41,6 +48,9 @@ def _server_error_from_exception(error: BaseException) -> ServerErrorResponse:
 
     if isinstance(error, TimeoutError):
         return ServerErrorResponse(code='timeout', message='Request timed out')
+
+    if isinstance(error, ContextWindowError):
+        return ServerErrorResponse(code='context_window_exceeded', message=str(error))
 
     if isinstance(error, _CommandExecutionError):
         return ServerErrorResponse(code='command_failed', message='Command execution failed')

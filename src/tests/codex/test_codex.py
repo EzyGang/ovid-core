@@ -109,6 +109,7 @@ async def test_subscription_factory_runs_stateless_responses_and_retries_unautho
     assert options.value == 'codex-subscription'
     assert tuple(model.value for model in options.models) == ('gpt-5-codex',)
     assert handle.context_window == 272_000
+    assert handle.capabilities.input_token_counting
     assert cached_handle.context_window == 272_000
     assert result.output == 'subscription works'
     assert repeated.output == 'subscription works'

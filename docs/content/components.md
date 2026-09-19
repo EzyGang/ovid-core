@@ -157,9 +157,9 @@ Select the smallest extension type that satisfies the requirement:
 
 ### Caller-owned history
 
-Pass `RunResult.messages` to the next run.
+Pass `RunResult.history` to the next run when it is non-empty. Otherwise, append `RunResult.messages` to caller-owned history.
 
-Use this option for a command, notebook, or process that keeps history in memory.
+This preserves history replacements produced by provider compaction or history processing.
 
 ### Application storage
 
@@ -171,7 +171,7 @@ Use `MessageCodec` for stored messages. Your application selects the database, t
 
 Give a store to an Ovid server factory.
 
-The server loads history before a run. It appends the new messages after a successful run.
+The server loads history before a run. It commits the effective history when the store supports `ConversationHistoryStore`.
 
 ## Transport options
 

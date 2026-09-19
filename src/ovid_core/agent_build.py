@@ -30,6 +30,8 @@ class AgentBuildContext(BaseModel):
     provider: str = Field(min_length=1)
     model: str = Field(min_length=1)
     selected_model: str = Field(min_length=1)
+    context_window: PositiveInt | None = None
+    input_token_counting: bool = False
     capabilities: tuple[AgentCapabilityDescriptor, ...]
     tools: tuple[AgentToolDescriptor, ...]
     toolsets: tuple[AgentToolsetDescriptor, ...]
@@ -80,6 +82,8 @@ def build_agent_context[Deps](
         provider=resolved.provider,
         model=resolved.model,
         selected_model=resolved.selected_model,
+        context_window=resolved.handle.context_window,
+        input_token_counting=resolved.handle.capabilities.input_token_counting,
         capabilities=capability_descriptors,
         tools=tools,
         toolsets=toolsets,

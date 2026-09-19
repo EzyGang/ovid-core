@@ -9,7 +9,7 @@ from pydantic_core import to_jsonable_python
 
 from ovid_core.agents import AgentStream, OvidAgent
 from ovid_core.messages.models import AgentMessage
-from ovid_core.persistence import ConversationStore
+from ovid_core.persistence import ConversationHistoryStore, ConversationStore
 from ovid_core.runtime.events import AgentEvent, RunCompletedEvent, RunFailedEvent
 from ovid_core.runtime.identifiers import ConversationId, RunId
 from ovid_core.runtime.results import RunResult
@@ -79,26 +79,39 @@ class _AgentServerRuntime:
 
                 result = _response_from_result(stream.result)
 
-        except (Exception, asyncio.CancelledError) as error:
-            if isinstance(error, asyncio.CancelledError) and not operation.cancelled:
+        except asyncio.CancelledError as error:
+            if not operation.cancelled:
                 raise
-            operation.terminal = True
-            failure = _server_error_from_exception(error)
-            if last_event is not None and not isinstance(last_event, RunFailedEvent):
-                await send(
-                    RunFailedEvent(
-                        run_id=last_event.run_id,
-                        conversation_id=last_event.conversation_id,
-                        sequence=last_event.sequence + 1,
-                        error_type='CancelledError' if failure.code == 'run_cancelled' else type(error).__name__,
-                        message=failure.message,
-                    )
-                )
-            await send(failure)
+            await self._send_failure(error, last_event=last_event, operation=operation, send=send)
+            return
+        except Exception as error:
+            await self._send_failure(error, last_event=last_event, operation=operation, send=send)
             return
         if completion is not None:
             await send(completion)
         await send(result)
+
+    async def _send_failure(
+        self,
+        error: BaseException,
+        *,
+        last_event: AgentEvent | None,
+        operation: _ActiveRun,
+        send: Callable[[AgentEvent | AgentRunResponse | ServerErrorResponse], Awaitable[None]],
+    ) -> None:
+        operation.terminal = True
+        failure = _server_error_from_exception(error)
+        if last_event is not None and not isinstance(last_event, RunFailedEvent):
+            await send(
+                RunFailedEvent(
+                    run_id=last_event.run_id,
+                    conversation_id=last_event.conversation_id,
+                    sequence=last_event.sequence + 1,
+                    error_type='CancelledError' if failure.code == 'run_cancelled' else type(error).__name__,
+                    message=failure.message,
+                )
+            )
+        await send(failure)
 
     @asynccontextmanager
     async def stream(
@@ -175,7 +188,9 @@ class _AgentServerRuntime:
         await self._active_runs.close()
 
     async def persist(self, result: RunResult[Any]) -> None:
-        if self._store is not None:
+        if isinstance(self._store, ConversationHistoryStore) and result.history:
+            await self._store.commit(result.conversation_id, result.messages, result.history)
+        elif self._store is not None:
             await self._store.append(result.conversation_id, result.messages)
 
     def agent(self, agent_id: str) -> OvidAgent[Any, Any]:

@@ -21,6 +21,7 @@ from ovid_core.errors import AgentTimeoutError as AgentTimeoutError
 from ovid_core.errors import AuthenticationError as AuthenticationError
 from ovid_core.errors import CodexAuthError as CodexAuthError
 from ovid_core.errors import ConfigurationError as ConfigurationError
+from ovid_core.errors import ContextWindowError as ContextWindowError
 from ovid_core.errors import CredentialError as CredentialError
 from ovid_core.errors import ExtensionCollisionError as ExtensionCollisionError
 from ovid_core.errors import ModelResolutionError as ModelResolutionError
@@ -38,6 +39,7 @@ from ovid_core.errors import UsageLimitError as UsageLimitError
 from ovid_core.models import BaseModel as BaseModel
 from ovid_core.models import BaseRootModel as BaseRootModel
 from ovid_core.observability import ObservabilityConfig as ObservabilityConfig
+from ovid_core.persistence import ConversationHistoryStore as ConversationHistoryStore
 from ovid_core.persistence import ConversationStore as ConversationStore
 from ovid_core.persistence import InMemoryConversationStore as InMemoryConversationStore
 from ovid_core.persistence import MessageCodec as MessageCodec

@@ -1,5 +1,6 @@
 from pydantic import JsonValue, TypeAdapter, ValidationError
 from pydantic_ai._deferred_capabilities import LoadCapabilityReturn as PydanticCapabilityLoadReturn
+from pydantic_ai.messages import CompactionPart as PydanticCompactionPart
 from pydantic_ai.messages import LoadCapabilityCallPart as PydanticCapabilityLoadCallPart
 from pydantic_ai.messages import LoadCapabilityReturnPart as PydanticCapabilityLoadReturnPart
 from pydantic_ai.messages import ModelMessage, ModelRequest, ModelRequestPart, ModelResponse, ModelResponsePart
@@ -10,6 +11,7 @@ from pydantic_ai.messages import ToolCallPart as PydanticToolCallPart
 from pydantic_ai.messages import ToolReturnPart as PydanticToolReturnPart
 from pydantic_ai.messages import UserPromptPart as PydanticUserPromptPart
 from pydantic_ai.usage import RequestUsage as PydanticRequestUsage
+from pydantic_core import to_jsonable_python
 
 from ovid_core.adapters.pydantic_ai.usage import request_usage_from_pydantic
 from ovid_core.errors import ProviderError
@@ -17,6 +19,7 @@ from ovid_core.messages.models import (
     AgentMessage,
     CapabilityLoadCallPart,
     CapabilityLoadReturnPart,
+    CompactionPart,
     MessagePart,
     RetryPromptPart,
     SystemPromptPart,
@@ -57,6 +60,11 @@ def message_from_pydantic(value: ModelMessage) -> AgentMessage:
             model_name=value.model_name,
             provider_name=value.provider_name,
             provider_response_id=value.provider_response_id,
+            provider_details=(
+                {'compaction': True}
+                if value.provider_details and bool(value.provider_details.get('compaction'))
+                else None
+            ),
             finish_reason=value.finish_reason,
         )
     except (TypeError, ValidationError, ValueError) as error:
@@ -85,6 +93,7 @@ def message_to_pydantic(value: AgentMessage) -> ModelMessage:
             timestamp=value.timestamp,
             provider_name=value.provider_name,
             provider_response_id=value.provider_response_id,
+            provider_details=value.provider_details,
             finish_reason=value.finish_reason,
             run_id=str(value.run_id) if value.run_id is not None else None,
             conversation_id=str(value.conversation_id) if value.conversation_id is not None else None,
@@ -122,6 +131,13 @@ def _request_part_from_pydantic(value: object) -> MessagePart:
 def _response_part_from_pydantic(value: object) -> MessagePart:
     if isinstance(value, PydanticTextPart):
         return TextPart(content=value.content)
+    if isinstance(value, PydanticCompactionPart):
+        return CompactionPart(
+            content=value.content,
+            id=value.id,
+            provider_name=value.provider_name,
+            provider_details=_JSON_VALUE_ADAPTER.validate_python(to_jsonable_python(value.provider_details)),
+        )
     if isinstance(value, PydanticCapabilityLoadCallPart):
         if value.capability_id is None:
             raise ValueError('capability load call does not contain an ID')
@@ -159,6 +175,13 @@ def _request_part_to_pydantic(value: MessagePart) -> ModelRequestPart:
 def _response_part_to_pydantic(value: MessagePart) -> ModelResponsePart:
     if isinstance(value, TextPart):
         return PydanticTextPart(value.content)
+    if isinstance(value, CompactionPart):
+        return PydanticCompactionPart(
+            content=value.content,
+            id=value.id,
+            provider_name=value.provider_name,
+            provider_details=value.provider_details,
+        )
     if isinstance(value, CapabilityLoadCallPart):
         return PydanticCapabilityLoadCallPart(
             args={'id': value.capability_id},

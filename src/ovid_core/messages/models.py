@@ -23,6 +23,14 @@ class TextPart(BaseModel):
     content: str
 
 
+class CompactionPart(BaseModel):
+    kind: Literal['compaction'] = 'compaction'
+    content: str | None = None
+    id: str | None = None
+    provider_name: str | None = None
+    provider_details: dict[str, JsonValue] | None = None
+
+
 type ToolArguments = str | dict[str, JsonValue] | None
 
 
@@ -71,6 +79,7 @@ MessagePart = Annotated[
     SystemPromptPart
     | UserPromptPart
     | TextPart
+    | CompactionPart
     | ToolCallPart
     | ToolReturnPart
     | CapabilityLoadCallPart
@@ -82,7 +91,7 @@ MessagePart = Annotated[
 _REQUEST_PART_KINDS = frozenset(
     {'system_prompt', 'user_prompt', 'tool_return', 'capability_load_return', 'retry_prompt'}
 )
-_RESPONSE_PART_KINDS = frozenset({'text', 'tool_call', 'capability_load_call'})
+_RESPONSE_PART_KINDS = frozenset({'text', 'compaction', 'tool_call', 'capability_load_call'})
 
 
 class AgentMessage(BaseModel):
@@ -96,6 +105,7 @@ class AgentMessage(BaseModel):
     model_name: str | None = None
     provider_name: str | None = None
     provider_response_id: str | None = None
+    provider_details: dict[str, JsonValue] | None = None
     finish_reason: Literal['stop', 'length', 'content_filter', 'tool_call', 'error'] | None = None
 
     @model_validator(mode='after')

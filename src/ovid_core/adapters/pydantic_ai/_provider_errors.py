@@ -23,6 +23,33 @@ def provider_failure_kind(error: BaseException) -> ProviderFailureKind:
     return ProviderFailureKind.UNKNOWN
 
 
+def is_context_window_error(error: BaseException) -> bool:
+    if not isinstance(error, ModelHTTPError) or error.status_code not in (400, 413):
+        return False
+
+    pending = [error.body]
+    values: list[str] = []
+    while pending:
+        value = pending.pop()
+        if isinstance(value, dict):
+            pending.extend(value.get(key) for key in ('error', 'code', 'type', 'message') if key in value)
+        elif isinstance(value, str):
+            values.append(value.casefold())
+    detail = ' '.join(values)
+
+    return any(
+        marker in detail
+        for marker in (
+            'context_length_exceeded',
+            'context_window_exceeded',
+            'maximum context length',
+            'prompt is too long',
+            'too many tokens',
+            'input token count',
+        )
+    )
+
+
 def should_fallback(error: Exception) -> bool:
     return provider_failure_kind(error) in {
         ProviderFailureKind.RATE_LIMIT,
