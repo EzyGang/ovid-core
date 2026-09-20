@@ -16,11 +16,11 @@ from pydantic_ai.capabilities import (
 from pydantic_ai.mcp import MCPToolset
 from pydantic_ai.tools import ToolDefinition
 from pydantic_ai.toolsets import AbstractToolset
-from pydantic_ai_harness.skills import Skills
 from pydantic_core import to_jsonable_python
 
 from ovid_core.adapters.pydantic_ai.capabilities import _pydantic_ai_capability
 from ovid_core.adapters.pydantic_ai.history import HistoryProcessorAdapter
+from ovid_core.adapters.pydantic_ai.skills import adapt_skills_capability
 from ovid_core.capabilities.base import BaseCapability
 from ovid_core.capabilities.history import HistoryProcessorCapability
 from ovid_core.capabilities.integrations import (
@@ -53,7 +53,7 @@ def adapt_integration_capability[Deps](source: BaseCapability[Deps]) -> Abstract
     if isinstance(source, MCPServerCapability):
         return cast(AbstractCapability[Deps], _adapt_mcp_capability(source))
     if isinstance(source, SkillsCapability):
-        return cast(AbstractCapability[Deps], _adapt_skills_capability(source))
+        return cast(AbstractCapability[Deps], adapt_skills_capability(source))
 
     return None
 
@@ -146,16 +146,6 @@ def _anthropic_compaction(config: AnthropicCompactionCapabilityConfig) -> Abstra
         instructions=config.instructions,
         pause_after_compaction=config.pause_after_compaction,
     )
-
-
-def _adapt_skills_capability(source: SkillsCapability[Any]) -> AbstractCapability[Any]:
-    try:
-        if source.config.include is not None:
-            return Skills(source.config.directories, include=source.config.include)
-
-        return Skills(source.config.directories, exclude=source.config.exclude)
-    except Exception:
-        raise AgentConstructionError('Agent Skills capability construction failed') from None
 
 
 async def inspect_mcp_server(

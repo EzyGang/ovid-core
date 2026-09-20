@@ -9,6 +9,8 @@ from ovid_core.models import BaseModel
 
 
 class SkillLibraryConfig(BaseModel):
+    """Configures trusted skill libraries from highest to lowest precedence."""
+
     directories: tuple[Path, ...] = Field(min_length=1)
     include: tuple[str, ...] | None = None
     exclude: tuple[str, ...] | None = None

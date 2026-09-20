@@ -23,6 +23,24 @@ def write_skill(directory: Path, name: str, description: str, body: str) -> None
     )
 
 
+def test_skill_library_order_resolves_conflicts_before_selection(tmp_path: Path) -> None:
+    personal = tmp_path / 'personal'
+    project = tmp_path / 'project'
+    write_skill(personal, 'code-review', 'Personal review.', 'Use personal policy.')
+    write_skill(project, 'code-review', 'Project review.', 'Use project policy.')
+    write_skill(project, 'release-notes', 'Write release notes.', 'Summarize changes.')
+    source = SkillsCapability[None](
+        id='layered-skills',
+        config=SkillLibraryConfig(directories=(personal, project)),
+    )
+    leaves: list[Capability[None]] = []
+
+    adapt_capabilities((source,))[0].apply(leaves.append)
+
+    assert [leaf.id for leaf in leaves] == ['code-review', 'release-notes']
+    assert leaves[0].get_instructions() == ['# Skill: code-review\n\nUse personal policy.']
+
+
 def test_skill_libraries_select_validated_deferred_capabilities(tmp_path: Path) -> None:
     write_skill(tmp_path, 'code-review', 'Review code.', 'Inspect correctness.')
     write_skill(tmp_path, 'release-notes', 'Write release notes.', 'Summarize changes.')
@@ -41,6 +59,12 @@ def test_skill_libraries_select_validated_deferred_capabilities(tmp_path: Path) 
         SkillLibraryConfig(directories=(tmp_path,), include=(), exclude=())
     with pytest.raises(ValidationError):
         SkillLibraryConfig(directories=())
+    unknown = SkillsCapability[None](
+        id='unknown-skills',
+        config=SkillLibraryConfig(directories=(tmp_path,), include=('missing',)),
+    )
+    with pytest.raises(AgentConstructionError, match='construction failed'):
+        adapt_capabilities((unknown,))
 
     excluded = SkillsCapability[None](
         id='excluded-skills',
