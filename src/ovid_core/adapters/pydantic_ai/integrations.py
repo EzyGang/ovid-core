@@ -34,9 +34,10 @@ from ovid_core.capabilities.integrations import (
     WebSearchCapabilityConfig,
     XSearchCapabilityConfig,
 )
+from ovid_core.credentials.resolvers import CredentialResolver
 from ovid_core.errors import AgentConstructionError
-from ovid_core.mcp.capability import MCPServerCapability
-from ovid_core.mcp.models import MCPHTTPTransportConfig
+from ovid_core.mcp.capability import MCPServerCapability, create_mcp_capability
+from ovid_core.mcp.models import MCPHTTPTransportConfig, MCPServerConfig, MCPServerInspection
 from ovid_core.skills import SkillsCapability
 
 
@@ -157,27 +158,28 @@ def _adapt_skills_capability(source: SkillsCapability[Any]) -> AbstractCapabilit
         raise AgentConstructionError('Agent Skills capability construction failed') from None
 
 
+async def inspect_mcp_server(
+    config: MCPServerConfig,
+    *,
+    resolver: CredentialResolver | None = None,
+) -> MCPServerInspection:
+    source = await create_mcp_capability(config, resolver=resolver)
+    try:
+        toolset = _mcp_toolset(source)
+        async with toolset:
+            discovered = await toolset.list_tools()
+    except Exception:
+        raise AgentConstructionError('MCP server inspection failed') from None
+
+    included = None if config.include_tools is None else frozenset(config.include_tools)
+    names = (tool.name for tool in discovered if included is None or tool.name in included)
+    prefix = '' if config.namespace is None else f'{config.namespace}_'
+    return MCPServerInspection(id=config.id, tools=tuple(f'{prefix}{name}' for name in names))
+
+
 def _adapt_mcp_capability(source: MCPServerCapability[Any]) -> AbstractCapability[Any]:
     try:
-        transport = source.config.transport
-        if isinstance(transport, MCPHTTPTransportConfig):
-            toolset = MCPToolset(
-                str(transport.url),
-                id=source.id,
-                headers=_resolved_values(transport.headers.plain, source._resolved_headers),
-                include_instructions=source.config.include_instructions,
-            )
-        else:
-            stdio = StdioTransport(
-                command=transport.command,
-                args=list(transport.args),
-                env=_resolved_values(transport.environment.plain, source._resolved_environment),
-                cwd=str(transport.cwd) if transport.cwd is not None else None,
-                keep_alive=False,
-            )
-            toolset = MCPToolset(stdio, id=source.id, include_instructions=source.config.include_instructions)
-
-        adapted = _filter_and_namespace(toolset, source)
+        adapted = _filter_and_namespace(_mcp_toolset(source), source)
 
         return Capability(
             id=source.id,
@@ -187,6 +189,26 @@ def _adapt_mcp_capability(source: MCPServerCapability[Any]) -> AbstractCapabilit
         )
     except Exception:
         raise AgentConstructionError('MCP capability construction failed') from None
+
+
+def _mcp_toolset(source: MCPServerCapability[Any]) -> MCPToolset[Any]:
+    transport = source.config.transport
+    if isinstance(transport, MCPHTTPTransportConfig):
+        return MCPToolset(
+            str(transport.url),
+            id=source.id,
+            headers=_resolved_values(transport.headers.plain, source._resolved_headers),
+            include_instructions=source.config.include_instructions,
+        )
+
+    stdio = StdioTransport(
+        command=transport.command,
+        args=list(transport.args),
+        env=_resolved_values(transport.environment.plain, source._resolved_environment),
+        cwd=str(transport.cwd) if transport.cwd is not None else None,
+        keep_alive=False,
+    )
+    return MCPToolset(stdio, id=source.id, include_instructions=source.config.include_instructions)
 
 
 def _filter_and_namespace(

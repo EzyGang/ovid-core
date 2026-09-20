@@ -2,6 +2,7 @@ from ovid_core.adapters.pydantic_ai.agents import DefaultAgentCompiler as Defaul
 from ovid_core.adapters.pydantic_ai.capabilities import pydantic_ai_capability as pydantic_ai_capability
 from ovid_core.adapters.pydantic_ai.codex import CodexSubscriptionModelFactory as CodexSubscriptionModelFactory
 from ovid_core.adapters.pydantic_ai.integrations import adapt_integration_capability as adapt_integration_capability
+from ovid_core.adapters.pydantic_ai.integrations import inspect_mcp_server as inspect_mcp_server
 from ovid_core.adapters.pydantic_ai.messages import message_from_pydantic as message_from_pydantic
 from ovid_core.adapters.pydantic_ai.messages import message_to_pydantic as message_to_pydantic
 from ovid_core.adapters.pydantic_ai.models import DefaultModelFactory as DefaultModelFactory

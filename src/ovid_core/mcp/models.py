@@ -50,3 +50,8 @@ class MCPServerConfig(BaseModel):
     include_instructions: bool = True
     defer_loading: bool = False
     description: str | None = None
+
+
+class MCPServerInspection(BaseModel):
+    id: str = Field(min_length=1)
+    tools: tuple[str, ...]

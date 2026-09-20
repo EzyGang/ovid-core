@@ -12,7 +12,7 @@ from pytest_mock import MockerFixture
 
 import tests.support.integration_consumer as consumer
 from ovid_core import AgentConstructionError, CredentialError
-from ovid_core.adapters.pydantic_ai import adapt_capabilities
+from ovid_core.adapters.pydantic_ai import adapt_capabilities, inspect_mcp_server
 from ovid_core.credentials import EnvironmentCredentialRef, EnvironmentCredentialResolver
 from ovid_core.mcp import (
     MCPHTTPTransportConfig,
@@ -64,6 +64,25 @@ async def test_stdio_mcp_resolves_credentials_filters_namespaces_and_executes() 
     assert 'true' in result.messages[-1].model_dump_json().lower()
     assert 'mcp-secret' not in repr(capability)
     assert 'mcp-secret' not in config.model_dump_json()
+
+
+async def test_mcp_inspection_launches_server_and_reports_effective_tools() -> None:
+    inspection = await inspect_mcp_server(stdio_config(include_tools=('credential_loaded',), environment=MCPValues()))
+
+    assert inspection.id == 'test-mcp'
+    assert inspection.tools == ('server_credential_loaded',)
+
+
+async def test_mcp_inspection_redacts_connection_failures() -> None:
+    config = MCPServerConfig(
+        id='missing',
+        transport=MCPStdioTransportConfig(command='ovid-core-command-that-does-not-exist'),
+    )
+
+    with pytest.raises(AgentConstructionError, match='MCP server inspection failed') as captured:
+        await inspect_mcp_server(config)
+
+    assert 'ovid-core-command-that-does-not-exist' not in repr(captured.value)
 
 
 async def test_stdio_mcp_cancellation_propagates_and_closes_the_transport(tmp_path: Path) -> None:
