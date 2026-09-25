@@ -1,11 +1,10 @@
 from abc import abstractmethod
-from typing import Literal, Protocol, runtime_checkable
+from typing import Protocol, runtime_checkable
 
 from pydantic import ValidationError
 
 from ovid_core.errors import PersistenceError
 from ovid_core.messages.models import AgentMessage
-from ovid_core.models import BaseModel
 from ovid_core.runtime.identifiers import ConversationId
 
 
@@ -28,27 +27,16 @@ class ConversationHistoryStore(ConversationStore, Protocol):
     ) -> None: ...
 
 
-class _EncodedMessage(BaseModel):
-    version: Literal[1, 2, 3] = 3
-    message: AgentMessage
-
-
 class MessageCodec:
-    @property
-    def version(self) -> int:
-        return 3
-
     def encode(self, message: AgentMessage) -> bytes:
-        return _EncodedMessage(message=message).model_dump_json().encode()
+        return message.model_dump_json().encode()
 
     def decode(self, payload: bytes) -> AgentMessage:
         try:
-            encoded = _EncodedMessage.model_validate_json(payload)
+            return AgentMessage.model_validate_json(payload)
         except ValidationError as error:
-            message = 'Conversation message payload is invalid or uses an unsupported codec version'
+            message = 'Conversation message payload is invalid'
             raise PersistenceError(message) from error
-
-        return encoded.message
 
 
 class InMemoryConversationStore:

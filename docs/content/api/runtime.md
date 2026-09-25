@@ -9,7 +9,7 @@ Import from `ovid_core.messages.models`. `MessagePart` is a Pydantic discriminat
 | `SystemPromptPart` | `content: str` | request |
 | `UserPromptPart` | `content: str` | request |
 | `TextPart` | `content: str` | response |
-| `CompactionPart` | optional readable `content`, ID, provider name, and opaque JSON provider details | response |
+| `ThinkingPart` | `content`, optional ID, signature, provider name, and opaque JSON provider details | response |
 | `ToolCallPart` | non-empty `tool_name`, `arguments`, non-empty `tool_call_id` | response |
 | `ToolReturnPart` | non-empty `tool_name`, JSON `content`, non-empty `tool_call_id`, `outcome='success'` | request |
 | `CapabilityLoadCallPart` | non-empty `capability_id`, non-empty `tool_call_id` | response |
@@ -17,6 +17,8 @@ Import from `ovid_core.messages.models`. `MessagePart` is a Pydantic discriminat
 | `RetryPromptPart` | `content`, optional `tool_name`, non-empty `tool_call_id` | request |
 
 `ToolArguments = str | dict[str, JsonValue] | None`. Tool and capability outcomes are one of `success`, `failed`, `denied`, or `interrupted`.
+
+`ThinkingPart` preserves provider reasoning state for replay. User-facing event projections omit it.
 
 ### `AgentMessage`
 

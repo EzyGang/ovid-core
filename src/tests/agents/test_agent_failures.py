@@ -7,6 +7,8 @@ import pytest
 from pydantic import ValidationError
 from pydantic_ai.exceptions import ModelHTTPError
 from pydantic_ai.messages import AgentStreamEvent, ModelMessage, ModelResponse, PartStartEvent
+from pydantic_ai.messages import TextPart as PydanticTextPart
+from pydantic_ai.messages import ThinkingPart as PydanticThinkingPart
 from pydantic_ai.messages import ToolCallPart as PydanticToolCallPart
 from pydantic_ai.models import ModelRequestParameters
 from pydantic_ai.models.function import AgentInfo, FunctionModel
@@ -218,6 +220,11 @@ async def _multiple_response_parts() -> AsyncIterator[AgentStreamEvent]:
     yield PartStartEvent(index=1, part=PydanticToolCallPart('second', {}, 'call-2'))
 
 
+async def _thinking_response_parts() -> AsyncIterator[AgentStreamEvent]:
+    yield PartStartEvent(index=0, part=PydanticThinkingPart('private'))
+    yield PartStartEvent(index=1, part=PydanticTextPart('visible'))
+
+
 @pytest.mark.asyncio
 async def test_multiple_response_parts_share_one_model_request_event() -> None:
     stream = PydanticAIStream[str](
@@ -227,6 +234,19 @@ async def test_multiple_response_parts_share_one_model_request_event() -> None:
     )
 
     assert [event.kind for event in await _collect(stream)] == ['run_started', 'model_request_started']
+
+
+@pytest.mark.asyncio
+async def test_thinking_parts_are_not_projected_to_user_events() -> None:
+    stream = PydanticAIStream[str](
+        events=_thinking_response_parts(),
+        run_id=RUN_ID,
+        conversation_id=CONVERSATION_ID,
+    )
+
+    events = await _collect(stream)
+
+    assert [event.kind for event in events] == ['run_started', 'model_request_started', 'text_delta']
 
 
 async def _collect(stream: AgentStream[str]) -> list[AgentEvent]:

@@ -2,6 +2,7 @@ import pytest
 from pydantic import ValidationError
 from pydantic_ai.messages import ModelMessage, ModelRequest, ModelResponse
 from pydantic_ai.messages import TextPart as PydanticTextPart
+from pydantic_ai.messages import ThinkingPart as PydanticThinkingPart
 from pydantic_ai.messages import UserPromptPart as PydanticUserPromptPart
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 from pydantic_ai.usage import RequestUsage as PydanticRequestUsage
@@ -21,7 +22,16 @@ def test_message_codec_round_trips_normalized_adapter_values() -> None:
     upstream = (
         ModelRequest(parts=(PydanticUserPromptPart('hello'),), conversation_id=str(CONVERSATION_ID)),
         ModelResponse(
-            parts=(PydanticTextPart('answer'),),
+            parts=(
+                PydanticThinkingPart(
+                    'private',
+                    id='thinking-1',
+                    signature='signature',
+                    provider_name='test-provider',
+                    provider_details={'encrypted_content': 'opaque'},
+                ),
+                PydanticTextPart('answer'),
+            ),
             usage=PydanticRequestUsage(input_tokens=4, output_tokens=2),
             model_name='test-model',
             conversation_id=str(CONVERSATION_ID),
@@ -33,21 +43,14 @@ def test_message_codec_round_trips_normalized_adapter_values() -> None:
         payload = codec.encode(normalized)
         restored = message_from_pydantic(message_to_pydantic(codec.decode(payload)))
 
+        assert b'"version"' not in payload
         assert restored == normalized
-        assert b'"version":3' in payload
-        assert codec.decode(payload.replace(b'"version":3', b'"version":1')) == normalized
-        assert codec.decode(payload.replace(b'"version":3', b'"version":2')) == normalized
-
-    assert codec.version == 3
 
 
-def test_message_codec_rejects_invalid_and_unsupported_payloads_safely() -> None:
+def test_message_codec_rejects_invalid_payloads_safely() -> None:
     codec = MessageCodec()
-    message = message_from_pydantic(ModelRequest(parts=(PydanticUserPromptPart('secret-value'),)))
-    unsupported = codec.encode(message).replace(b'"version":3', b'"version":4')
-
-    for payload in (b'{"content":"secret-value"}', unsupported):
-        with pytest.raises(PersistenceError, match='invalid or uses an unsupported') as error:
+    for payload in (b'{"content":"secret-value"}', b'not-json'):
+        with pytest.raises(PersistenceError, match='invalid') as error:
             codec.decode(payload)
 
         assert isinstance(error.value.__cause__, ValidationError)

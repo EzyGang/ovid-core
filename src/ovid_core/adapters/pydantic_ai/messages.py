@@ -7,6 +7,7 @@ from pydantic_ai.messages import ModelMessage, ModelRequest, ModelRequestPart, M
 from pydantic_ai.messages import RetryPromptPart as PydanticRetryPromptPart
 from pydantic_ai.messages import SystemPromptPart as PydanticSystemPromptPart
 from pydantic_ai.messages import TextPart as PydanticTextPart
+from pydantic_ai.messages import ThinkingPart as PydanticThinkingPart
 from pydantic_ai.messages import ToolCallPart as PydanticToolCallPart
 from pydantic_ai.messages import ToolReturnPart as PydanticToolReturnPart
 from pydantic_ai.messages import UserPromptPart as PydanticUserPromptPart
@@ -24,6 +25,7 @@ from ovid_core.messages.models import (
     RetryPromptPart,
     SystemPromptPart,
     TextPart,
+    ThinkingPart,
     ToolCallPart,
     ToolReturnPart,
     UserPromptPart,
@@ -131,6 +133,14 @@ def _request_part_from_pydantic(value: object) -> MessagePart:
 def _response_part_from_pydantic(value: object) -> MessagePart:
     if isinstance(value, PydanticTextPart):
         return TextPart(content=value.content)
+    if isinstance(value, PydanticThinkingPart):
+        return ThinkingPart(
+            content=value.content,
+            id=value.id,
+            signature=value.signature,
+            provider_name=value.provider_name,
+            provider_details=_JSON_VALUE_ADAPTER.validate_python(to_jsonable_python(value.provider_details)),
+        )
     if isinstance(value, PydanticCompactionPart):
         return CompactionPart(
             content=value.content,
@@ -175,6 +185,14 @@ def _request_part_to_pydantic(value: MessagePart) -> ModelRequestPart:
 def _response_part_to_pydantic(value: MessagePart) -> ModelResponsePart:
     if isinstance(value, TextPart):
         return PydanticTextPart(value.content)
+    if isinstance(value, ThinkingPart):
+        return PydanticThinkingPart(
+            content=value.content,
+            id=value.id,
+            signature=value.signature,
+            provider_name=value.provider_name,
+            provider_details=value.provider_details,
+        )
     if isinstance(value, CompactionPart):
         return PydanticCompactionPart(
             content=value.content,

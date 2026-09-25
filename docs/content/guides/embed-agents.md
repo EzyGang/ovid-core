@@ -238,7 +238,6 @@ A durable store should decide:
 - Tenant separation.
 - Storage encryption.
 - Authorization outside the server load, append, and commit operations.
-- Codec-version migration.
 
 Store the output from `MessageCodec.encode(message)`. Do not make a second normalized schema.
 

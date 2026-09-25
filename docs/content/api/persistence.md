@@ -1,6 +1,6 @@
 # Persistence
 
-Import from `ovid_core.persistence`. Applications own storage durability, history selection, retention, and session policy. Core provides normalized messages, a versioned codec, a minimal store protocol, and an in-memory implementation.
+Import from `ovid_core.persistence`. Applications own storage durability, history selection, retention, and session policy. Core provides normalized messages, a minimal store protocol, and an in-memory implementation.
 
 ## `ConversationStore`
 
@@ -43,17 +43,15 @@ Applications can keep an append-only transcript from `messages` while replacing 
 
 ```python
 codec = MessageCodec()
-codec.version  # 3
 payload = codec.encode(message)
 message = codec.decode(payload)
 ```
 
-- `version` returns the current integer codec version, `3`.
-- `encode(message)` returns UTF-8 JSON bytes containing the codec version and normalized `AgentMessage`.
-- `decode(payload)` accepts persisted versions 1, 2, and 3 and returns the normalized message.
-- Invalid JSON, an invalid message, or an unsupported version raises `PersistenceError` with a source-safe message.
+- `encode(message)` returns UTF-8 JSON bytes for the normalized `AgentMessage`.
+- `decode(payload)` returns the normalized message.
+- Invalid JSON or an invalid message raises `PersistenceError` with a source-safe message.
 
-The version wrapper allows storage migrations without exposing the private encoded-record model as public API.
+The codec stores the normalized message directly.
 
 ## `InMemoryConversationStore`
 

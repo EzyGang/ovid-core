@@ -4,9 +4,11 @@ import pytest
 from pydantic import ValidationError
 from pydantic_ai import Agent
 from pydantic_ai.messages import CompactionPart as PydanticCompactionPart
-from pydantic_ai.messages import ImageUrl, ModelRequest, ModelResponse, ThinkingPart
+from pydantic_ai.messages import ImageUrl, ModelRequest, ModelResponse
+from pydantic_ai.messages import NativeToolCallPart as PydanticNativeToolCallPart
 from pydantic_ai.messages import SystemPromptPart as PydanticSystemPromptPart
 from pydantic_ai.messages import TextPart as PydanticTextPart
+from pydantic_ai.messages import ThinkingPart as PydanticThinkingPart
 from pydantic_ai.messages import ToolCallPart as PydanticToolCallPart
 from pydantic_ai.messages import ToolReturnPart as PydanticToolReturnPart
 from pydantic_ai.messages import UserPromptPart as PydanticUserPromptPart
@@ -21,6 +23,7 @@ from ovid_core.messages import (
     RetryPromptPart,
     SystemPromptPart,
     TextPart,
+    ThinkingPart,
     ToolCallPart,
     ToolReturnPart,
     UserPromptPart,
@@ -78,6 +81,13 @@ def test_retry_prompt_adapter_normalizes_structured_errors() -> None:
 def test_response_message_adapter_round_trip_with_usage() -> None:
     upstream = ModelResponse(
         parts=(
+            PydanticThinkingPart(
+                'private',
+                id='thinking-1',
+                signature='signature',
+                provider_name='test-provider',
+                provider_details={'encrypted_content': 'opaque'},
+            ),
             PydanticTextPart('answer'),
             PydanticCompactionPart(
                 id='compact-1',
@@ -101,7 +111,12 @@ def test_response_message_adapter_round_trip_with_usage() -> None:
     normalized_again = message_from_pydantic(restored)
 
     assert normalized_again == normalized
-    assert tuple(type(part) for part in normalized.parts) == (TextPart, CompactionPart, ToolCallPart)
+    assert tuple(type(part) for part in normalized.parts) == (
+        ThinkingPart,
+        TextPart,
+        CompactionPart,
+        ToolCallPart,
+    )
     assert normalized.request_usage is not None
     assert normalized.request_usage.input_tokens == 8
 
@@ -111,9 +126,8 @@ def test_message_adapter_rejects_unsupported_parts_and_invalid_identifiers() -> 
     with pytest.raises(ProviderError, match='unsupported') as request_error:
         message_from_pydantic(unsupported_request)
     assert isinstance(request_error.value.__cause__, ValueError)
-
     with pytest.raises(ProviderError, match='unsupported'):
-        message_from_pydantic(ModelResponse(parts=(ThinkingPart('private'),)))
+        message_from_pydantic(ModelResponse(parts=(PydanticNativeToolCallPart('native'),)))
 
     with pytest.raises(ProviderError, match='invalid message'):
         message_from_pydantic(ModelRequest(parts=(), run_id='invalid'))

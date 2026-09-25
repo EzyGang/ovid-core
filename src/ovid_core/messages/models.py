@@ -23,6 +23,15 @@ class TextPart(BaseModel):
     content: str
 
 
+class ThinkingPart(BaseModel):
+    kind: Literal['thinking'] = 'thinking'
+    content: str
+    id: str | None = None
+    signature: str | None = None
+    provider_name: str | None = None
+    provider_details: dict[str, JsonValue] | None = None
+
+
 class CompactionPart(BaseModel):
     kind: Literal['compaction'] = 'compaction'
     content: str | None = None
@@ -80,6 +89,7 @@ MessagePart = Annotated[
     | UserPromptPart
     | TextPart
     | CompactionPart
+    | ThinkingPart
     | ToolCallPart
     | ToolReturnPart
     | CapabilityLoadCallPart
@@ -91,7 +101,7 @@ MessagePart = Annotated[
 _REQUEST_PART_KINDS = frozenset(
     {'system_prompt', 'user_prompt', 'tool_return', 'capability_load_return', 'retry_prompt'}
 )
-_RESPONSE_PART_KINDS = frozenset({'text', 'compaction', 'tool_call', 'capability_load_call'})
+_RESPONSE_PART_KINDS = frozenset({'text', 'thinking', 'compaction', 'tool_call', 'capability_load_call'})
 
 
 class AgentMessage(BaseModel):
