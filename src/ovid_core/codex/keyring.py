@@ -1,6 +1,6 @@
 import asyncio
 import hashlib
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -57,7 +57,7 @@ class KeyringCodexTokenStore:
             raise
 
     @contextmanager
-    def _locked(self) -> Iterator[None]:
+    def _locked(self) -> Generator[None]:
         try:
             directory = Path.home() / '.ovid-core-keyring'
             directory.mkdir(mode=0o700, exist_ok=True)

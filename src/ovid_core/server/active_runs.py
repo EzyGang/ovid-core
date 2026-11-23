@@ -1,5 +1,5 @@
 import asyncio
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import Any, cast
@@ -53,13 +53,13 @@ class _ActiveRuns:
             await execute(active)
 
     @asynccontextmanager
-    async def run(self, agent_id: str) -> AsyncIterator[_ActiveRun]:
+    async def run(self, agent_id: str) -> AsyncGenerator[_ActiveRun]:
         active = self._create(agent_id, None)
         async with self._bind(active):
             yield active
 
     @asynccontextmanager
-    async def _bind(self, active: _ActiveRun) -> AsyncIterator[None]:
+    async def _bind(self, active: _ActiveRun) -> AsyncGenerator[None]:
         active.task = asyncio.current_task()
         try:
             yield

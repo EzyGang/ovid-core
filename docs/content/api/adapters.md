@@ -101,7 +101,8 @@ Import from `ovid_core.adapters.pydantic_ai.extensions`.
 
 Import from `ovid_core.adapters.pydantic_ai.tools`:
 
-- `PydanticAIToolsetAdapter(source=..., hooks=())` adapts a `BaseToolset` to Pydantic AI lifecycle and execution.
+- `PydanticAIToolsetAdapter(source=..., hooks=(), tool_approval=None, deferred_capability_id=None)` adapts a `BaseToolset` to Pydantic AI lifecycle and execution.
+  `deferred_capability_id` names the deferred capability that owns the tools.
 - `PydanticAICapabilityAdapter(source, hooks=(), include_toolset=True)` adapts Ovid capability contributions.
 - `adapt_capabilities(capabilities)` adapts a sequence after collision validation.
 
@@ -144,8 +145,10 @@ Both functions convert:
 - provider metadata
 - finish reasons
 
-Both functions raise `ProviderError` for unsupported or invalid upstream messages.
-They also raise `ProviderError` for invalid normalized conversions.
+`message_from_pydantic` converts a request part that Ovid Core does not model to an `OpaqueRequestPart`.
+`message_to_pydantic` restores the same upstream part.
+`message_from_pydantic` raises `ProviderError` for an unsupported response part or an invalid upstream message.
+`message_to_pydantic` raises `ProviderError` for an invalid normalized conversion.
 
 ## Result conversion
 

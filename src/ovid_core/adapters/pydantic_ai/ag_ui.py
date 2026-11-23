@@ -1,7 +1,6 @@
 import asyncio
 from collections.abc import AsyncIterator, Awaitable, Callable
 from functools import partial
-from typing import cast
 from uuid import NAMESPACE_URL, uuid5
 
 from ag_ui.core import (
@@ -49,8 +48,6 @@ class PydanticAIAGUIRun[Deps, Output]:
         runtime = agent._runtime_for_adapter()
         if not isinstance(runtime, PydanticAIAgentRuntime):
             raise ServerConstructionError('AG-UI requires a Pydantic AI agent runtime')
-
-        runtime = cast(PydanticAIAgentRuntime[Deps, Output], runtime)
 
         run_input = _trusted_run_input(AGUIAdapter.build_run_input(body))
         self.conversation_id = ConversationId(root=uuid5(NAMESPACE_URL, f'ovid-ag-ui:{agent_id}:{run_input.thread_id}'))

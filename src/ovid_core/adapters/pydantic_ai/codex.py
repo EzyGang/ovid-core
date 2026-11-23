@@ -147,11 +147,16 @@ class _CodexResponsesModel(OpenAIResponsesModel):
         messages: list[ModelMessage],
         model_settings: OpenAIResponsesModelSettings,
         model_request_parameters: ModelRequestParameters,
+        *,
+        standing_prompt_retained: bool = True,
+        previous_response_id: str | None = None,
     ) -> tuple[str | Omit, list[ResponseInputItemParam]]:
         instructions, input_items = await super()._map_messages(
             messages,
             model_settings,
             model_request_parameters,
+            standing_prompt_retained=standing_prompt_retained,
+            previous_response_id=previous_response_id,
         )
         if isinstance(instructions, str) and instructions:
             input_items.insert(0, EasyInputMessageParam(role='developer', content=instructions))

@@ -2,10 +2,10 @@ import asyncio
 import os
 from pathlib import Path
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 
 
-server = FastMCP('ovid-core-test')
+server = MCPServer('ovid-core-test')
 
 
 @server.tool(description='Report whether the configured credential reached the server.')

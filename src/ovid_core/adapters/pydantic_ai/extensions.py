@@ -40,6 +40,7 @@ def adapt_agent_extensions[Deps](
             source=source,
             hooks=(*hooks, *capability.contributions.hooks),
             tool_approval=tool_approval,
+            deferred_capability_id=capability.id if capability.defer_loading else None,
         )
         for capability in capabilities
         for source in _capability_toolsets(capability)

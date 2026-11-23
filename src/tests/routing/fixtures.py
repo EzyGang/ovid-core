@@ -1,10 +1,10 @@
 import json
 from typing import Any
 
-import httpx
+import httpx2
 
 
-def model_reply(content: str = 'done', *, tool_value: int | None = None) -> httpx.Response:
+def model_reply(content: str = 'done', *, tool_value: int | None = None) -> httpx2.Response:
     message: dict[str, Any] = {'role': 'assistant', 'content': content}
     if tool_value is not None:
         message = {
@@ -17,7 +17,7 @@ def model_reply(content: str = 'done', *, tool_value: int | None = None) -> http
                 }
             ],
         }
-    return httpx.Response(
+    return httpx2.Response(
         200,
         headers={'set-cookie': 'session=retained; Path=/'},
         json={

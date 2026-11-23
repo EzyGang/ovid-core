@@ -6,10 +6,12 @@ from pydantic_ai.models.function import AgentInfo, FunctionModel
 from pydantic_ai.models.test import TestModel
 
 import tests.policy.policy_consumer as consumer
+import tests.support.agent_consumer as agent_consumer
 from ovid_core import AgentDefinition, AgentRetryPolicy, AgentRunPolicy, AgentUsageLimits, UsageLimitError
 from ovid_core.routing import ModelRef, ModelRouteRef
 from ovid_core.usage import Usage, UsageTracker
-from tests.support.agent_helpers import agent_factory, failing_request
+from tests.support.agent_consumer import AddTool, AgentDependencies, RecordingHook
+from tests.support.agent_helpers import agent_factory, failing_request, structured_test_model
 
 
 class WaitingRequest:
@@ -78,6 +80,23 @@ async def test_aggregate_request_limit_stops_parent_after_subagent() -> None:
 
     assert tracker.usage.request_count == 2
     assert tracker.usage.tool_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_aggregate_request_limit_counts_each_request_before_the_next_request() -> None:
+    agent = await agent_factory({'working': structured_test_model()}).build(
+        agent_consumer.structured_definition(model=ModelRef(name='working'), tool=AddTool(), hook=RecordingHook())
+    )
+    allowed = UsageTracker(limits=AgentUsageLimits(requests=2))
+    stopped = UsageTracker(limits=AgentUsageLimits(requests=1))
+
+    result = await agent.run('Add.', deps=AgentDependencies(prefix='allowed'), usage_tracker=allowed)
+    with pytest.raises(UsageLimitError, match='Aggregate request limit reached'):
+        await agent.run('Add.', deps=AgentDependencies(prefix='stopped'), usage_tracker=stopped)
+
+    assert allowed.usage == result.usage
+    assert allowed.usage.request_count == 2
+    assert (stopped.usage.request_count, stopped.usage.tool_calls) == (1, 1)
 
 
 @pytest.mark.asyncio

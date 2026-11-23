@@ -306,7 +306,12 @@ skills = SkillsCapability[AppDeps](
 
 Skills default to deferred loading. The model initially sees capability metadata rather than every skill's complete instructions and tools. It loads a selected capability when needed, which reduces the initial prompt and tool surface.
 
-Set `include` or `exclude`, never both. Filesystem discovery happens through the installed Agent Skills integration at runtime, not during module import.
+Set `include` or `exclude`, never both.
+List `directories` from highest to lowest precedence.
+
+The installed Agent Skills integration reads the directories at the start of each run, not during module import or agent build.
+A missing directory or an unknown skill name stops the run with `AgentConstructionError`.
+See the [extension API](../api/extensions.md#agent-skills) for all rules.
 
 ## Connect MCP servers from configuration
 

@@ -3,7 +3,7 @@ import json
 from collections.abc import AsyncIterator
 from typing import Any
 
-import httpx
+import httpx2
 import pytest
 from pydantic import SecretStr
 from pytest_mock import MockerFixture
@@ -17,15 +17,15 @@ from tests.support.agent_consumer import AddArguments, AddTool, AgentDependencie
 
 
 async def test_tool_steps_reuse_unchanged_credentials_and_select_changed_key(mocker: MockerFixture) -> None:
-    requests: list[httpx.Request] = []
+    requests: list[httpx2.Request] = []
 
-    def respond(request: httpx.Request) -> httpx.Response:
+    def respond(request: httpx2.Request) -> httpx2.Response:
         requests.append(request)
         return model_reply(tool_value=len(requests) if len(requests) < 3 else None)
 
     mocker.patch(
-        'pydantic_ai.providers.openai.create_async_http_client',
-        side_effect=lambda: httpx.AsyncClient(transport=httpx.MockTransport(respond)),
+        'pydantic_ai.providers._openai_compatible.create_async_httpx2_client',
+        side_effect=lambda: httpx2.AsyncClient(transport=httpx2.MockTransport(respond)),
     )
     resolver = mocker.AsyncMock(return_value=SecretStr('old-key'))
     tool = AddTool()
@@ -61,8 +61,8 @@ async def test_tool_steps_reuse_unchanged_credentials_and_select_changed_key(moc
 
 @pytest.mark.parametrize('provider', ['openai-chat', 'gateway/openai-chat'])
 async def test_active_stream_survives_concurrent_fresh_key_run(mocker: MockerFixture, provider: str) -> None:
-    requests: list[httpx.Request] = []
-    clients: list[httpx.AsyncClient] = []
+    requests: list[httpx2.Request] = []
+    clients: list[httpx2.AsyncClient] = []
     started, release = asyncio.Event(), asyncio.Event()
     mocker.patch.dict('os.environ', {'PYDANTIC_AI_GATEWAY_BASE_URL': 'https://gateway.example.test/proxy'})
 
@@ -81,23 +81,23 @@ async def test_active_stream_survives_concurrent_fresh_key_run(mocker: MockerFix
         chunk['choices'] = [{'index': 0, 'delta': {'content': 'stream'}, 'finish_reason': 'stop'}]
         yield f'data: {json.dumps(chunk)}\n\ndata: [DONE]\n\n'.encode()
 
-    body = mocker.Mock(spec=httpx.AsyncByteStream)
+    body = mocker.Mock(spec=httpx2.AsyncByteStream)
     body.__aiter__ = mocker.Mock(side_effect=chunks)
     body.aclose = mocker.AsyncMock()
 
-    def respond(request: httpx.Request) -> httpx.Response:
+    def respond(request: httpx2.Request) -> httpx2.Response:
         requests.append(request)
         if json.loads(request.content).get('stream'):
-            return httpx.Response(200, headers={'content-type': 'text/event-stream'}, stream=body)
+            return httpx2.Response(200, headers={'content-type': 'text/event-stream'}, stream=body)
         return model_reply('new reply')
 
-    def client() -> httpx.AsyncClient:
-        created = httpx.AsyncClient(transport=httpx.MockTransport(respond))
+    def client() -> httpx2.AsyncClient:
+        created = httpx2.AsyncClient(transport=httpx2.MockTransport(respond))
         clients.append(created)
         return created
 
-    mocker.patch('pydantic_ai.providers.openai.create_async_http_client', side_effect=client)
-    mocker.patch('pydantic_ai.providers.gateway.create_async_http_client', side_effect=client)
+    mocker.patch('pydantic_ai.providers._openai_compatible.create_async_httpx2_client', side_effect=client)
+    mocker.patch('pydantic_ai.providers.gateway.create_async_httpx2_client', side_effect=client)
     resolver = mocker.AsyncMock(return_value=SecretStr('old-key'))
     agent = await AgentFactory(
         config=OvidConfig(
@@ -126,7 +126,7 @@ async def test_active_stream_survives_concurrent_fresh_key_run(mocker: MockerFix
 
 
 async def test_rotation_shares_concurrency_limit_with_active_model(mocker: MockerFixture) -> None:
-    requests: list[httpx.Request] = []
+    requests: list[httpx2.Request] = []
     started, release, fresh_resolved = asyncio.Event(), asyncio.Event(), asyncio.Event()
     key = 'old-key'
 
@@ -135,7 +135,7 @@ async def test_rotation_shares_concurrency_limit_with_active_model(mocker: Mocke
             fresh_resolved.set()
         return SecretStr(key)
 
-    async def respond(request: httpx.Request) -> httpx.Response:
+    async def respond(request: httpx2.Request) -> httpx2.Response:
         requests.append(request)
         if request.headers['authorization'] == 'Bearer old-key':
             started.set()
@@ -143,8 +143,8 @@ async def test_rotation_shares_concurrency_limit_with_active_model(mocker: Mocke
         return model_reply()
 
     mocker.patch(
-        'pydantic_ai.providers.openai.create_async_http_client',
-        side_effect=lambda: httpx.AsyncClient(transport=httpx.MockTransport(respond)),
+        'pydantic_ai.providers._openai_compatible.create_async_httpx2_client',
+        side_effect=lambda: httpx2.AsyncClient(transport=httpx2.MockTransport(respond)),
     )
     agent = await AgentFactory(
         config=OvidConfig(models={'primary': ModelConfig(provider='openai-chat', model='gpt-4o', concurrency_limit=1)}),

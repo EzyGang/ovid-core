@@ -233,7 +233,9 @@ The compiler checks all extension IDs. It reports a collision if two effective I
 
 The adapter then converts provider, Agent Skills, and MCP capabilities. It also combines the toolsets and connects the hooks.
 
-A deferred capability stays outside the initial tool list. The model can load the capability when it needs the capability.
+A deferred capability and its tools stay outside the initial tool list.
+The model can load the capability when it needs the capability.
+The tools of the capability then become available.
 
 ## Usage for nested runs
 

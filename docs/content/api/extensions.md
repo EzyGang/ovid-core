@@ -116,6 +116,12 @@ the resolved service providers.
 
 `descriptor(source=...)` returns the `AgentCapabilityDescriptor` with the capability instructions and deferred-loading state.
 
+A capability with `defer_loading=True` owns every tool that it contributes, directly or through a toolset.
+The model cannot see or call these tools before it loads the capability with the `load_capability` tool.
+Pydantic AI refuses an earlier call and tells the model to load the capability.
+The first refusal of a tool does not use the tool retry budget.
+A tool with `defer_loading=True` that no deferred capability owns stays hidden until tool search reveals it.
+
 All capability IDs, toolset IDs, and effective tool wire names must be unique. Collisions raise
 `ExtensionCollisionError`.
 
@@ -330,6 +336,43 @@ skills = SkillsCapability[None](
     config=SkillLibraryConfig(directories=(Path('.agents/skills'),)),
 )
 ```
+
+The adapter uses the `pydantic-ai-harness` `Skills` capability.
+The adapter reads the libraries from the host filesystem.
+The agent does not need a Pydantic AI workspace, and the adapter does not attach one to the run.
+
+Library rules:
+
+- List `directories` from highest to lowest precedence.
+- When two libraries contain a skill with the same name, the first library supplies the skill.
+- A relative directory resolves from the process working directory at agent build.
+- The adapter does not expand `~`.
+- Skill names must be unique across the `SkillsCapability` values of one agent.
+
+Validation timing:
+
+- `SkillLibraryConfig` validates its fields at construction.
+- Agent build does not read the filesystem.
+- Each run reads the libraries at run start, so a changed skill applies to the next run.
+
+A run raises `AgentConstructionError` at run start for these conditions:
+
+- A directory does not exist.
+- A directory path is a file or a skill package.
+- A directory path starts with `~`.
+- An `include` or `exclude` name matches no skill.
+
+The `__cause__` attribute of the error contains the upstream error.
+A stream emits `RunFailedEvent` and then raises the same error.
+
+A run does not fail for these conditions.
+The integration skips the skill and emits a `UserWarning`:
+
+- A lower-precedence library contains a different skill with a name from a higher-precedence library.
+- A `SKILL.md` file has invalid frontmatter, an invalid name, or invalid UTF-8.
+
+A skill load records a `CapabilityLoadReturnPart` with the `message` field.
+The skill instructions follow in an `OpaqueRequestPart` with `part_kind='instruction-delta'`.
 
 ## MCP
 

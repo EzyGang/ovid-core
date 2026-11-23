@@ -1,6 +1,6 @@
 import asyncio
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from types import TracebackType
 from typing import Any, cast
 
@@ -29,26 +29,30 @@ _ANY_VALIDATOR = SchemaValidator(core_schema.any_schema())
 
 
 @dataclass(kw_only=True)
+class _BoundToolsetTool[Deps](ToolsetTool[Deps]):
+    source_tool: BaseTool[Deps, Any, Any]
+
+
+@dataclass(kw_only=True)
 class PydanticAIToolsetAdapter[Deps](AbstractToolset[Deps]):
     source: BaseToolset[Deps]
     hooks: tuple[BaseToolHook[Deps], ...] = ()
     tool_approval: ToolApproval | None = None
-    _bound_tools: dict[int, BaseTool[Deps, Any, Any]] | None = None
+    deferred_capability_id: str | None = None
 
     @property
     def id(self) -> str:
         return self.source.id
 
     async def for_run(self, ctx: PydanticRunContext[Deps]) -> AbstractToolset[Deps]:
-        source = await self.source.for_run(run_context_from_pydantic(ctx))
-        return type(self)(source=source, hooks=self.hooks, tool_approval=self.tool_approval)
+        return replace(self, source=await self.source.for_run(run_context_from_pydantic(ctx)))
 
     async def for_run_step(self, ctx: PydanticRunContext[Deps]) -> AbstractToolset[Deps]:
         source = await self.source.for_step(run_context_from_pydantic(ctx))
         if source is self.source:
             return self
 
-        return type(self)(source=source, hooks=self.hooks, tool_approval=self.tool_approval)
+        return replace(self, source=source)
 
     async def __aenter__(self) -> PydanticAIToolsetAdapter[Deps]:
         await self.source.__aenter__()
@@ -64,24 +68,21 @@ class PydanticAIToolsetAdapter[Deps](AbstractToolset[Deps]):
 
     async def get_tools(self, ctx: PydanticRunContext[Deps]) -> dict[str, ToolsetTool[Deps]]:
         discovered = await self.source.get_tools(run_context_from_pydantic(ctx))
-        tools = _unique_tools(discovered)
-        advertised: dict[str, ToolsetTool[Deps]] = {}
-        bound_tools: dict[int, BaseTool[Deps, Any, Any]] = {}
 
-        for name, source_tool in tools.items():
-            advertised_tool = ToolsetTool[Deps](
+        return {
+            name: _BoundToolsetTool[Deps](
                 toolset=self,
-                tool_def=_tool_definition(source_tool, tool_approval=self.tool_approval),
+                tool_def=_tool_definition(
+                    source_tool,
+                    tool_approval=self.tool_approval,
+                    deferred_capability_id=self.deferred_capability_id,
+                ),
                 max_retries=0,
                 args_validator=_ANY_VALIDATOR,
+                source_tool=source_tool,
             )
-            advertised[name] = advertised_tool
-            bound_tools[id(advertised_tool)] = source_tool
-
-        if self._bound_tools is None:
-            self._bound_tools = {}
-        self._bound_tools.update(bound_tools)
-        return advertised
+            for name, source_tool in _unique_tools(discovered).items()
+        }
 
     async def call_tool(
         self,
@@ -90,11 +91,10 @@ class PydanticAIToolsetAdapter[Deps](AbstractToolset[Deps]):
         ctx: PydanticRunContext[Deps],
         tool: ToolsetTool[Deps],
     ) -> JsonValue:
-        source_tool = self._bound_tools.get(id(tool)) if self._bound_tools is not None else None
-        if source_tool is None:
+        if not isinstance(tool, _BoundToolsetTool) or tool.toolset is not self:
             raise ToolExecutionError(f'Tool {name!r} is not available for this model step')
 
-        return await _execute_tool(source_tool, tool_args, ctx, self.hooks)
+        return await _execute_tool(tool.source_tool, tool_args, ctx, self.hooks)
 
 
 class _StaticToolset[Deps](BaseToolset[Deps]):
@@ -198,7 +198,8 @@ def _combine_toolsets[Deps](
 def _tool_definition(
     tool: BaseTool[Any, Any, Any],
     *,
-    tool_approval: ToolApproval | None = None,
+    tool_approval: ToolApproval | None,
+    deferred_capability_id: str | None,
 ) -> ToolDefinition:
     presentation = tool.presentation
     approval = tool_approval if tool_approval is not None else tool.approval
@@ -218,7 +219,8 @@ def _tool_definition(
         kind='unapproved' if approval.required else 'function',
         metadata=metadata,
         timeout=tool.timeout_seconds,
-        defer_loading=tool.defer_loading,
+        defer_loading=tool.defer_loading or deferred_capability_id is not None,
+        capability_id=deferred_capability_id,
     )
 
 

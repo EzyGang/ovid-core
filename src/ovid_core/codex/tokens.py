@@ -4,7 +4,7 @@ import binascii
 import time
 from abc import abstractmethod
 from collections.abc import Mapping
-from typing import Literal, Protocol, cast
+from typing import Literal, Protocol
 
 import httpx
 from pydantic import Field, JsonValue, SecretStr, TypeAdapter, ValidationError
@@ -168,6 +168,6 @@ def _jwt_claims(token: SecretStr) -> dict[str, JsonValue]:
         payload = token.get_secret_value().split('.')[1]
         decoded = base64.urlsafe_b64decode(f'{payload}{"=" * (-len(payload) % 4)}')
 
-        return cast(dict[str, JsonValue], _JSON_OBJECT_ADAPTER.validate_json(decoded))
+        return _JSON_OBJECT_ADAPTER.validate_json(decoded)
     except binascii.Error, IndexError, ValueError, ValidationError:
         raise CodexAuthError('Codex token is malformed') from None

@@ -1,5 +1,5 @@
 import asyncio
-from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
+from collections.abc import AsyncGenerator, Awaitable, Callable, Sequence
 from contextlib import asynccontextmanager, nullcontext
 from dataclasses import dataclass
 from typing import Any
@@ -121,7 +121,7 @@ class _AgentServerRuntime:
         context: RequestContext,
         *,
         operation: _ActiveRun | None = None,
-    ) -> AsyncIterator[AgentStream[Any]]:
+    ) -> AsyncGenerator[AgentStream[Any]]:
         lifetime = self._active_runs.run(agent_id) if operation is None else nullcontext(operation)
         async with lifetime as active:
             async with self.session(agent_id, request.conversation_id, context, operation=active) as session:
@@ -145,7 +145,7 @@ class _AgentServerRuntime:
         context: RequestContext,
         *,
         operation: _ActiveRun | None = None,
-    ) -> AsyncIterator[_AgentServerSession]:
+    ) -> AsyncGenerator[_AgentServerSession]:
         registration = self._registration(agent_id)
         if agent_id not in self._agent_limits:
             self._agent_limits[agent_id] = asyncio.Semaphore(
@@ -235,7 +235,7 @@ async def _server_lifespan(
     shutdown: LifecycleCallback | None,
     shutdown_grace_seconds: int,
     close: LifecycleCallback | None = None,
-) -> AsyncIterator[None]:
+) -> AsyncGenerator[None]:
     if startup is not None:
         await startup()
 

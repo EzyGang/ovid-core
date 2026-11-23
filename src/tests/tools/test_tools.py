@@ -269,7 +269,8 @@ async def test_dynamic_tool_collisions_and_empty_capabilities_are_stable() -> No
     old_definitions = await pinned.get_tools(context)
     source.tools = (PinnedAddTool('new'),)
     new_definitions = await pinned.get_tools(context)
-    old_result = await pinned.call_tool('calculate', {'left': 1, 'right': 2}, context, old_definitions['calculate'])
+    old_copy = replace(old_definitions['calculate'], tool_def=new_definitions['calculate'].tool_def)
+    old_result = await pinned.call_tool('calculate', {'left': 1, 'right': 2}, context, old_copy)
     new_result = await pinned.call_tool('calculate', {'left': 1, 'right': 2}, context, new_definitions['calculate'])
     assert old_result['content'] == 'old'
     assert new_result['content'] == 'new'
