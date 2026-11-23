@@ -62,6 +62,10 @@ class ToolExecutionError(ToolError):
     pass
 
 
+class ToolRetryError(ToolExecutionError):
+    pass
+
+
 class ToolTimeoutError(ToolExecutionError, TimeoutError):
     pass
 

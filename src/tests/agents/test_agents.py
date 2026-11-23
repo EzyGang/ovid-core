@@ -12,7 +12,6 @@ import tests.support.agent_consumer as consumer
 from ovid_core import (
     AgentDefinition,
     AgentFactory,
-    AgentRetryPolicy,
     AgentRunError,
     AgentRunPolicy,
     ModelResolutionError,
@@ -352,7 +351,7 @@ async def test_text_stream_preserves_deltas_without_implicit_tools() -> None:
 
 
 @pytest.mark.asyncio
-async def test_stream_and_history_report_retried_tool_returns() -> None:
+async def test_unknown_tool_is_retried_under_default_policy_in_stream_and_history() -> None:
     async def call_unknown_tool_once(
         messages: list[ModelMessage],
         info: AgentInfo,
@@ -364,8 +363,7 @@ async def test_stream_and_history_report_retried_tool_returns() -> None:
             yield 'recovered'
 
     model = FunctionModel(stream_function=call_unknown_tool_once, model_name='retrying')
-    definition = replace(consumer.text_definition(), policy=AgentRunPolicy(retries=AgentRetryPolicy(tools=1)))
-    agent = await agent_factory({'primary': model}).build(definition)
+    agent = await agent_factory({'primary': model}).build(consumer.text_definition())
 
     async with agent.stream('Write.', deps=AgentDependencies(prefix='retry')) as stream:
         streamed = [event for event in [event async for event in stream] if event.kind == 'tool_result']

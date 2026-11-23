@@ -89,7 +89,7 @@ Invalid runtime values or construction failures raise `AgentConstructionError`.
 Import from `ovid_core.adapters.pydantic_ai.extensions`.
 
 - `PydanticAIExtensions[Deps]` is a frozen dataclass containing adapted `capabilities` and `toolsets`.
-- `adapt_agent_extensions(capabilities, toolsets, hooks)` returns the adapter bundle.
+- `adapt_agent_extensions(capabilities, toolsets, hooks, tool_approval=None, retries=AgentRetryPolicy())` returns the adapter bundle.
 
 `adapt_agent_extensions`:
 
@@ -101,10 +101,15 @@ Import from `ovid_core.adapters.pydantic_ai.extensions`.
 
 Import from `ovid_core.adapters.pydantic_ai.tools`:
 
-- `PydanticAIToolsetAdapter(source=..., hooks=(), tool_approval=None, deferred_capability_id=None)` adapts a `BaseToolset` to Pydantic AI lifecycle and execution.
+- `PydanticAIToolsetAdapter(source=..., hooks=(), tool_approval=None, deferred_capability_id=None, retries=AgentRetryPolicy())` adapts a `BaseToolset` to Pydantic AI lifecycle and execution.
   `deferred_capability_id` names the deferred capability that owns the tools.
-- `PydanticAICapabilityAdapter(source, hooks=(), include_toolset=True)` adapts Ovid capability contributions.
-- `adapt_capabilities(capabilities)` adapts a sequence after collision validation.
+- `PydanticAICapabilityAdapter(source, hooks=(), include_toolset=True, tool_approval=None, retries=AgentRetryPolicy())` adapts Ovid capability contributions.
+- `adapt_capabilities(capabilities, tool_approval=None, retries=AgentRetryPolicy())` adapts a sequence after collision validation.
+
+`retries` supplies the tool retry budget, the tool failure mode, and the maximum failure text length to each adapted Ovid tool.
+`DefaultAgentCompiler` passes `AgentDefinition.policy.retries`.
+In `'return'` mode, the adapter passes a Pydantic AI `ModelRetry`, `ToolFailed`, `ApprovalRequired`, or `CallDeferred` exception from a tool to Pydantic AI unchanged.
+In `'raise'` mode, the adapter wraps these exceptions in `ToolExecutionError`.
 
 Import `adapt_integration_capability` from `ovid_core.adapters.pydantic_ai.integrations`.
 

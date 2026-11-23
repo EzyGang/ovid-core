@@ -32,6 +32,7 @@ from ovid_core.errors import ProviderError as ProviderError
 from ovid_core.errors import ServerConstructionError as ServerConstructionError
 from ovid_core.errors import ToolError as ToolError
 from ovid_core.errors import ToolExecutionError as ToolExecutionError
+from ovid_core.errors import ToolRetryError as ToolRetryError
 from ovid_core.errors import ToolTimeoutError as ToolTimeoutError
 from ovid_core.errors import ToolValidationError as ToolValidationError
 from ovid_core.errors import TransportError as TransportError

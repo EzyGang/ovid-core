@@ -131,3 +131,33 @@ async def test_real_agent_runs_full_todo_flow_and_isolates_conversations() -> No
         ('Third', TodoStatus.IN_PROGRESS),
     ]
     assert isolated.phases == ()
+
+
+async def test_real_agent_continues_after_todo_target_is_not_found() -> None:
+    capability = TodoCapability[None](service=TodoService(store=InMemoryTodoStore()))
+    responses = iter(
+        (
+            ModelResponse(parts=(ToolCallPart('todo', {'op': 'start', 'task': 'Absent task'}, 'todo-0'),)),
+            ModelResponse(parts=(TextPart('recovered'),)),
+        )
+    )
+
+    def respond(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        del messages, info
+        return next(responses)
+
+    definition = AgentDefinition[None, str](
+        model=ModelRef(name='primary'),
+        deps_type=type(None),
+        output_type=str,
+        capabilities=(capability,),
+    )
+    agent = await agent_factory({'primary': FunctionModel(respond, model_name='todo')}).build(definition)
+
+    result = await agent.run('Track this work.', deps=None)
+    returns = [part for message in result.messages for part in message.parts if part.kind == 'tool_return']
+
+    assert result.output == 'recovered'
+    assert [(part.outcome, part.content) for part in returns] == [
+        ('failed', "Tool 'todo' failed: TodoTargetNotFoundError: todo task not found: 'Absent task'")
+    ]

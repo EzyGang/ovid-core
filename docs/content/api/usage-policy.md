@@ -65,16 +65,26 @@ Limit violations raise `UsageLimitError`.
 
 Ovid Core cannot count a failed provider attempt when the provider supplies no usage. It includes every request that the provider reports.
 
+`tool_calls` counts only the tool calls that complete successfully.
+A call that returns a `failed` or `retried` tool result does not add to `tool_calls`.
+The model request that follows the result adds to `request_count`.
+
 ## Runtime policy
 
 Import from `ovid_core.policy`.
 
 ### `AgentRetryPolicy`
 
-- `tools: NonNegativeInt = 0`
-- `output: NonNegativeInt = 0`
+| Field | Default | Meaning |
+| --- | --- | --- |
+| `tools` | `2` | Retry budget of each tool. Refer to [Tool failure results](extensions.md#tool-failure-results). |
+| `output` | `1` | Number of times the model can correct an invalid final output. |
+| `tool_failures` | `'return'` | `'return'` sends each tool failure to the model as a tool result. `'raise'` stops the run with the Ovid tool error. |
+| `error_max_chars` | `2000` | Positive maximum length of the failure text that the model receives. |
 
-Provider SDK retries remain provider-owned. These fields configure agent tool and output validation retries.
+Provider SDK retries remain provider-owned. `tools` and `output` configure agent tool and output validation retries.
+
+`AgentRetryPolicy(tools=0, output=0, tool_failures='raise')` stops the run on the first tool failure, unknown tool name, or invalid output.
 
 ### `AgentUsageLimits`
 
