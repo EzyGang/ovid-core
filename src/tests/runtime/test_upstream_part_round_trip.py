@@ -155,9 +155,12 @@ def test_samples_cover_every_upstream_part() -> None:
     assert set(_RESPONSE_SAMPLES) == _union_members(upstream.ModelResponsePart)
 
 
-@pytest.mark.filterwarnings('ignore:Unknown capability part kind')
-@pytest.mark.parametrize('message', tuple(message for message, _ in _MESSAGES), ids=_part_id)
-def test_every_upstream_part_converts_to_a_stored_record_and_back(message: upstream.ModelMessage) -> None:
+@pytest.mark.parametrize(
+    'message',
+    tuple(message for message, exact_type in _MESSAGES if exact_type is None),
+    ids=_part_id,
+)
+def test_lossy_upstream_parts_convert_to_a_stored_record_and_back(message: upstream.ModelMessage) -> None:
     codec = MessageCodec()
 
     normalized = message_from_pydantic(message)
