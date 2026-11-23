@@ -1,10 +1,9 @@
-import asyncio
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from types import TracebackType
 from typing import Any, cast
 
-from pydantic import JsonValue, ValidationError
+from pydantic import JsonValue
 from pydantic_ai import RunContext as PydanticRunContext
 from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.exceptions import UserError
@@ -15,13 +14,15 @@ from pydantic_ai.toolsets.abstract import ToolsetTool
 from pydantic_core import SchemaValidator, core_schema
 
 from ovid_core.adapters.pydantic_ai._extension_validation import validate_extension_ids
-from ovid_core.adapters.pydantic_ai._tool_context import run_context_from_pydantic, tool_context_from_pydantic
+from ovid_core.adapters.pydantic_ai._tool_context import run_context_from_pydantic
+from ovid_core.adapters.pydantic_ai._tool_execution import execute_tool
 from ovid_core.adapters.pydantic_ai.integrations import adapt_integration_capability
 from ovid_core.capabilities.base import BaseCapability
-from ovid_core.errors import ExtensionCollisionError, ToolExecutionError, ToolTimeoutError, ToolValidationError
+from ovid_core.errors import ExtensionCollisionError, ToolExecutionError
 from ovid_core.hooks.base import BaseToolHook
+from ovid_core.policy import AgentRetryPolicy
 from ovid_core.runtime.context import RunContext
-from ovid_core.tools.base import BaseTool, BaseToolset, ToolExecutionContext
+from ovid_core.tools.base import BaseTool, BaseToolset
 from ovid_core.tools.models import ToolApproval
 
 
@@ -29,26 +30,31 @@ _ANY_VALIDATOR = SchemaValidator(core_schema.any_schema())
 
 
 @dataclass(kw_only=True)
+class _BoundToolsetTool[Deps](ToolsetTool[Deps]):
+    source_tool: BaseTool[Deps, Any, Any]
+
+
+@dataclass(kw_only=True)
 class PydanticAIToolsetAdapter[Deps](AbstractToolset[Deps]):
     source: BaseToolset[Deps]
     hooks: tuple[BaseToolHook[Deps], ...] = ()
     tool_approval: ToolApproval | None = None
-    _bound_tools: dict[int, BaseTool[Deps, Any, Any]] | None = None
+    deferred_capability_id: str | None = None
+    retries: AgentRetryPolicy = AgentRetryPolicy()
 
     @property
     def id(self) -> str:
         return self.source.id
 
     async def for_run(self, ctx: PydanticRunContext[Deps]) -> AbstractToolset[Deps]:
-        source = await self.source.for_run(run_context_from_pydantic(ctx))
-        return type(self)(source=source, hooks=self.hooks, tool_approval=self.tool_approval)
+        return replace(self, source=await self.source.for_run(run_context_from_pydantic(ctx)))
 
     async def for_run_step(self, ctx: PydanticRunContext[Deps]) -> AbstractToolset[Deps]:
         source = await self.source.for_step(run_context_from_pydantic(ctx))
         if source is self.source:
             return self
 
-        return type(self)(source=source, hooks=self.hooks, tool_approval=self.tool_approval)
+        return replace(self, source=source)
 
     async def __aenter__(self) -> PydanticAIToolsetAdapter[Deps]:
         await self.source.__aenter__()
@@ -64,24 +70,21 @@ class PydanticAIToolsetAdapter[Deps](AbstractToolset[Deps]):
 
     async def get_tools(self, ctx: PydanticRunContext[Deps]) -> dict[str, ToolsetTool[Deps]]:
         discovered = await self.source.get_tools(run_context_from_pydantic(ctx))
-        tools = _unique_tools(discovered)
-        advertised: dict[str, ToolsetTool[Deps]] = {}
-        bound_tools: dict[int, BaseTool[Deps, Any, Any]] = {}
 
-        for name, source_tool in tools.items():
-            advertised_tool = ToolsetTool[Deps](
+        return {
+            name: _BoundToolsetTool[Deps](
                 toolset=self,
-                tool_def=_tool_definition(source_tool, tool_approval=self.tool_approval),
-                max_retries=0,
+                tool_def=_tool_definition(
+                    source_tool,
+                    tool_approval=self.tool_approval,
+                    deferred_capability_id=self.deferred_capability_id,
+                ),
+                max_retries=self.retries.tools,
                 args_validator=_ANY_VALIDATOR,
+                source_tool=source_tool,
             )
-            advertised[name] = advertised_tool
-            bound_tools[id(advertised_tool)] = source_tool
-
-        if self._bound_tools is None:
-            self._bound_tools = {}
-        self._bound_tools.update(bound_tools)
-        return advertised
+            for name, source_tool in _unique_tools(discovered).items()
+        }
 
     async def call_tool(
         self,
@@ -90,11 +93,10 @@ class PydanticAIToolsetAdapter[Deps](AbstractToolset[Deps]):
         ctx: PydanticRunContext[Deps],
         tool: ToolsetTool[Deps],
     ) -> JsonValue:
-        source_tool = self._bound_tools.get(id(tool)) if self._bound_tools is not None else None
-        if source_tool is None:
+        if not isinstance(tool, _BoundToolsetTool) or tool.toolset is not self:
             raise ToolExecutionError(f'Tool {name!r} is not available for this model step')
 
-        return await _execute_tool(source_tool, tool_args, ctx, self.hooks)
+        return await execute_tool(name, tool.source_tool, tool_args, ctx, self.hooks, self.retries)
 
 
 class _StaticToolset[Deps](BaseToolset[Deps]):
@@ -123,6 +125,7 @@ class PydanticAICapabilityAdapter[Deps](AbstractCapability[Deps]):
         hooks: tuple[BaseToolHook[Deps], ...] = (),
         include_toolset: bool = True,
         tool_approval: ToolApproval | None = None,
+        retries: AgentRetryPolicy = AgentRetryPolicy(),
     ) -> None:
         self.id = source.id
         self.description = source.description
@@ -131,6 +134,7 @@ class PydanticAICapabilityAdapter[Deps](AbstractCapability[Deps]):
         self._hooks = hooks
         self._include_toolset = include_toolset
         self._tool_approval = tool_approval
+        self._retries = retries
 
     def get_instructions(self) -> list[str] | None:
         instructions = self._source.contributions.instructions
@@ -152,7 +156,12 @@ class PydanticAICapabilityAdapter[Deps](AbstractCapability[Deps]):
 
         return _combine_toolsets(
             tuple(
-                PydanticAIToolsetAdapter(source=source, hooks=hooks, tool_approval=self._tool_approval)
+                PydanticAIToolsetAdapter(
+                    source=source,
+                    hooks=hooks,
+                    tool_approval=self._tool_approval,
+                    retries=self._retries,
+                )
                 for source in sources
             )
         )
@@ -162,13 +171,14 @@ def adapt_capabilities[Deps](
     capabilities: Sequence[BaseCapability[Deps]],
     *,
     tool_approval: ToolApproval | None = None,
+    retries: AgentRetryPolicy = AgentRetryPolicy(),
 ) -> tuple[AbstractCapability[Deps], ...]:
     validate_extension_ids(capabilities)
 
     return tuple(
         integration
         if (integration := adapt_integration_capability(capability)) is not None
-        else PydanticAICapabilityAdapter(capability, tool_approval=tool_approval)
+        else PydanticAICapabilityAdapter(capability, tool_approval=tool_approval, retries=retries)
         for capability in capabilities
     )
 
@@ -198,7 +208,8 @@ def _combine_toolsets[Deps](
 def _tool_definition(
     tool: BaseTool[Any, Any, Any],
     *,
-    tool_approval: ToolApproval | None = None,
+    tool_approval: ToolApproval | None,
+    deferred_capability_id: str | None,
 ) -> ToolDefinition:
     presentation = tool.presentation
     approval = tool_approval if tool_approval is not None else tool.approval
@@ -218,55 +229,10 @@ def _tool_definition(
         kind='unapproved' if approval.required else 'function',
         metadata=metadata,
         timeout=tool.timeout_seconds,
-        defer_loading=tool.defer_loading,
+        defer_loading=tool.defer_loading or deferred_capability_id is not None,
+        capability_id=deferred_capability_id,
     )
 
 
 def _wire_name(tool: BaseTool[Any, Any, Any]) -> str:
     return tool.presentation.wire_name or tool.id
-
-
-async def _execute_tool[Deps](
-    tool: BaseTool[Deps, Any, Any],
-    raw_arguments: dict[str, Any],
-    ctx: PydanticRunContext[Deps],
-    hooks: tuple[BaseToolHook[Deps], ...],
-) -> dict[str, JsonValue]:
-    context = tool_context_from_pydantic(ctx)
-    try:
-        arguments = tool.args_type.model_validate(raw_arguments)
-    except ValidationError as error:
-        raise ToolValidationError(f'Invalid arguments for tool {tool.id!r}') from error
-
-    try:
-        for hook in hooks:
-            await hook.before_tool(context, tool.id, arguments)
-        async with asyncio.timeout(tool.timeout_seconds):
-            result = tool.result_type.model_validate(await tool.execute(context, arguments))
-        for hook in hooks:
-            await hook.after_tool(context, tool.id, result)
-    except asyncio.CancelledError:
-        raise
-    except TimeoutError as error:
-        failure = ToolTimeoutError(f'Tool {tool.id!r} timed out')
-        await _notify_error(hooks, context, tool.id, failure)
-        raise failure from error
-    except ToolExecutionError as error:
-        await _notify_error(hooks, context, tool.id, error)
-        raise
-    except Exception as error:
-        failure = ToolExecutionError(f'Tool {tool.id!r} failed')
-        await _notify_error(hooks, context, tool.id, failure)
-        raise failure from error
-
-    return result.model_dump(mode='json')
-
-
-async def _notify_error[Deps](
-    hooks: tuple[BaseToolHook[Deps], ...],
-    context: ToolExecutionContext[Deps],
-    tool_id: str,
-    error: ToolExecutionError,
-) -> None:
-    for hook in hooks:
-        await hook.on_tool_error(context, tool_id, error)

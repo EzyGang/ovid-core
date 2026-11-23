@@ -92,8 +92,12 @@ Reads reject these inputs:
 - absolute paths and root traversal
 - descendant symlink traversal
 
-The model-facing `read` tool returns expected path, selector, and workspace read errors as diagnostic results instead of aborting the run.
-Direct workspace provider calls still raise typed exceptions, and unexpected tool exceptions and cancellation still propagate.
+The model-facing `read` tool returns expected path, selector, and workspace read errors as diagnostic text in a successful result.
+Each requested target has its own diagnostic text, thus one bad target does not hide the other targets.
+By default, a different failure of a native tool does not stop the run.
+Ovid Core returns the failure to the model as a `failed` tool result that contains the exception type and text.
+Refer to [Tool failure results](../api/extensions.md#tool-failure-results) for the full rules.
+Direct workspace provider calls still raise typed exceptions, and cancellation still propagates.
 
 Accepted `.` components and both path separators use one normalized `/`-separated identity.
 The ledger, result, event, and conflict use this identity.

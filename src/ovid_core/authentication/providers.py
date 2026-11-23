@@ -1,6 +1,6 @@
 from collections.abc import Callable, Collection, Sequence
 
-import httpx
+import httpx2
 from pydantic import SecretStr
 
 from ovid_core.adapters.pydantic_ai import CodexSubscriptionModelFactory, available_api_key_model_options
@@ -27,7 +27,7 @@ def default_provider_registry(
     api_key_store: APIKeyStoreFactory,
     codex_auth: CodexAuth,
     codex_store: CredentialStore[CodexTokens],
-    http_client: httpx.AsyncClient,
+    http_client: httpx2.AsyncClient,
     model_factory: CodexSubscriptionModelFactory,
     excluded_provider_ids: Collection[str] = frozenset(),
     custom_definitions: Sequence[ProviderDefinition] = (),
@@ -79,7 +79,7 @@ def codex_subscription_provider_definition(
     *,
     auth: CodexAuth,
     store: CredentialStore[CodexTokens],
-    http_client: httpx.AsyncClient,
+    http_client: httpx2.AsyncClient,
     model_factory: CodexSubscriptionModelFactory,
 ) -> ProviderDefinition:
     binding = CodexCredentialBinding(auth=auth, store=store)

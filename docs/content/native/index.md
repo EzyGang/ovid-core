@@ -88,12 +88,20 @@ Each capability contributes a bounded set of tools:
 - `FffCapability` can also contribute native `glob`.
 - `AstCapability` contributes `ast_grep`, `ast_edit_preview`, and `ast_edit_apply`.
 
+`WorkspaceFilesCapability` and `SearchCapability` tools are in the tool list from the first model request.
+`AstCapability` and `FffCapability` are deferred capabilities.
+The model must call `load_capability` with the ID `native_ast` or `native_fff` before it can see or call their tools.
+
+By default, a native tool failure does not stop the run.
+Ovid Core returns the failure to the model as a tool result.
+Refer to [Tool failure results](../api/extensions.md#tool-failure-results).
+
 `AgentFactory` uses the existing capability adapter.
 It needs no native-specific configuration.
 
 All capabilities resolve the same root, native handle, session identity, revision domain, and lifecycle.
 FFF disables its `grep` tool here because search already owns that wire name.
-The `find_files` and `multi_grep` tools remain available.
+FFF still contributes `find_files` and `multi_grep` after the model loads `native_fff`.
 Use distinct binding names only for deliberate multi-workspace agents.
 
 Missing services or operations stop agent construction.

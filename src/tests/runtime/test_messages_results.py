@@ -4,7 +4,7 @@ import pytest
 from pydantic import ValidationError
 from pydantic_ai import Agent
 from pydantic_ai.messages import CompactionPart as PydanticCompactionPart
-from pydantic_ai.messages import ImageUrl, ModelRequest, ModelResponse
+from pydantic_ai.messages import ModelRequest, ModelResponse
 from pydantic_ai.messages import NativeToolCallPart as PydanticNativeToolCallPart
 from pydantic_ai.messages import SystemPromptPart as PydanticSystemPromptPart
 from pydantic_ai.messages import TextPart as PydanticTextPart
@@ -20,7 +20,7 @@ from ovid_core.adapters.pydantic_ai import message_from_pydantic, message_to_pyd
 from ovid_core.messages import (
     AgentMessage,
     CompactionPart,
-    RetryPromptPart,
+    OpaqueRequestPart,
     SystemPromptPart,
     TextPart,
     ThinkingPart,
@@ -50,6 +50,7 @@ def test_request_message_adapter_round_trip() -> None:
         parts=(
             PydanticSystemPromptPart('system'),
             PydanticUserPromptPart('hello'),
+            PydanticCompactionPart('application summary'),
             PydanticToolReturnPart('lookup', {'found': True}, 'call-1'),
         ),
         run_id=str(RUN_ID),
@@ -65,17 +66,9 @@ def test_request_message_adapter_round_trip() -> None:
     assert tuple(type(part) for part in normalized.parts) == (
         SystemPromptPart,
         UserPromptPart,
+        CompactionPart,
         ToolReturnPart,
     )
-
-
-def test_retry_prompt_adapter_normalizes_structured_errors() -> None:
-    retry = RetryPromptPart(content='try again', tool_name='lookup', tool_call_id='call-1')
-    normalized = AgentMessage(role='request', parts=(retry,))
-
-    restored = message_from_pydantic(message_to_pydantic(normalized))
-
-    assert restored == normalized
 
 
 def test_response_message_adapter_round_trip_with_usage() -> None:
@@ -122,15 +115,18 @@ def test_response_message_adapter_round_trip_with_usage() -> None:
 
 
 def test_message_adapter_rejects_unsupported_parts_and_invalid_identifiers() -> None:
-    unsupported_request = ModelRequest(parts=(PydanticUserPromptPart([ImageUrl(url='https://example.com/a.png')]),))
-    with pytest.raises(ProviderError, match='unsupported') as request_error:
-        message_from_pydantic(unsupported_request)
-    assert isinstance(request_error.value.__cause__, ValueError)
-    with pytest.raises(ProviderError, match='unsupported'):
+    with pytest.raises(ProviderError, match='unsupported') as response_error:
         message_from_pydantic(ModelResponse(parts=(PydanticNativeToolCallPart('native'),)))
+    assert isinstance(response_error.value.__cause__, ValueError)
 
     with pytest.raises(ProviderError, match='invalid message'):
         message_from_pydantic(ModelRequest(parts=(), run_id='invalid'))
+    corrupt_payload = AgentMessage(
+        role='request',
+        parts=(OpaqueRequestPart(part_kind='instruction-delta', payload={'part_kind': 'instruction-delta'}),),
+    )
+    with pytest.raises(ProviderError, match='cannot be converted'):
+        message_to_pydantic(corrupt_payload)
 
 
 def test_message_adapter_rejects_wrong_normalized_role_and_colliding_details() -> None:

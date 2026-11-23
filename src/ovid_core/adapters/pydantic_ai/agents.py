@@ -1,5 +1,3 @@
-from typing import cast
-
 from pydantic_ai import Agent, InstrumentationSettings
 from pydantic_ai.agent import AgentRetries
 from pydantic_ai.capabilities import SelectModel
@@ -23,12 +21,14 @@ class DefaultAgentCompiler:
         if not isinstance(runtime, Model):
             raise AgentConstructionError('Resolved model is not compatible with the Pydantic AI adapter')
 
+        policy = definition.policy
         try:
             extensions = adapt_agent_extensions(
                 definition.capabilities,
                 definition.toolsets,
                 definition.hooks,
                 tool_approval=definition.tool_approval,
+                retries=policy.retries,
             )
             capabilities = extensions.capabilities
             if resolved.handle.resolve is not None:
@@ -37,13 +37,12 @@ class DefaultAgentCompiler:
                     return await _resolve_model(resolved.handle)
 
                 capabilities = (SelectModel(select_model), *capabilities)
-            policy = definition.policy
             agent = Agent[Deps, Output](
                 runtime,
                 output_type=definition.output_type,
                 instructions=definition.instructions,
                 deps_type=definition.deps_type,
-                retries=cast(AgentRetries, policy.retries.model_dump()),
+                retries=AgentRetries(tools=policy.retries.tools, output=policy.retries.output),
                 toolsets=extensions.toolsets,
                 capabilities=capabilities,
                 end_strategy=policy.end_strategy,

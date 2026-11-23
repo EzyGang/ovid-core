@@ -7,8 +7,10 @@ from ovid_core.models import BaseModel
 
 
 class AgentRetryPolicy(BaseModel):
-    tools: NonNegativeInt = 0
-    output: NonNegativeInt = 0
+    tools: NonNegativeInt = 2
+    output: NonNegativeInt = 1
+    tool_failures: Literal['return', 'raise'] = 'return'
+    error_max_chars: PositiveInt = 2000
 
 
 class AgentUsageLimits(BaseModel):

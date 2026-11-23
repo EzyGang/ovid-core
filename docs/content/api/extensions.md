@@ -70,7 +70,72 @@ JSON schema input remains the fallback when the provider or supported Pydantic A
 `descriptor(source=..., approval=...)` returns the effective `AgentToolDescriptor` used during agent preparation.
 The descriptor applies the effective wire name and optional agent-wide approval override.
 
-The adapter validates tool input and output. It also applies approval policy, timeouts, hooks, and typed tool errors.
+The adapter validates tool input and output. It also applies approval policy, timeouts, hooks, and tool failure results.
+
+### Tool failure results
+
+By default, a tool failure does not stop the run.
+The adapter returns the failure to the model as a tool result.
+The model can then correct the call or continue with a different step.
+
+| Failure | Result outcome | Result text | Uses the retry budget |
+| --- | --- | --- | --- |
+| The arguments do not match `args_type`. | `retried` | `Invalid arguments for tool '<name>':` and one `<field>: <message>` line for each error | Yes |
+| The tool raises `ToolRetryError`. | `retried` | The error text | Yes |
+| The model calls an unknown tool name. | `retried` | The Pydantic AI message that lists the available tools | Yes |
+| The tool raises `ToolExecutionError`. | `failed` | The error text | No |
+| The tool does not complete in `timeout_seconds`. | `failed` | `Tool '<name>' timed out after <seconds>s` | No |
+| The tool returns a value that does not match `result_type`. | `failed` | `Tool '<name>' returned an invalid result` | No |
+| The tool or a tool hook raises a different exception. | `failed` | `Tool '<name>' failed: <exception type>: <exception text>` | No |
+
+`<name>` is the tool name that the model called.
+This name is `ToolPresentation.wire_name` when the tool sets it, and the tool `id` otherwise.
+
+Raise `ToolExecutionError` when the call cannot succeed, for example when a file does not exist.
+Raise `ToolRetryError` when the model can correct the arguments and call the tool again.
+
+```python
+from ovid_core.errors import ToolExecutionError, ToolRetryError
+
+
+async def execute(self, context, arguments):
+    if not arguments.path.is_absolute():
+        raise ToolRetryError('path must be absolute')
+    if not arguments.path.exists():
+        raise ToolExecutionError(f'file not found: {arguments.path}')
+    ...
+```
+
+`AgentRetryPolicy.tools` is the retry budget of each tool.
+Each `retried` result of a tool uses one unit of the budget of that tool.
+A successful call of the tool restores the budget.
+When a tool has no budget left, the next `retried` result stops the run with `AgentRunError`.
+A `failed` result does not use the budget.
+Thus only the usage limits, such as `AgentUsageLimits.requests`, stop a model that repeats a failed call.
+
+The adapter truncates each result text to `AgentRetryPolicy.error_max_chars` characters.
+A truncated text ends with `... [truncated]`, and the limit includes this marker.
+
+**Security:** The exception text goes to the model provider and into the stored conversation history.
+Do not put credentials, tokens, or other secret values in an exception that a tool raises.
+The text of an unexpected exception can contain file paths or request data.
+
+These conditions always stop the run, because the model cannot correct them:
+
+- Cancellation. `asyncio.CancelledError` propagates unchanged.
+- Pydantic AI supplies no tool call ID, no run identity, or invalid run identity.
+- The application supplies approval metadata that is not a JSON value.
+- Pydantic AI calls a tool through an adapter that did not advertise the tool.
+
+The last three conditions raise `ToolExecutionError`.
+
+Set `AgentRetryPolicy(tool_failures='raise')` to stop the run on each tool failure.
+In this mode the adapter raises `ToolValidationError`, `ToolExecutionError`, or `ToolTimeoutError`.
+The message of an unexpected exception is then `Tool '<id>' failed`, and the original exception is the cause.
+The messages of these errors contain the tool `id`, not the wire name.
+
+These rules apply to Ovid tools.
+Pydantic AI owns the failure behavior of MCP tools and of tools from a Pydantic AI capability passthrough.
 
 ### `BaseToolset[Deps]`
 
@@ -95,6 +160,13 @@ await on_tool_error(context, tool_id, error)
 
 Defaults do nothing. `arguments` is a validated `BaseModel`, `result` is a `ToolResult`, and `error` is `ToolExecutionError`.
 
+The adapter calls `on_tool_error` one time for each failed tool execution, before it returns or raises the failure.
+This behavior is the same for each `AgentRetryPolicy.tool_failures` value.
+A timeout supplies `ToolTimeoutError`.
+An unexpected exception or an invalid result supplies `ToolExecutionError("Tool '<id>' failed")` with the original exception as `__cause__`.
+The hook receives the tool `id` in `tool_id` and in these messages, not the wire name.
+The adapter does not call `on_tool_error` for invalid arguments, because the tool did not start.
+
 ## Capability contracts
 
 Import from `ovid_core.capabilities.base`.
@@ -115,6 +187,12 @@ validates requirements and returns itself. Stateful capabilities return a frozen
 the resolved service providers.
 
 `descriptor(source=...)` returns the `AgentCapabilityDescriptor` with the capability instructions and deferred-loading state.
+
+A capability with `defer_loading=True` owns every tool that it contributes, directly or through a toolset.
+The model cannot see or call these tools before it loads the capability with the `load_capability` tool.
+Pydantic AI refuses an earlier call and tells the model to load the capability.
+The first refusal of a tool does not use the tool retry budget.
+A tool with `defer_loading=True` that no deferred capability owns stays hidden until tool search reveals it.
 
 All capability IDs, toolset IDs, and effective tool wire names must be unique. Collisions raise
 `ExtensionCollisionError`.
@@ -330,6 +408,43 @@ skills = SkillsCapability[None](
     config=SkillLibraryConfig(directories=(Path('.agents/skills'),)),
 )
 ```
+
+The adapter uses the `pydantic-ai-harness` `Skills` capability.
+The adapter reads the libraries from the host filesystem.
+The agent does not need a Pydantic AI workspace, and the adapter does not attach one to the run.
+
+Library rules:
+
+- List `directories` from highest to lowest precedence.
+- When two libraries contain a skill with the same name, the first library supplies the skill.
+- A relative directory resolves from the process working directory at agent build.
+- The adapter does not expand `~`.
+- Skill names must be unique across the `SkillsCapability` values of one agent.
+
+Validation timing:
+
+- `SkillLibraryConfig` validates its fields at construction.
+- Agent build does not read the filesystem.
+- Each run reads the libraries at run start, so a changed skill applies to the next run.
+
+A run raises `AgentConstructionError` at run start for these conditions:
+
+- A directory does not exist.
+- A directory path is a file or a skill package.
+- A directory path starts with `~`.
+- An `include` or `exclude` name matches no skill.
+
+The `__cause__` attribute of the error contains the upstream error.
+A stream emits `RunFailedEvent` and then raises the same error.
+
+A run does not fail for these conditions.
+The integration skips the skill and emits a `UserWarning`:
+
+- A lower-precedence library contains a different skill with a name from a higher-precedence library.
+- A `SKILL.md` file has invalid frontmatter, an invalid name, or invalid UTF-8.
+
+A skill load records a `CapabilityLoadReturnPart` with the `message` field.
+The skill instructions follow in an `OpaqueRequestPart` with `part_kind='instruction-delta'`.
 
 ## MCP
 

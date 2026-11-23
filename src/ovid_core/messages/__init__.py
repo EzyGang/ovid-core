@@ -3,6 +3,7 @@ from ovid_core.messages.models import CapabilityLoadCallPart as CapabilityLoadCa
 from ovid_core.messages.models import CapabilityLoadReturnPart as CapabilityLoadReturnPart
 from ovid_core.messages.models import CompactionPart as CompactionPart
 from ovid_core.messages.models import MessagePart as MessagePart
+from ovid_core.messages.models import OpaqueRequestPart as OpaqueRequestPart
 from ovid_core.messages.models import RetryPromptPart as RetryPromptPart
 from ovid_core.messages.models import SystemPromptPart as SystemPromptPart
 from ovid_core.messages.models import TextPart as TextPart

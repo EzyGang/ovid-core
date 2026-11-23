@@ -1,6 +1,6 @@
 import asyncio
 
-import httpx
+import httpx2
 import pytest
 from pytest_mock import MockerFixture
 
@@ -33,7 +33,7 @@ async def test_late_refresh_honors_replacement_or_deletion(change: str) -> None:
     started = asyncio.Event()
     release = asyncio.Event()
 
-    async def handler(_: httpx.Request) -> httpx.Response:
+    async def handler(_: httpx2.Request) -> httpx2.Response:
         started.set()
         await release.wait()
         return codex_token_response()
@@ -42,7 +42,7 @@ async def test_late_refresh_honors_replacement_or_deletion(change: str) -> None:
     await store.save(make_codex_tokens(expired=True))
     replacement = make_codex_tokens(suffix='replacement', expired=change == 'expired')
     async with (
-        httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client,
+        httpx2.AsyncClient(transport=httpx2.MockTransport(handler)) as client,
         CodexAuth(store=store, http_client=client) as auth,
     ):
         pending = asyncio.create_task(auth._request_tokens())
@@ -83,11 +83,11 @@ async def test_late_device_authorization_does_not_persist_superseded_tokens(canc
     release = asyncio.Event()
     cancelled = asyncio.Event()
 
-    async def handler(request: httpx.Request) -> httpx.Response:
+    async def handler(request: httpx2.Request) -> httpx2.Response:
         if request.url.path.endswith('/deviceauth/usercode'):
-            return httpx.Response(200, json={'device_auth_id': 'id', 'user_code': 'CODE', 'interval': '0.001'})
+            return httpx2.Response(200, json={'device_auth_id': 'id', 'user_code': 'CODE', 'interval': '0.001'})
         if request.url.path.endswith('/deviceauth/token'):
-            return httpx.Response(200, json={'authorization_code': 'code', 'code_verifier': 'verifier'})
+            return httpx2.Response(200, json={'authorization_code': 'code', 'code_verifier': 'verifier'})
         started.set()
         try:
             await release.wait()
@@ -100,7 +100,7 @@ async def test_late_device_authorization_does_not_persist_superseded_tokens(canc
     original = make_codex_tokens(suffix='original')
     await store.save(original)
     async with (
-        httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client,
+        httpx2.AsyncClient(transport=httpx2.MockTransport(handler)) as client,
         CodexAuth(store=store, http_client=client, config=CodexOAuthConfig(login_timeout_seconds=30)) as auth,
     ):
         login = await auth.start_device_login()
@@ -133,16 +133,16 @@ async def test_login_cancellation_waits_for_an_admitted_commit(mocker: MockerFix
         await release.wait()
         return await compare_and_swap(revision, tokens)
 
-    def backend(request: httpx.Request) -> httpx.Response:
+    def backend(request: httpx2.Request) -> httpx2.Response:
         if request.url.path.endswith('/deviceauth/usercode'):
-            return httpx.Response(200, json={'device_auth_id': 'id', 'user_code': 'CODE', 'interval': '0.001'})
+            return httpx2.Response(200, json={'device_auth_id': 'id', 'user_code': 'CODE', 'interval': '0.001'})
         if request.url.path.endswith('/deviceauth/token'):
-            return httpx.Response(200, json={'authorization_code': 'code', 'code_verifier': 'verifier'})
+            return httpx2.Response(200, json={'authorization_code': 'code', 'code_verifier': 'verifier'})
         return codex_token_response()
 
     mocker.patch.object(store, 'compare_and_swap', side_effect=commit)
     async with (
-        httpx.AsyncClient(transport=httpx.MockTransport(backend)) as client,
+        httpx2.AsyncClient(transport=httpx2.MockTransport(backend)) as client,
         CodexAuth(store=store, http_client=client) as auth,
     ):
         login = await auth.start_device_login()

@@ -1,5 +1,5 @@
 import asyncio
-from collections.abc import AsyncIterator, Sequence
+from collections.abc import AsyncGenerator, AsyncIterator, Sequence
 from contextlib import asynccontextmanager
 from functools import partial
 from http import HTTPStatus
@@ -118,7 +118,7 @@ async def _lifespan(
     startup: LifecycleCallback | None,
     shutdown: LifecycleCallback | None,
     shutdown_grace_seconds: int,
-) -> AsyncIterator[None]:
+) -> AsyncGenerator[None]:
     async with _server_lifespan(
         startup=startup,
         shutdown=shutdown,

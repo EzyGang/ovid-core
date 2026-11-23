@@ -2,8 +2,8 @@ from typing import Any
 
 from pydantic_ai import RunContext
 from pydantic_ai.capabilities import AbstractCapability, CapabilityOrdering, WrapRunHandler
-from pydantic_ai.capabilities.abstract import ValidatedToolArgs
-from pydantic_ai.messages import ModelResponse, ToolCallPart
+from pydantic_ai.capabilities.abstract import AgentNode, NodeResult, ValidatedToolArgs
+from pydantic_ai.messages import ToolCallPart
 from pydantic_ai.models import ModelRequestContext
 from pydantic_ai.run import AgentRunResult
 from pydantic_ai.tools import ToolDefinition
@@ -45,17 +45,17 @@ class UsageTrackingCapability[Deps](AbstractCapability[Deps]):
 
         return request_context
 
-    async def after_model_request(
+    async def after_node_run(
         self,
         ctx: RunContext[Deps],
         *,
-        request_context: ModelRequestContext,
-        response: ModelResponse,
-    ) -> ModelResponse:
-        del request_context
+        node: AgentNode[Deps],
+        result: NodeResult[Deps],
+    ) -> NodeResult[Deps]:
+        del node
         await self._recorder.record(aggregate_usage_from_pydantic(ctx.usage))
 
-        return response
+        return result
 
     async def before_tool_execute(
         self,

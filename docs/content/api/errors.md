@@ -24,6 +24,7 @@ OvidCoreError
 ├── ToolError
 │   ├── ToolValidationError
 │   └── ToolExecutionError
+│       ├── ToolRetryError
 │       └── ToolTimeoutError (also TimeoutError)
 ├── PluginError
 ├── TodoError
@@ -51,14 +52,15 @@ OvidCoreError
 | `ProviderError` | Invalid or unsupported provider messages, usage, and results. |
 | `PersistenceError` | Invalid or unsupported persisted message records. |
 | `ModelResolutionError` | Unknown selectors, alias collisions, provider construction, Codex catalog, or incompatible model settings. |
-| `AgentConstructionError` | Agent or adapter extension compilation failures. |
+| `AgentConstructionError` | Agent or adapter extension compilation failures, and invalid Agent Skills libraries at run start. |
 | `ExtensionCollisionError` | Duplicate capability, tool, or toolset IDs. |
 | `AgentRunError` | Normalized agent execution failures. |
 | `AgentTimeoutError` | Whole-run timeout. Catch this error as `AgentRunError` or built-in `TimeoutError`. |
 | `UsageLimitError` | Preflight or post-update aggregate usage limit violation. |
 | `ToolError` | Base for Ovid tool failures. |
-| `ToolValidationError` | Tool argument or result validation failure. |
-| `ToolExecutionError` | Tool implementation or hook execution failure. |
+| `ToolValidationError` | Tool argument validation failure when `AgentRetryPolicy.tool_failures` is `'raise'`. |
+| `ToolExecutionError` | Tool implementation or hook execution failure. A tool raises this error to report a failure that the model cannot correct with a new call. |
+| `ToolRetryError` | A tool raises this error to tell the model to correct the call. It uses the tool retry budget. |
 | `ToolTimeoutError` | Tool timeout. Catch this error as `ToolExecutionError` or built-in `TimeoutError`. |
 | `PluginError` | Plugin-boundary failure for consumers implementing plugin support. |
 | `TodoError` | Base for Todo reduction and optimistic-concurrency failures. |
@@ -75,6 +77,15 @@ OvidCoreError
 | `RelayAddressInUseError` | Duplicate live address registration in a Relay network. |
 | `TransportError` | Normalized transport and server-runtime failure. |
 | `ServerConstructionError` | Missing optional dependencies, incompatible agent runtime, or invalid server registration. |
+
+## Tool errors and the agent run
+
+By default, a tool error does not come out of `OvidAgent.run` or `OvidAgent.stream`.
+The adapter returns the failure to the model as a `failed` or `retried` tool result.
+Refer to [Tool failure results](extensions.md#tool-failure-results) for the full rules.
+
+A run raises `AgentRunError` when a tool has no retry budget left.
+A run raises a tool error only for a host fault or when `AgentRetryPolicy.tool_failures` is `'raise'`.
 
 ## Catching errors
 

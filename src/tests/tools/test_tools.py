@@ -9,7 +9,13 @@ from pydantic_ai.models.test import TestModel
 from pydantic_ai.usage import RunUsage
 
 import tests.tools.tool_consumer as consumer_module
-from ovid_core import ExtensionCollisionError, ToolExecutionError, ToolTimeoutError, ToolValidationError
+from ovid_core import (
+    AgentRetryPolicy,
+    ExtensionCollisionError,
+    ToolExecutionError,
+    ToolTimeoutError,
+    ToolValidationError,
+)
 from ovid_core.adapters.pydantic_ai import PydanticAIToolsetAdapter, adapt_capabilities, result_from_pydantic
 from ovid_core.capabilities import BaseCapability, CapabilityContributions
 from ovid_core.hooks import BaseToolHook
@@ -135,35 +141,39 @@ async def test_toolset_adapter_applies_tool_approval_override(
     assert definition.metadata == {'ovid_approval': effective_approval.model_dump(mode='json')}
 
 
-async def test_adapter_preserves_typed_validation_execution_timeout_and_cancellation_errors() -> None:
+async def test_raise_mode_adapter_raises_typed_errors_and_host_faults_abort_in_return_mode() -> None:
     context = upstream_context()
     hook = RecordingHook()
+    raising = AgentRetryPolicy(tools=0, output=0, tool_failures='raise')
 
-    invalid_adapter = PydanticAIToolsetAdapter(source=TrackingToolset((AddTool(),)), hooks=(hook,))
+    invalid_adapter = PydanticAIToolsetAdapter(source=TrackingToolset((AddTool(),)), hooks=(hook,), retries=raising)
     definitions = await invalid_adapter.get_tools(context)
     with pytest.raises(ToolValidationError, match="Invalid arguments for tool 'add'"):
         await invalid_adapter.call_tool('add', {'left': 'bad'}, context, definitions['add'])
+    assert definitions['add'].max_retries == 0
+
+    host_adapter = PydanticAIToolsetAdapter(source=TrackingToolset((AddTool(),)), hooks=(hook,))
+    definitions = await host_adapter.get_tools(context)
     with pytest.raises(ToolExecutionError, match="Tool 'missing' is not available"):
         await PydanticAIToolsetAdapter(source=TrackingToolset(())).call_tool('missing', {}, context, definitions['add'])
-
     with pytest.raises(ToolExecutionError, match='did not supply a tool call ID'):
-        await invalid_adapter.call_tool(
+        await host_adapter.call_tool(
             'add',
             {'left': 1, 'right': 2},
             replace(context, tool_call_id=None),
             definitions['add'],
         )
     with pytest.raises(ToolExecutionError, match='did not supply run identity'):
-        await invalid_adapter.get_tools(replace(context, run_id=None))
+        await host_adapter.get_tools(replace(context, run_id=None))
     with pytest.raises(ToolExecutionError, match='invalid approval metadata'):
-        await invalid_adapter.call_tool(
+        await host_adapter.call_tool(
             'add',
             {'left': 1, 'right': 2},
             replace(context, tool_call_metadata=object()),
             definitions['add'],
         )
     with pytest.raises(ToolExecutionError, match='invalid tool execution context'):
-        await invalid_adapter.get_tools(replace(context, run_id='invalid'))
+        await host_adapter.get_tools(replace(context, run_id='invalid'))
 
     for mode, error_type, message in (
         ('error', ToolExecutionError, "Tool 'controlled' failed"),
@@ -171,13 +181,17 @@ async def test_adapter_preserves_typed_validation_execution_timeout_and_cancella
         ('invalid_result', ToolExecutionError, "Tool 'controlled' failed"),
     ):
         controlled = ControlledTool(mode=mode)
-        adapter = PydanticAIToolsetAdapter(source=TrackingToolset((controlled,)), hooks=(hook,))
+        adapter = PydanticAIToolsetAdapter(source=TrackingToolset((controlled,)), hooks=(hook,), retries=raising)
         definitions = await adapter.get_tools(context)
         with pytest.raises(error_type, match=message):
             await adapter.call_tool('controlled', {'left': 1, 'right': 2}, context, definitions['controlled'])
 
     timeout_tool = ControlledTool(mode='wait', timeout_seconds=0.001)
-    timeout_adapter = PydanticAIToolsetAdapter(source=TrackingToolset((timeout_tool,)), hooks=(hook,))
+    timeout_adapter = PydanticAIToolsetAdapter(
+        source=TrackingToolset((timeout_tool,)),
+        hooks=(hook,),
+        retries=raising,
+    )
     definitions = await timeout_adapter.get_tools(context)
     with pytest.raises(ToolTimeoutError, match="Tool 'controlled' timed out"):
         await timeout_adapter.call_tool('controlled', {'left': 1, 'right': 2}, context, definitions['controlled'])
@@ -269,7 +283,8 @@ async def test_dynamic_tool_collisions_and_empty_capabilities_are_stable() -> No
     old_definitions = await pinned.get_tools(context)
     source.tools = (PinnedAddTool('new'),)
     new_definitions = await pinned.get_tools(context)
-    old_result = await pinned.call_tool('calculate', {'left': 1, 'right': 2}, context, old_definitions['calculate'])
+    old_copy = replace(old_definitions['calculate'], tool_def=new_definitions['calculate'].tool_def)
+    old_result = await pinned.call_tool('calculate', {'left': 1, 'right': 2}, context, old_copy)
     new_result = await pinned.call_tool('calculate', {'left': 1, 'right': 2}, context, new_definitions['calculate'])
     assert old_result['content'] == 'old'
     assert new_result['content'] == 'new'
@@ -278,9 +293,11 @@ async def test_dynamic_tool_collisions_and_empty_capabilities_are_stable() -> No
     text_definitions = await text_adapter.get_tools(context)
     assert text_definitions['add'].tool_def.parameters_json_schema['properties'].keys() == {'left', 'right'}
     one_toolset = adapt_capabilities(
-        (BaseCapability(id='one', contributions=CapabilityContributions(toolsets=(TrackingToolset(()),))),)
+        (BaseCapability(id='one', contributions=CapabilityContributions(toolsets=(TrackingToolset(()),))),),
+        retries=AgentRetryPolicy(tools=5),
     )[0].get_toolset()
     assert isinstance(one_toolset, PydanticAIToolsetAdapter)
+    assert one_toolset.retries.tools == 5
 
     conflicting = adapt_capabilities(
         (

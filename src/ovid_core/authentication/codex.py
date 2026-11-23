@@ -1,7 +1,7 @@
 import asyncio
 from urllib.parse import parse_qs, urlsplit
 
-import httpx
+import httpx2
 from pydantic import SecretStr
 
 from ovid_core.authentication.contracts import AuthenticationFlowSession, CredentialStore
@@ -32,7 +32,7 @@ class CodexBrowserAuthenticationFlow:
     id: str = 'browser'
     label: str = 'Browser callback'
 
-    def __init__(self, *, auth: CodexAuth, http_client: httpx.AsyncClient) -> None:
+    def __init__(self, *, auth: CodexAuth, http_client: httpx2.AsyncClient) -> None:
         self._auth = auth
         self._http_client = http_client
 
@@ -52,7 +52,7 @@ class CodexDeviceAuthenticationFlow:
 
 
 class _CodexBrowserAuthenticationSession:
-    def __init__(self, *, auth: CodexAuth, http_client: httpx.AsyncClient) -> None:
+    def __init__(self, *, auth: CodexAuth, http_client: httpx2.AsyncClient) -> None:
         self._auth = auth
         self._http_client = http_client
         self._login: CodexBrowserLogin | None = None

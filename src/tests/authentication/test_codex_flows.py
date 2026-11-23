@@ -2,7 +2,7 @@ import asyncio
 from typing import cast
 from urllib.parse import parse_qs, urlencode, urlsplit
 
-import httpx
+import httpx2
 import pytest
 from pydantic import SecretStr
 from pytest_mock import MockerFixture
@@ -25,11 +25,11 @@ from tests.support.helpers import codex_token_response, oauth_client
 
 
 async def test_device_flow_reports_generic_interactions_and_persists() -> None:
-    def handler(request: httpx.Request) -> httpx.Response:
+    def handler(request: httpx2.Request) -> httpx2.Response:
         if request.url.path.endswith('/deviceauth/usercode'):
-            return httpx.Response(200, json={'device_auth_id': 'device', 'user_code': 'CODE', 'interval': 0.001})
+            return httpx2.Response(200, json={'device_auth_id': 'device', 'user_code': 'CODE', 'interval': 0.001})
         if request.url.path.endswith('/deviceauth/token'):
-            return httpx.Response(200, json={'authorization_code': 'authorization', 'code_verifier': 'verifier'})
+            return httpx2.Response(200, json={'authorization_code': 'authorization', 'code_verifier': 'verifier'})
         return codex_token_response()
 
     store = MemoryCodexTokenStore()
@@ -68,7 +68,7 @@ async def test_browser_flow_accepts_remote_callback_and_cancels() -> None:
     )
     async with (
         oauth_client(lambda _request: codex_token_response()) as auth_client,
-        httpx.AsyncClient(trust_env=False) as callback_client,
+        httpx2.AsyncClient(trust_env=False) as callback_client,
         CodexAuth(store=store, http_client=auth_client, config=config) as auth,
     ):
         flow = CodexBrowserAuthenticationFlow(auth=auth, http_client=callback_client)
@@ -91,8 +91,8 @@ async def test_browser_flow_rejects_invalid_callbacks_and_failed_logins() -> Non
     store = MemoryCodexTokenStore()
     config = CodexOAuthConfig(issuer='https://auth.example', callback_ports=(0,), login_timeout_seconds=5)
     async with (
-        oauth_client(lambda _request: httpx.Response(500)) as auth_client,
-        httpx.AsyncClient(trust_env=False) as callback_client,
+        oauth_client(lambda _request: httpx2.Response(500)) as auth_client,
+        httpx2.AsyncClient(trust_env=False) as callback_client,
         CodexAuth(store=store, http_client=auth_client, config=config) as auth,
     ):
         flow = CodexBrowserAuthenticationFlow(auth=auth, http_client=callback_client)

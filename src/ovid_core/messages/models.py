@@ -57,7 +57,7 @@ class ToolReturnData(BaseModel):
     tool_name: str = Field(min_length=1)
     content: JsonValue
     tool_call_id: str = Field(min_length=1)
-    outcome: Literal['success', 'failed', 'denied', 'interrupted'] = 'success'
+    outcome: Literal['success', 'failed', 'denied', 'interrupted', 'retried'] = 'success'
 
 
 class ToolReturnPart(ToolReturnData):
@@ -72,9 +72,10 @@ class CapabilityLoadCallPart(BaseModel):
 
 class CapabilityLoadReturnPart(BaseModel):
     kind: Literal['capability_load_return'] = 'capability_load_return'
+    message: str | None = None
     instructions: str | None = None
     tool_call_id: str = Field(min_length=1)
-    outcome: Literal['success', 'failed', 'denied', 'interrupted'] = 'success'
+    outcome: Literal['success', 'failed', 'denied', 'interrupted', 'retried'] = 'success'
 
 
 class RetryPromptPart(BaseModel):
@@ -82,6 +83,12 @@ class RetryPromptPart(BaseModel):
     content: str
     tool_name: str | None = None
     tool_call_id: str = Field(min_length=1)
+
+
+class OpaqueRequestPart(BaseModel):
+    kind: Literal['opaque_request'] = 'opaque_request'
+    part_kind: str = Field(min_length=1)
+    payload: dict[str, JsonValue]
 
 
 MessagePart = Annotated[
@@ -94,12 +101,21 @@ MessagePart = Annotated[
     | ToolReturnPart
     | CapabilityLoadCallPart
     | CapabilityLoadReturnPart
-    | RetryPromptPart,
+    | RetryPromptPart
+    | OpaqueRequestPart,
     Field(discriminator='kind'),
 ]
 
 _REQUEST_PART_KINDS = frozenset(
-    {'system_prompt', 'user_prompt', 'tool_return', 'capability_load_return', 'retry_prompt'}
+    {
+        'system_prompt',
+        'user_prompt',
+        'compaction',
+        'tool_return',
+        'capability_load_return',
+        'retry_prompt',
+        'opaque_request',
+    }
 )
 _RESPONSE_PART_KINDS = frozenset({'text', 'thinking', 'compaction', 'tool_call', 'capability_load_call'})
 

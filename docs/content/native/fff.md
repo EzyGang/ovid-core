@@ -37,7 +37,12 @@ definition = AgentDefinition[AppDependencies, str](
 )
 ```
 
-`FffCapability` contributes deferred essential-read tools:
+`FffCapability` is a deferred capability with the ID `native_fff`.
+The model cannot see or call the FFF tools at the start of a run.
+The model must first call the `load_capability` tool with the ID `native_fff`.
+Pydantic AI refuses an earlier call and tells the model to load the capability.
+
+After the load, `FffCapability` contributes these essential-read tools:
 
 | Tool | Default timeout | Purpose |
 | --- | --- | --- |
@@ -214,6 +219,8 @@ capability = FffCapability(include_glob=True)
 ```
 
 The resulting tool set contains `glob`, `find_files`, `grep`, and `multi_grep`.
+This `glob` tool belongs to the deferred capability.
+Thus the model must load `native_fff` before it can see or call `glob`.
 Do not add a separate `SearchCapability` while FFF `grep` remains enabled.
 Both capabilities use the `grep` wire name.
 To keep native grep, combine `FffCapability(include_grep=False)` with `SearchCapability()`.
@@ -231,6 +238,7 @@ capability = await select_fff_search_backend(workspace=workspace)
 ```
 
 Successful startup returns `FffCapability` with native `glob`.
+All tools of this capability, `glob` included, stay hidden until the model loads `native_fff`.
 An FFF startup failure or readiness timeout returns `SearchCapability`.
 The selection remains fixed for the agent lifetime.
 The workspace retains lifecycle ownership.

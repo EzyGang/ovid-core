@@ -4,7 +4,7 @@ import time
 from collections.abc import Callable
 from uuid import UUID
 
-import httpx
+import httpx2
 from pydantic import JsonValue, SecretStr, TypeAdapter
 
 from ovid_core.codex import CodexTokens, CodexTokenSnapshot
@@ -61,10 +61,10 @@ def make_codex_tokens(*, expired: bool = False, suffix: str = 'old') -> CodexTok
     )
 
 
-def codex_token_response() -> httpx.Response:
+def codex_token_response() -> httpx2.Response:
     tokens = make_codex_tokens()
 
-    return httpx.Response(
+    return httpx2.Response(
         200,
         json={
             'id_token': tokens.id_token.get_secret_value(),
@@ -74,12 +74,12 @@ def codex_token_response() -> httpx.Response:
     )
 
 
-def json_body(request: httpx.Request) -> dict[str, JsonValue]:
+def json_body(request: httpx2.Request) -> dict[str, JsonValue]:
     return _JSON_OBJECT_ADAPTER.validate_json(request.content)
 
 
-def oauth_client(handler: Callable[[httpx.Request], httpx.Response]) -> httpx.AsyncClient:
-    return httpx.AsyncClient(transport=httpx.MockTransport(handler))
+def oauth_client(handler: Callable[[httpx2.Request], httpx2.Response]) -> httpx2.AsyncClient:
+    return httpx2.AsyncClient(transport=httpx2.MockTransport(handler))
 
 
 def make_request_usage(

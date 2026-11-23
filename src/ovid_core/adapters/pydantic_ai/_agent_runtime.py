@@ -1,5 +1,5 @@
 import asyncio
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from typing import Never
 
@@ -95,7 +95,7 @@ class PydanticAIAgentRuntime[Deps, Output](AgentRuntime[Deps, Output]):
         run_id: RunId | None,
         conversation_id: ConversationId | None,
         usage_tracker: UsageTracker | None,
-    ) -> AsyncIterator[AgentStream[Output]]:
+    ) -> AsyncGenerator[AgentStream[Output]]:
         run_identity, conversation_identity = _identities(messages, run_id, conversation_id)
         recorder = RunUsageRecorder(tracker=usage_tracker)
         capability = UsageTrackingCapability(tracker=usage_tracker, recorder=recorder)

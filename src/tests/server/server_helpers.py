@@ -2,7 +2,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import replace
 
-import httpx
+import httpx2
 from pydantic_ai.messages import ModelMessage, ModelResponse, TextPart
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 
@@ -14,10 +14,10 @@ from tests.support.agent_helpers import agent_factory
 
 
 @asynccontextmanager
-async def server_client(app: ASGIApplication) -> AsyncIterator[httpx.AsyncClient]:
-    transport = httpx.ASGITransport(app=app)
+async def server_client(app: ASGIApplication) -> AsyncIterator[httpx2.AsyncClient]:
+    transport = httpx2.ASGITransport(app=app)
 
-    async with httpx.AsyncClient(transport=transport, base_url='http://test') as client:
+    async with httpx2.AsyncClient(transport=transport, base_url='http://test') as client:
         yield client
 
 

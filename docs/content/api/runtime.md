@@ -10,13 +10,51 @@ Import from `ovid_core.messages.models`. `MessagePart` is a Pydantic discriminat
 | `UserPromptPart` | `content: str` | request |
 | `TextPart` | `content: str` | response |
 | `ThinkingPart` | `content`, optional ID, signature, provider name, and opaque JSON provider details | response |
+| `CompactionPart` | optional `content`, ID, provider name, and opaque JSON provider details | request or response |
 | `ToolCallPart` | non-empty `tool_name`, `arguments`, non-empty `tool_call_id` | response |
 | `ToolReturnPart` | non-empty `tool_name`, JSON `content`, non-empty `tool_call_id`, `outcome='success'` | request |
 | `CapabilityLoadCallPart` | non-empty `capability_id`, non-empty `tool_call_id` | response |
-| `CapabilityLoadReturnPart` | `instructions: str | None`, non-empty `tool_call_id`, `outcome='success'` | request |
+| `CapabilityLoadReturnPart` | `message: str | None`, `instructions: str | None`, non-empty `tool_call_id`, `outcome='success'` | request |
 | `RetryPromptPart` | `content`, optional `tool_name`, non-empty `tool_call_id` | request |
+| `OpaqueRequestPart` | non-empty `part_kind`, JSON object `payload` | request |
 
-`ToolArguments = str | dict[str, JsonValue] | None`. Tool and capability outcomes are one of `success`, `failed`, `denied`, or `interrupted`.
+`ToolArguments = str | dict[str, JsonValue] | None`.
+Tool and capability outcomes are one of `success`, `failed`, `denied`, `interrupted`, or `retried`.
+The `retried` outcome tells the model to make the tool call again.
+The content of a `retried` return is the feedback for the model.
+
+A provider writes a response `CompactionPart`.
+An application or a capability writes a request `CompactionPart`, which contains only `content`.
+
+`CapabilityLoadReturnPart.message` is the load confirmation that the model receives.
+`instructions` is `None` for a new load.
+Messages that an earlier version stored can contain `instructions`.
+
+`RetryPromptPart` is a legacy part in stored messages.
+Ovid Core does not write it for new runs.
+The adapter converts it to a `retried` tool return when `tool_name` is set.
+The adapter converts it to Pydantic AI retry feedback when `tool_name` is `None`.
+
+### `OpaqueRequestPart`
+
+`OpaqueRequestPart` stores a Pydantic AI request part that the typed Ovid parts cannot hold without data loss.
+`part_kind` is the Pydantic AI part kind.
+`payload` is the JSON-compatible serialized part.
+The adapter restores the same Pydantic AI part from `payload`.
+
+Pydantic AI uses these parts to continue a conversation.
+Keep them in stored history and do not change `payload`.
+
+| `part_kind` | Recorded state |
+| --- | --- |
+| `instruction-baseline` | The instruction blocks that a request sent. |
+| `instruction-delta` | A replacement or a withdrawal of one instruction block, such as the instructions of a loaded capability. |
+| `capability-load-delta` | Capabilities that code loaded without a `load_capability` call. |
+| `tool-availability-delta` | Tools that became available to the model. |
+| `model-settings-delta` | Model settings that changed during the conversation. |
+| `retry-feedback` | Feedback about a response that Pydantic AI could not use as output. |
+| `capability`, `speech` | Content that a capability or a realtime session recorded. |
+| `system-prompt`, `user-prompt`, `compaction` | A part with data that the typed Ovid part does not hold, such as a request scope, file content, or metadata. |
 
 `ThinkingPart` preserves provider reasoning state for replay. User-facing event projections omit it.
 
@@ -63,6 +101,9 @@ Import from `ovid_core.runtime.events`. Every event extends `EventIdentity` and 
 | `RunFailedEvent` | `run_failed` | non-empty `error_type`, non-empty `message` |
 
 `AgentEvent` is the discriminated union of these eight event models.
+
+A `ToolResultEvent` has the same `outcome` values as a `ToolReturnPart`.
+A stream emits a `ToolResultEvent` with `outcome='retried'` for each retried tool call.
 
 ```text
 def tool_events_from_messages(

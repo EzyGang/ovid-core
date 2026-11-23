@@ -143,6 +143,9 @@ Provider modules own provider-specific behavior.
 
 The registry and application surfaces contain no provider-specific dispatch.
 
+`default_provider_registry` and `codex_subscription_provider_definition` require `http_client: httpx2.AsyncClient`.
+The Codex browser flow uses this client to submit the callback URL.
+
 
 ## Environment resolver
 

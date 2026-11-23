@@ -12,7 +12,6 @@ from pydantic_ai.messages import (
     PartStartEvent,
     TextPart,
     TextPartDelta,
-    ToolReturnPart,
 )
 from pydantic_ai.run import AgentRunResult, AgentRunResultEvent
 
@@ -122,7 +121,7 @@ class PydanticAIStream[Output](AgentStream[Output]):
                     tool_call_id=event.part.tool_call_id,
                 ),
             )
-        if isinstance(event, FunctionToolResultEvent) and isinstance(event.part, ToolReturnPart):
+        if isinstance(event, FunctionToolResultEvent):
             self._expect_request = True
 
             return (

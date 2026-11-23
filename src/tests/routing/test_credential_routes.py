@@ -1,6 +1,6 @@
 import json
 
-import httpx
+import httpx2
 import pytest
 from pydantic import SecretStr
 from pydantic_ai.models.test import TestModel
@@ -20,7 +20,7 @@ from tests.support.agent_helpers import RuntimeFactory, UnsupportedRuntime
 async def test_route_resolution_failure_never_uses_stale_or_other_candidate(
     mocker: MockerFixture, failure: Exception
 ) -> None:
-    requests: list[httpx.Request] = []
+    requests: list[httpx2.Request] = []
     unavailable = False
 
     async def resolve(model_id: str, provider: str) -> SecretStr:
@@ -28,13 +28,13 @@ async def test_route_resolution_failure_never_uses_stale_or_other_candidate(
             raise failure
         return SecretStr(f'{model_id}-key')
 
-    def respond(request: httpx.Request) -> httpx.Response:
+    def respond(request: httpx2.Request) -> httpx2.Response:
         requests.append(request)
         return model_reply()
 
     mocker.patch(
-        'pydantic_ai.providers.openai.create_async_http_client',
-        side_effect=lambda: httpx.AsyncClient(transport=httpx.MockTransport(respond)),
+        'pydantic_ai.providers._openai_compatible.create_async_httpx2_client',
+        side_effect=lambda: httpx2.AsyncClient(transport=httpx2.MockTransport(respond)),
     )
     config = OvidConfig.model_validate(
         {
@@ -57,21 +57,21 @@ async def test_route_resolution_failure_never_uses_stale_or_other_candidate(
 
 
 async def test_dynamic_fallback_preserves_order_and_settings_between_tool_steps(mocker: MockerFixture) -> None:
-    requests: list[httpx.Request] = []
+    requests: list[httpx2.Request] = []
     version = 'old'
 
     async def resolve(model_id: str, provider: str) -> SecretStr:
         return SecretStr(f'{model_id}-{version}')
 
-    def respond(request: httpx.Request) -> httpx.Response:
+    def respond(request: httpx2.Request) -> httpx2.Response:
         requests.append(request)
         if request.headers['authorization'].startswith('Bearer primary-'):
-            return httpx.Response(503, headers={'x-should-retry': 'false'}, json={'error': {'message': 'unavailable'}})
+            return httpx2.Response(503, headers={'x-should-retry': 'false'}, json={'error': {'message': 'unavailable'}})
         return model_reply(tool_value=1 if version == 'old' else None)
 
     mocker.patch(
-        'pydantic_ai.providers.openai.create_async_http_client',
-        side_effect=lambda: httpx.AsyncClient(transport=httpx.MockTransport(respond)),
+        'pydantic_ai.providers._openai_compatible.create_async_httpx2_client',
+        side_effect=lambda: httpx2.AsyncClient(transport=httpx2.MockTransport(respond)),
     )
     tool = AddTool()
 

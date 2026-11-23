@@ -4,7 +4,7 @@ from dataclasses import replace
 import pytest
 from pydantic_ai import Agent, InstrumentationSettings
 from pydantic_ai.messages import ModelMessage
-from pydantic_ai.models.function import AgentInfo, FunctionModel
+from pydantic_ai.models.function import AgentInfo, DeltaToolCall, FunctionModel
 from pydantic_ai.models.test import TestModel
 from pytest_mock import MockerFixture
 
@@ -22,6 +22,7 @@ from ovid_core.capabilities import BaseCapability
 from ovid_core.config import ModelConfig, OvidConfig
 from ovid_core.mcp import MCPHTTPTransportConfig, MCPServerConfig
 from ovid_core.routing import ModelRef, ModelRouteRef
+from ovid_core.runtime import tool_events_from_messages
 from ovid_core.tools import ToolApproval, ToolPresentation
 from tests.support.agent_consumer import AddTool, AgentDependencies, RecordingHook
 from tests.support.agent_helpers import agent_factory, failing_request, structured_test_model
@@ -202,8 +203,8 @@ async def test_factory_compiles_exact_inputs_fallback_diagnostics_and_continuati
         message.instructions for message in result.messages if message.instructions is not None
     )
     assert request_instructions == (
-        'Return a structured answer.\nUse the add tool before answering.',
-        'Return a structured answer.\nUse the add tool before answering.',
+        'Return a structured answer.\n\nUse the add tool before answering.',
+        'Return a structured answer.\n\nUse the add tool before answering.',
     )
 
     continued = await agent.run('Continue.', deps=deps, messages=result.messages)
@@ -347,3 +348,36 @@ async def test_text_stream_preserves_deltas_without_implicit_tools() -> None:
         'usage_update',
         'run_completed',
     ]
+
+
+@pytest.mark.asyncio
+async def test_unknown_tool_is_retried_under_default_policy_in_stream_and_history() -> None:
+    async def call_unknown_tool_once(
+        messages: list[ModelMessage],
+        info: AgentInfo,
+    ) -> AsyncIterator[str | dict[int, DeltaToolCall]]:
+        del info
+        if len(messages) == 1:
+            yield {0: DeltaToolCall(name='missing', json_args='{}', tool_call_id='unknown-tool')}
+        else:
+            yield 'recovered'
+
+    model = FunctionModel(stream_function=call_unknown_tool_once, model_name='retrying')
+    agent = await agent_factory({'primary': model}).build(consumer.text_definition())
+
+    async with agent.stream('Write.', deps=AgentDependencies(prefix='retry')) as stream:
+        streamed = [event for event in [event async for event in stream] if event.kind == 'tool_result']
+        result = stream.result
+    replayed = [
+        event
+        for event in tool_events_from_messages(
+            result.messages,
+            run_id=result.run_id,
+            conversation_id=result.conversation_id,
+        )
+        if event.kind == 'tool_result'
+    ]
+
+    assert result.output == 'recovered'
+    assert [(event.tool_call_id, event.outcome) for event in streamed] == [('unknown-tool', 'retried')]
+    assert [(event.tool_call_id, event.outcome) for event in replayed] == [('unknown-tool', 'retried')]

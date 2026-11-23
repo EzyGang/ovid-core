@@ -110,6 +110,9 @@ definition = AgentDefinition[AppDependencies, str](
 
 The capability has ID `todo` and contributes one instruction plus one `todo` tool. The tool requires no approval, has a 10-second timeout, and receives `ConversationId` from its run context. Every successful call returns the complete committed state, counts, and active phase and task.
 
+A rejected operation, such as `start` on a task that does not exist, returns a `failed` tool result.
+The result text contains the error type and the target, and the run continues.
+
 The capability uses direct service injection. It does not require `AgentServices`, construct stores, or acquire backend resources.
 
 ## Conversation behavior

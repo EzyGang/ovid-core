@@ -3,7 +3,7 @@ import math
 from dataclasses import dataclass
 from urllib.parse import urljoin
 
-import httpx
+import httpx2
 from pydantic import ValidationError
 
 from ovid_core.codex._oauth import exchange_authorization_code
@@ -18,7 +18,7 @@ from ovid_core.codex.models import (
 from ovid_core.errors import CodexAuthError
 
 
-_JSON_HEADERS = httpx.Headers({'Content-Type': 'application/json'})
+_JSON_HEADERS = httpx2.Headers({'Content-Type': 'application/json'})
 
 
 @dataclass(frozen=True, slots=True)
@@ -30,7 +30,7 @@ class _DeviceAuthorization:
 
 
 class _DeviceLoginFlow:
-    def __init__(self, *, http_client: httpx.AsyncClient, config: CodexOAuthConfig) -> None:
+    def __init__(self, *, http_client: httpx2.AsyncClient, config: CodexOAuthConfig) -> None:
         self._client = http_client
         self._config = config
 
@@ -45,7 +45,7 @@ class _DeviceLoginFlow:
             interval = float(payload.interval)
             if not math.isfinite(interval) or interval <= 0:
                 raise ValueError
-        except httpx.HTTPError, ValidationError, ValueError:
+        except httpx2.HTTPError, ValidationError, ValueError:
             raise CodexAuthError('Codex device authorization failed') from None
 
         return _DeviceAuthorization(
@@ -86,7 +86,7 @@ class _DeviceLoginFlow:
                 return _DeviceTokenResponse.model_validate_json(response.content, extra='ignore')
             if response.status_code not in {403, 404}:
                 raise CodexAuthError(f'Codex device authorization failed with status {response.status_code}')
-        except httpx.HTTPError, ValidationError:
+        except httpx2.HTTPError, ValidationError:
             raise CodexAuthError('Codex device authorization failed') from None
 
         return None

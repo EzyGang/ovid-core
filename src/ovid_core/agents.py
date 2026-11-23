@@ -1,6 +1,6 @@
 import asyncio
 from abc import abstractmethod
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import replace
 from typing import Any, Protocol, cast
@@ -131,7 +131,7 @@ class OvidAgent[Deps, Output]:
         conversation_id: ConversationId | None,
         usage_tracker: UsageTracker | None,
         model: AgentModelSelector | None,
-    ) -> AsyncIterator[AgentStream[Output]]:
+    ) -> AsyncGenerator[AgentStream[Output]]:
         runtime = await self._resolve_runtime(model)
 
         async with runtime.stream(

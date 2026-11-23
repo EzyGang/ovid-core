@@ -4,7 +4,7 @@ import asyncio
 from types import TracebackType
 from typing import Self
 
-import httpx
+import httpx2
 
 from ovid_core.codex._browser import BrowserCallbackServer
 from ovid_core.codex._device import _DeviceAuthorization, _DeviceLoginFlow
@@ -21,11 +21,11 @@ class CodexAuth:
         self,
         *,
         store: CodexTokenStore,
-        http_client: httpx.AsyncClient | None = None,
+        http_client: httpx2.AsyncClient | None = None,
         config: CodexOAuthConfig | None = None,
     ) -> None:
         self._config = config or CodexOAuthConfig()
-        self._client = http_client or httpx.AsyncClient()
+        self._client = http_client or httpx2.AsyncClient()
         self._owns_client = http_client is None
         self._tokens = _CodexTokenManager(store=store, http_client=self._client, config=self._config)
         self._login: CodexBrowserLogin | CodexDeviceLogin | None = None
@@ -37,7 +37,7 @@ class CodexAuth:
     def persistent(
         cls,
         *,
-        http_client: httpx.AsyncClient | None = None,
+        http_client: httpx2.AsyncClient | None = None,
         config: CodexOAuthConfig | None = None,
         service: str = 'ovid-core.codex',
         account: str = 'default',
@@ -49,7 +49,9 @@ class CodexAuth:
         )
 
     @classmethod
-    def ephemeral(cls, *, http_client: httpx.AsyncClient | None = None, config: CodexOAuthConfig | None = None) -> Self:
+    def ephemeral(
+        cls, *, http_client: httpx2.AsyncClient | None = None, config: CodexOAuthConfig | None = None
+    ) -> Self:
         return cls(store=MemoryCodexTokenStore(), http_client=http_client, config=config)
 
     @property

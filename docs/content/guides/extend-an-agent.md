@@ -60,9 +60,36 @@ The Pydantic AI adapter:
 5. The adapter calls the hooks.
 6. The adapter validates the returned `ToolResult`.
 7. The adapter converts the result to upstream tool-return content.
-8. The adapter converts validation, execution, and timeout failures to Ovid errors.
+8. The adapter returns validation, execution, and timeout failures to the model as tool results.
 
-The adapter does not convert cancellation to a tool error.
+The adapter does not convert cancellation to a tool result.
+
+### Report a tool failure
+
+Raise `ToolExecutionError` when the call cannot succeed.
+Raise `ToolRetryError` when the model can correct the arguments and call the tool again.
+
+```python
+from ovid_core.errors import ToolExecutionError, ToolRetryError
+
+
+async def execute(self, context, arguments):
+    if not arguments.path.is_relative_to(context.run.deps.workspace):
+        raise ToolRetryError('path must be inside the workspace')
+    try:
+        text = await context.run.deps.files.read_text(arguments.path)
+    except FileNotFoundError as error:
+        raise ToolExecutionError(f'file not found: {arguments.path}') from error
+    ...
+```
+
+The model receives the exception text as the tool result, and the run continues.
+The text also goes into the stored conversation history.
+Do not put secret values in the text.
+
+A different exception also becomes a tool result, with the exception type and text.
+`AgentRetryPolicy` sets the retry budget, the maximum text length, and the `tool_failures='raise'` mode that stops the run.
+Refer to [Tool failure results](../api/extensions.md#tool-failure-results) for the full rules.
 
 Each tool declares its default approval value.
 The application controls approval and supplies approval data in the execution context.
@@ -257,7 +284,7 @@ class ToolAuditHook(BaseToolHook[AppDeps]):
 
 Pass hooks directly through `AgentDefinition.hooks` when they apply to the entire agent. Contribute them from one capability when they apply only to that capability's toolsets.
 
-`on_tool_error` receives normalized `ToolExecutionError`. Hooks should avoid logging raw arguments or results when those values may contain user or secret content.
+`on_tool_error` receives normalized `ToolExecutionError` one time for each failed tool execution. Hooks should avoid logging raw arguments or results when those values may contain user or secret content.
 
 ## Add provider-native capabilities
 
@@ -306,7 +333,12 @@ skills = SkillsCapability[AppDeps](
 
 Skills default to deferred loading. The model initially sees capability metadata rather than every skill's complete instructions and tools. It loads a selected capability when needed, which reduces the initial prompt and tool surface.
 
-Set `include` or `exclude`, never both. Filesystem discovery happens through the installed Agent Skills integration at runtime, not during module import.
+Set `include` or `exclude`, never both.
+List `directories` from highest to lowest precedence.
+
+The installed Agent Skills integration reads the directories at the start of each run, not during module import or agent build.
+A missing directory or an unknown skill name stops the run with `AgentConstructionError`.
+See the [extension API](../api/extensions.md#agent-skills) for all rules.
 
 ## Connect MCP servers from configuration
 
