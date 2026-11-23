@@ -7,7 +7,8 @@ from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.messages import ModelMessage, ModelResponse, TextPart
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 
-from ovid_core.adapters.pydantic_ai import adapt_capabilities, pydantic_ai_capability
+from ovid_core.adapters.pydantic_ai import adapt_integration_capability, pydantic_ai_capability
+from ovid_core.adapters.pydantic_ai.extensions import adapt_agent_extensions
 from ovid_core.agents import AgentDefinition
 from ovid_core.capabilities.base import BaseCapability
 from ovid_core.errors import ExtensionCollisionError
@@ -41,7 +42,7 @@ def test_pydantic_ai_capability_preserves_source_and_metadata() -> None:
     assert capability.description == 'Record the run.'
     assert capability.defer_loading is False
     assert capability.contributions.tools == ()
-    assert adapt_capabilities((capability,)) == (source,)
+    assert adapt_integration_capability(capability) is source
 
 
 def test_pydantic_ai_capability_derives_non_deferred_id() -> None:
@@ -67,7 +68,7 @@ def test_pydantic_ai_capability_id_collides_with_ovid_capability() -> None:
     upstream = pydantic_ai_capability(RecordingCapability(id='shared'))
 
     with pytest.raises(ExtensionCollisionError, match="Duplicate capability ID: 'shared'"):
-        adapt_capabilities((BaseCapability[None](id='shared'), upstream))
+        adapt_agent_extensions((BaseCapability[None](id='shared'), upstream), (), ())
 
 
 async def test_pydantic_ai_capability_runs_with_full_lifecycle() -> None:

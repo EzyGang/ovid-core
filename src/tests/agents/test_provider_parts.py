@@ -11,7 +11,7 @@ from pydantic_ai.messages import NativeToolReturnPart as PydanticNativeToolRetur
 from pydantic_ai.messages import TextPart as PydanticTextPart
 from pydantic_ai.messages import ToolReturnPart as PydanticToolReturnPart
 from pydantic_ai.messages import UserPromptPart as PydanticUserPromptPart
-from pydantic_ai.models.function import AgentInfo, DeltaToolCall, DeltaToolCalls, FunctionModel
+from pydantic_ai.models.function import AgentInfo, BuiltinToolCallsReturns, DeltaToolCall, DeltaToolCalls, FunctionModel
 from pydantic_ai.native_tools import WebSearchTool
 from pydantic_ai.toolsets import FunctionToolset
 
@@ -37,7 +37,7 @@ from ovid_core.messages import (
     UserPromptPart,
 )
 from ovid_core.routing import ModelRef
-from ovid_core.runtime import ToolResultEvent
+from ovid_core.runtime import ToolCallEvent, ToolResultEvent
 from tests.support.agent_helpers import agent_factory
 
 
@@ -76,11 +76,22 @@ async def test_web_search_run_keeps_native_parts_and_a_second_run_continues_from
 
         return ModelResponse(parts=(_NATIVE_CALL, _NATIVE_RETURN, PydanticTextPart('Found.')))
 
+    async def respond_stream(
+        messages: list[ModelMessage],
+        info: AgentInfo,
+    ) -> AsyncIterator[str | BuiltinToolCallsReturns]:
+        del messages, info
+        yield {0: _NATIVE_CALL, 1: _NATIVE_RETURN}
+        yield 'Found.'
+
     definition = _definition(ProviderCapability(id='web-search', config=WebSearchCapabilityConfig()))
-    agent = await agent_factory({'primary': FunctionModel(respond)}).build(definition)
+    model = FunctionModel(respond, stream_function=respond_stream)
+    agent = await agent_factory({'primary': model}).build(definition)
 
     first = await agent.run('Search.', deps=None)
     second = await agent.run('Continue.', deps=None, messages=first.history)
+    async with agent.stream('Search.', deps=None) as stream:
+        events = [event async for event in stream]
 
     native_parts = (
         NativeToolCallPart(
@@ -109,6 +120,10 @@ async def test_web_search_run_keeps_native_parts_and_a_second_run_continues_from
     assert second.history[1].parts == native_parts
     assert continued_call == _NATIVE_CALL
     assert replace(continued_return, timestamp=_NATIVE_RETURN.timestamp) == _NATIVE_RETURN
+    assert stream.result.output == 'Found.'
+    assert stream.result.messages[-1].parts == native_parts
+    assert [event for event in events if isinstance(event, ToolCallEvent | ToolResultEvent)] == []
+    assert events[-1].kind == 'run_completed'
 
 
 async def test_history_processor_receives_native_parts_and_returns_them_unchanged() -> None:

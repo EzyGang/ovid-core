@@ -22,7 +22,6 @@ from ovid_core.capabilities import BaseCapability
 from ovid_core.config import ModelConfig, OvidConfig
 from ovid_core.mcp import MCPHTTPTransportConfig, MCPServerConfig
 from ovid_core.routing import ModelRef, ModelRouteRef
-from ovid_core.runtime import tool_events_from_messages
 from ovid_core.tools import ToolApproval, ToolPresentation
 from tests.support.agent_consumer import AddTool, AgentDependencies, RecordingHook
 from tests.support.agent_helpers import agent_factory, failing_request, structured_test_model
@@ -368,16 +367,8 @@ async def test_unknown_tool_is_retried_under_default_policy_in_stream_and_histor
     async with agent.stream('Write.', deps=AgentDependencies(prefix='retry')) as stream:
         streamed = [event for event in [event async for event in stream] if event.kind == 'tool_result']
         result = stream.result
-    replayed = [
-        event
-        for event in tool_events_from_messages(
-            result.messages,
-            run_id=result.run_id,
-            conversation_id=result.conversation_id,
-        )
-        if event.kind == 'tool_result'
-    ]
+    history = [part for message in result.messages for part in message.parts if part.kind == 'tool_return']
 
     assert result.output == 'recovered'
     assert [(event.tool_call_id, event.outcome) for event in streamed] == [('unknown-tool', 'retried')]
-    assert [(event.tool_call_id, event.outcome) for event in replayed] == [('unknown-tool', 'retried')]
+    assert [(part.tool_call_id, part.outcome) for part in history] == [('unknown-tool', 'retried')]

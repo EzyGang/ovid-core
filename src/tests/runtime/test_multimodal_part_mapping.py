@@ -14,20 +14,14 @@ from pydantic_ai.messages import UserPromptPart as PydanticUserPromptPart
 from ovid_core import MessageCodec
 from ovid_core.adapters.pydantic_ai import message_from_pydantic, message_to_pydantic
 from ovid_core.messages import (
-    AgentMessage,
     BinaryContent,
     DocumentUrl,
     ImageUrl,
-    NativeToolCallPart,
-    NativeToolReturnPart,
     OpaqueRequestPart,
     TextContent,
-    ToolCallPart,
     ToolReturnPart,
     UserPromptPart,
 )
-from ovid_core.runtime import tool_events_from_messages
-from tests.support.helpers import CONVERSATION_ID, RUN_ID, make_request_usage
 
 
 _PNG = b'\x89PNG\xfb\xff'
@@ -96,7 +90,6 @@ def test_tool_return_with_files_keeps_json_content_and_restores_the_files() -> N
     normalized = message_from_pydantic(ModelRequest(parts=(upstream,)))
     (part,) = normalized.parts
     (restored,) = message_to_pydantic(codec.decode(codec.encode(normalized))).parts
-    events = tool_events_from_messages((normalized,), run_id=RUN_ID, conversation_id=CONVERSATION_ID)
 
     assert isinstance(part, ToolReturnPart)
     assert part.content == [
@@ -122,7 +115,6 @@ def test_tool_return_with_files_keeps_json_content_and_restores_the_files() -> N
     assert part.content_file_digests is not None
     assert len(part.content_file_digests) == 1
     assert replace(restored, timestamp=upstream.timestamp) == upstream
-    assert [event.content for event in events] == [part.content]
 
 
 @pytest.mark.parametrize(
@@ -141,19 +133,3 @@ def test_tool_return_without_files_stays_plain_data(content: object, restored_co
 
     assert isinstance(restored, PydanticToolReturnPart)
     assert restored.content == (content if restored_content is None else restored_content)
-
-
-def test_native_tool_parts_have_no_tool_event() -> None:
-    response = AgentMessage(
-        role='response',
-        parts=(
-            NativeToolCallPart(tool_name='web_search', arguments={'query': 'ovid'}, tool_call_id='native-1'),
-            NativeToolReturnPart(tool_name='web_search', content={'results': []}, tool_call_id='native-1'),
-            ToolCallPart(tool_name='lookup', tool_call_id='call-1'),
-        ),
-        request_usage=make_request_usage(),
-    )
-
-    events = tool_events_from_messages((response,), run_id=RUN_ID, conversation_id=CONVERSATION_ID)
-
-    assert [(event.kind, event.tool_call_id) for event in events] == [('tool_call', 'call-1')]

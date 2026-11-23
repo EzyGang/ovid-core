@@ -19,7 +19,7 @@ from pytest_mock import MockerFixture
 
 import tests.support.integration_consumer as consumer
 from ovid_core import AgentConstructionError, MessageCodec, SkillLibraryConfig, SkillsCapability
-from ovid_core.adapters.pydantic_ai import adapt_capabilities, message_from_pydantic, message_to_pydantic
+from ovid_core.adapters.pydantic_ai import adapt_integration_capability, message_from_pydantic, message_to_pydantic
 from ovid_core.messages import CapabilityLoadCallPart, CapabilityLoadReturnPart, OpaqueResponsePart
 from tests.support.agent_helpers import agent_factory
 
@@ -42,6 +42,13 @@ async def run_leaves(adapted: AbstractCapability[None]) -> list[AbstractCapabili
     return leaves
 
 
+def adapt(source: SkillsCapability[None]) -> AbstractCapability[None]:
+    adapted = adapt_integration_capability(source)
+    assert adapted is not None
+
+    return adapted
+
+
 async def test_skill_library_order_resolves_conflicts_before_selection(tmp_path: Path) -> None:
     personal = tmp_path / 'personal'
     project = tmp_path / 'project'
@@ -52,7 +59,7 @@ async def test_skill_library_order_resolves_conflicts_before_selection(tmp_path:
         id='layered-skills',
         config=SkillLibraryConfig(directories=(personal, project)),
     )
-    adapted = adapt_capabilities((source,))[0]
+    adapted = adapt(source)
 
     with pytest.warns(UserWarning, match="skill name 'code-review' is already taken"):
         leaves = await run_leaves(adapted)
@@ -66,7 +73,7 @@ async def test_skill_libraries_select_validated_deferred_capabilities(tmp_path: 
     write_skill(tmp_path, 'code-review', 'Review code.', 'Inspect correctness.')
     write_skill(tmp_path, 'release-notes', 'Write release notes.', 'Summarize changes.')
     source = consumer.skills_capability(tmp_path)
-    leaves = await run_leaves(adapt_capabilities((source,))[0])
+    leaves = await run_leaves(adapt(source))
 
     assert source.defer_loading is True
     assert [(leaf.id, leaf.description, leaf.defer_loading) for leaf in leaves] == [
@@ -83,7 +90,7 @@ async def test_skill_libraries_select_validated_deferred_capabilities(tmp_path: 
         config=SkillLibraryConfig(directories=(tmp_path,), include=('missing',)),
     )
     with pytest.raises(AgentConstructionError, match='construction failed') as failure:
-        await run_leaves(adapt_capabilities((unknown,))[0])
+        await run_leaves(adapt(unknown))
 
     assert isinstance(failure.value.__cause__, ValueError)
     assert 'Unknown skill in include: missing' in str(failure.value.__cause__)
@@ -92,7 +99,7 @@ async def test_skill_libraries_select_validated_deferred_capabilities(tmp_path: 
         id='excluded-skills',
         config=SkillLibraryConfig(directories=(tmp_path,), exclude=('release-notes',)),
     )
-    excluded_leaves = await run_leaves(adapt_capabilities((excluded,))[0])
+    excluded_leaves = await run_leaves(adapt(excluded))
 
     assert [leaf.id for leaf in excluded_leaves] == ['code-review']
 
@@ -107,7 +114,7 @@ async def test_relative_skill_library_resolves_from_build_working_directory(
         config=SkillLibraryConfig(directories=(Path('skills'),)),
     )
     working_directory = mocker.patch.object(Path, 'cwd', return_value=tmp_path)
-    adapted = adapt_capabilities((source,))[0]
+    adapted = adapt(source)
     working_directory.return_value = tmp_path / 'elsewhere'
 
     leaves = await run_leaves(adapted)

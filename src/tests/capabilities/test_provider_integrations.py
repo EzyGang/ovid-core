@@ -10,13 +10,13 @@ from pytest_mock import MockerFixture
 
 import tests.support.integration_consumer as consumer
 from ovid_core import AgentConstructionError
-from ovid_core.adapters.pydantic_ai import adapt_capabilities
+from ovid_core.adapters.pydantic_ai import adapt_integration_capability
 from ovid_core.capabilities import OpenAICompactionCapabilityConfig, ProviderCapability
 
 
 def test_provider_capabilities_adapt_explicitly_to_upstream_native_behavior() -> None:
     sources = consumer.provider_capabilities()
-    adapted = adapt_capabilities(sources)
+    adapted = tuple(adapt_integration_capability(source) for source in sources)
 
     assert tuple(type(capability) for capability in adapted) == (
         Thinking,
@@ -41,7 +41,6 @@ def test_provider_capabilities_adapt_explicitly_to_upstream_native_behavior() ->
     assert adapted[5].max_results == 4
     assert adapted[6].token_threshold == 100_000
     assert adapted[7].token_threshold == 100_000
-    assert adapt_capabilities(()) == ()
 
 
 def test_provider_capability_identity_and_configuration_validation_are_stable() -> None:
@@ -51,7 +50,7 @@ def test_provider_capability_identity_and_configuration_validation_are_stable() 
         defer_loading=True,
         config=consumer.provider_capabilities()[0].config,
     )
-    adapted = adapt_capabilities((source,))[0]
+    adapted = adapt_integration_capability(source)
 
     assert adapted.id == 'reasoning'
     assert adapted.description == 'Load reasoning only when needed.'
@@ -71,7 +70,7 @@ def test_provider_capability_identity_and_configuration_validation_are_stable() 
         id='estimated-compaction',
         config=OpenAICompactionCapabilityConfig(stateless=True, estimated_token_threshold=1_000),
     )
-    native = adapt_capabilities((estimated,))[0]
+    native = adapt_integration_capability(estimated)
     assert isinstance(native, OpenAICompaction)
     assert native.trigger is not None
     assert native.trigger([ModelRequest(parts=(UserPromptPart('x' * 10_000),))])
@@ -94,7 +93,7 @@ def test_provider_compaction_reports_missing_provider_extra(
     mocker.patch.dict(sys.modules, {module_name: None})
 
     with pytest.raises(AgentConstructionError, match=message):
-        adapt_capabilities((consumer.provider_capabilities()[source_index],))
+        adapt_integration_capability(consumer.provider_capabilities()[source_index])
 
 
 def test_integration_consumer_imports_no_pydantic_ai_runtime() -> None:

@@ -13,10 +13,6 @@ from ovid_core.adapters.pydantic_ai.models import known_models as known_models
 from ovid_core.adapters.pydantic_ai.results import result_from_pydantic as result_from_pydantic
 from ovid_core.adapters.pydantic_ai.tools import PydanticAICapabilityAdapter as PydanticAICapabilityAdapter
 from ovid_core.adapters.pydantic_ai.tools import PydanticAIToolsetAdapter as PydanticAIToolsetAdapter
-from ovid_core.adapters.pydantic_ai.tools import adapt_capabilities as adapt_capabilities
-from ovid_core.adapters.pydantic_ai.usage import PYDANTIC_AI_USAGE_FIELDS as PYDANTIC_AI_USAGE_FIELDS
-from ovid_core.adapters.pydantic_ai.usage import UpstreamUsageField as UpstreamUsageField
 from ovid_core.adapters.pydantic_ai.usage import aggregate_usage_from_pydantic as aggregate_usage_from_pydantic
 from ovid_core.adapters.pydantic_ai.usage import request_usage_from_pydantic as request_usage_from_pydantic
 from ovid_core.adapters.pydantic_ai.usage import usage_from_pydantic as usage_from_pydantic
-from ovid_core.adapters.pydantic_ai.usage import usage_update_event_from_pydantic as usage_update_event_from_pydantic

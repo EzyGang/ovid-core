@@ -7,7 +7,7 @@ from ovid_core.tools.base import BaseToolset
 
 def validate_extension_ids[Deps](
     capabilities: Sequence[BaseCapability[Deps]],
-    direct_toolsets: Sequence[BaseToolset[Deps]] = (),
+    direct_toolsets: Sequence[BaseToolset[Deps]],
 ) -> None:
     capability_ids: set[str] = set()
     tool_ids: set[str] = set()

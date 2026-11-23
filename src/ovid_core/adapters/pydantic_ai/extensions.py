@@ -34,9 +34,7 @@ def adapt_agent_extensions[Deps](
     retries: AgentRetryPolicy = AgentRetryPolicy(),
 ) -> PydanticAIExtensions[Deps]:
     validate_extension_ids(capabilities, toolsets)
-    adapted_capabilities = tuple(
-        _adapt_capability(capability, hooks, tool_approval=tool_approval) for capability in capabilities
-    )
+    adapted_capabilities = tuple(_adapt_capability(capability) for capability in capabilities)
     adapted_toolsets = [
         PydanticAIToolsetAdapter(
             source=source,
@@ -60,22 +58,12 @@ def adapt_agent_extensions[Deps](
     )
 
 
-def _adapt_capability[Deps](
-    capability: BaseCapability[Deps],
-    hooks: tuple[BaseToolHook[Deps], ...],
-    *,
-    tool_approval: ToolApproval | None,
-) -> AbstractCapability[Deps]:
+def _adapt_capability[Deps](capability: BaseCapability[Deps]) -> AbstractCapability[Deps]:
     integration = adapt_integration_capability(capability)
     if integration is not None:
         return integration
 
-    return PydanticAICapabilityAdapter(
-        capability,
-        hooks=hooks,
-        include_toolset=False,
-        tool_approval=tool_approval,
-    )
+    return PydanticAICapabilityAdapter(capability)
 
 
 def _capability_toolsets[Deps](capability: BaseCapability[Deps]) -> tuple[BaseToolset[Deps], ...]:

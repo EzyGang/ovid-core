@@ -228,20 +228,6 @@ A `ToolResultEvent` has the same `outcome` values as a `ToolReturnPart`.
 A stream emits a `ToolResultEvent` with `outcome='retried'` for each retried tool call.
 A stream emits no tool event for a tool call with an empty `tool_name` or an empty `tool_call_id`, and the run continues.
 
-```text
-def tool_events_from_messages(
-    messages: tuple[AgentMessage, ...],
-    *,
-    run_id: RunId,
-    conversation_id: ConversationId,
-) -> tuple[ToolCallEvent | ToolResultEvent, ...]
-```
-
-This helper extracts tool calls and returns in message order. It assigns sequence numbers that start at zero.
-The helper omits `NativeToolCallPart` and `NativeToolReturnPart`.
-
-The helper uses the run and conversation identities from the caller.
-
 ## Results
 
 Import from `ovid_core.runtime.results`.
