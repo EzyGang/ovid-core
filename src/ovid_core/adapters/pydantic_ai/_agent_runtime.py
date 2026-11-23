@@ -1,5 +1,5 @@
 import asyncio
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Sequence
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from typing import Never
 
@@ -11,10 +11,12 @@ from ovid_core.adapters.pydantic_ai._agent_errors import normalize_run_error
 from ovid_core.adapters.pydantic_ai._agent_stream import PydanticAIStream
 from ovid_core.adapters.pydantic_ai._provider_errors import is_context_window_error
 from ovid_core.adapters.pydantic_ai._usage_tracking import RunUsageRecorder, UsageTrackingCapability
+from ovid_core.adapters.pydantic_ai._user_content import user_content_to_pydantic
 from ovid_core.adapters.pydantic_ai.messages import message_to_pydantic
 from ovid_core.adapters.pydantic_ai.results import result_from_pydantic
 from ovid_core.agents import AgentRuntime, AgentStream
 from ovid_core.errors import ContextWindowError, CredentialError
+from ovid_core.messages.content import UserContent
 from ovid_core.messages.models import AgentMessage
 from ovid_core.policy import AgentRunPolicy
 from ovid_core.runtime.identifiers import ConversationId, RunId
@@ -37,7 +39,7 @@ class PydanticAIAgentRuntime[Deps, Output](AgentRuntime[Deps, Output]):
 
     async def run(
         self,
-        prompt: str,
+        prompt: str | Sequence[UserContent],
         *,
         deps: Deps,
         messages: tuple[AgentMessage, ...],
@@ -51,7 +53,7 @@ class PydanticAIAgentRuntime[Deps, Output](AgentRuntime[Deps, Output]):
         try:
             async with asyncio.timeout(self._policy.timeout_seconds):
                 result = await self._agent.run(
-                    prompt,
+                    prompt if isinstance(prompt, str) else user_content_to_pydantic(prompt),
                     deps=deps,
                     message_history=tuple(message_to_pydantic(message) for message in messages),
                     run_id=str(run_identity),
@@ -68,7 +70,7 @@ class PydanticAIAgentRuntime[Deps, Output](AgentRuntime[Deps, Output]):
 
     def stream(
         self,
-        prompt: str,
+        prompt: str | Sequence[UserContent],
         *,
         deps: Deps,
         messages: tuple[AgentMessage, ...],
@@ -88,7 +90,7 @@ class PydanticAIAgentRuntime[Deps, Output](AgentRuntime[Deps, Output]):
     @asynccontextmanager
     async def _stream(
         self,
-        prompt: str,
+        prompt: str | Sequence[UserContent],
         *,
         deps: Deps,
         messages: tuple[AgentMessage, ...],
@@ -103,7 +105,7 @@ class PydanticAIAgentRuntime[Deps, Output](AgentRuntime[Deps, Output]):
         try:
             async with asyncio.timeout(self._policy.timeout_seconds):
                 async with self._agent.run_stream_events(
-                    prompt,
+                    prompt if isinstance(prompt, str) else user_content_to_pydantic(prompt),
                     deps=deps,
                     message_history=tuple(message_to_pydantic(message) for message in messages),
                     run_id=str(run_identity),

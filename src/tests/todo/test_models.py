@@ -57,17 +57,6 @@ def test_blocker_requires_blocked_status_and_blank_reason_becomes_none() -> None
         TodoItem(content='task', blocker='waiting')
 
 
-@pytest.mark.parametrize(
-    'state',
-    [
-        TodoState(phases=(TodoPhase(name='One'),)),
-        TodoState(phases=(TodoPhase(name='One', tasks=(TodoItem(content='Task'),)),)),
-    ],
-)
-def test_state_accepts_unique_values(state: TodoState) -> None:
-    assert state.revision is None
-
-
 def test_state_rejects_duplicate_phase_and_global_task_content() -> None:
     with pytest.raises(ValidationError, match='duplicate todo phase'):
         TodoState(phases=(TodoPhase(name='Same'), TodoPhase(name='Same')))

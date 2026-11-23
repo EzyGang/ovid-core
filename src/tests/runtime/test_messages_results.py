@@ -20,7 +20,9 @@ from ovid_core.adapters.pydantic_ai import message_from_pydantic, message_to_pyd
 from ovid_core.messages import (
     AgentMessage,
     CompactionPart,
+    NativeToolCallPart,
     OpaqueRequestPart,
+    OpaqueResponsePart,
     SystemPromptPart,
     TextPart,
     ThinkingPart,
@@ -114,19 +116,32 @@ def test_response_message_adapter_round_trip_with_usage() -> None:
     assert normalized.request_usage.input_tokens == 8
 
 
-def test_message_adapter_rejects_unsupported_parts_and_invalid_identifiers() -> None:
-    with pytest.raises(ProviderError, match='unsupported') as response_error:
-        message_from_pydantic(ModelResponse(parts=(PydanticNativeToolCallPart('native'),)))
-    assert isinstance(response_error.value.__cause__, ValueError)
+def test_message_adapter_accepts_native_parts_and_rejects_invalid_identifiers_and_payloads() -> None:
+    native = message_from_pydantic(
+        ModelResponse(
+            parts=(PydanticNativeToolCallPart('native', tool_call_id='native-1'),),
+            usage=PydanticRequestUsage(input_tokens=1, output_tokens=1),
+        )
+    )
 
+    assert native.parts == (NativeToolCallPart(tool_name='native', tool_call_id='native-1'),)
     with pytest.raises(ProviderError, match='invalid message'):
         message_from_pydantic(ModelRequest(parts=(), run_id='invalid'))
-    corrupt_payload = AgentMessage(
-        role='request',
-        parts=(OpaqueRequestPart(part_kind='instruction-delta', payload={'part_kind': 'instruction-delta'}),),
+    corrupt_payloads = (
+        AgentMessage(
+            role='request',
+            parts=(OpaqueRequestPart(part_kind='instruction-delta', payload={'part_kind': 'instruction-delta'}),),
+        ),
+        AgentMessage(
+            role='response',
+            parts=(OpaqueResponsePart(part_kind='speech', payload={'part_kind': 'speech'}),),
+            timestamp=datetime.now(UTC),
+            request_usage=make_request_usage(),
+        ),
     )
-    with pytest.raises(ProviderError, match='cannot be converted'):
-        message_to_pydantic(corrupt_payload)
+    for corrupt_payload in corrupt_payloads:
+        with pytest.raises(ProviderError, match='cannot be converted'):
+            message_to_pydantic(corrupt_payload)
 
 
 def test_message_adapter_rejects_wrong_normalized_role_and_colliding_details() -> None:

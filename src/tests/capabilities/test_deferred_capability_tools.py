@@ -3,7 +3,7 @@ from pydantic_ai.models.function import AgentInfo, FunctionModel
 
 from ovid_core import AgentDefinition, MessageCodec
 from ovid_core.capabilities import BaseCapability, CapabilityContributions
-from ovid_core.messages import ToolReturnPart
+from ovid_core.messages import CapabilityLoadCallPart, OpaqueResponsePart, ToolReturnPart
 from ovid_core.routing import ModelRef
 from tests.support.agent_consumer import AddTool, AgentDependencies
 from tests.support.agent_helpers import agent_factory
@@ -63,3 +63,50 @@ async def test_deferred_capability_tool_is_refused_until_the_model_loads_the_cap
     ]
     assert "belongs to capability 'arithmetic'" in str(returns[0].content)
     assert deps.events == ['deferred:add', 'deferred:add']
+
+
+async def test_capability_load_call_without_an_id_does_not_fail_the_run() -> None:
+    invalid_call = LoadCapabilityCallPart(args=None, tool_call_id='no-id')
+    requests: list[list[ModelMessage]] = []
+    responses = iter(
+        (
+            ModelResponse(parts=(invalid_call,)),
+            ModelResponse(parts=(LoadCapabilityCallPart(args={'id': 'arithmetic'}, tool_call_id='load'),)),
+            ModelResponse(parts=(TextPart('loaded'),)),
+            ModelResponse(parts=(TextPart('continued'),)),
+        )
+    )
+
+    def respond(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        del info
+        requests.append(messages)
+        return next(responses)
+
+    capability = BaseCapability[AgentDependencies](
+        id='arithmetic',
+        description='Integer arithmetic',
+        defer_loading=True,
+        contributions=CapabilityContributions(tools=(AddTool(),)),
+    )
+    definition = AgentDefinition[AgentDependencies, str](
+        model=ModelRef(name='primary'),
+        deps_type=AgentDependencies,
+        output_type=str,
+        capabilities=(capability,),
+    )
+    agent = await agent_factory({'primary': FunctionModel(respond)}).build(definition)
+    deps = AgentDependencies(prefix='deferred')
+
+    first = await agent.run('Add.', deps=deps)
+    codec = MessageCodec()
+    stored_history = tuple(codec.decode(codec.encode(message)) for message in first.history)
+    second = await agent.run('Add again.', deps=deps, messages=stored_history)
+
+    response_parts = [part for message in first.history if message.role == 'response' for part in message.parts]
+    (retry,) = first.history[2].parts
+
+    assert (first.output, second.output) == ('loaded', 'continued')
+    assert [type(part) for part in response_parts[:2]] == [OpaqueResponsePart, CapabilityLoadCallPart]
+    assert isinstance(retry, ToolReturnPart)
+    assert (retry.tool_call_id, retry.outcome) == ('no-id', 'retried')
+    assert requests[3][1].parts == (invalid_call,)

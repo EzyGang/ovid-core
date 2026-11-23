@@ -18,9 +18,9 @@ from pydantic_ai.usage import RequestUsage, RunUsage
 from pytest_mock import MockerFixture
 
 import tests.support.integration_consumer as consumer
-from ovid_core import AgentConstructionError, MessageCodec, ProviderError, SkillLibraryConfig, SkillsCapability
-from ovid_core.adapters.pydantic_ai import adapt_capabilities, message_from_pydantic
-from ovid_core.messages import CapabilityLoadCallPart, CapabilityLoadReturnPart
+from ovid_core import AgentConstructionError, MessageCodec, SkillLibraryConfig, SkillsCapability
+from ovid_core.adapters.pydantic_ai import adapt_capabilities, message_from_pydantic, message_to_pydantic
+from ovid_core.messages import CapabilityLoadCallPart, CapabilityLoadReturnPart, OpaqueResponsePart
 from tests.support.agent_helpers import agent_factory
 
 
@@ -163,7 +163,7 @@ async def test_skill_loading_round_trips_and_continues_from_normalized_history(t
     assert load_returns[0].message is not None
 
 
-async def test_skill_adapter_safely_rejects_invalid_library_and_capability_call(tmp_path: Path) -> None:
+async def test_skill_adapter_rejects_invalid_library_and_keeps_invalid_capability_call_opaque(tmp_path: Path) -> None:
     source = SkillsCapability[None](
         id='missing-skills',
         config=SkillLibraryConfig(directories=(tmp_path / 'missing',)),
@@ -179,5 +179,7 @@ async def test_skill_adapter_safely_rejects_invalid_library_and_capability_call(
         parts=(LoadCapabilityCallPart(args=None, tool_call_id='missing-id'),),
         usage=RequestUsage(),
     )
-    with pytest.raises(ProviderError, match='unsupported or invalid message'):
-        message_from_pydantic(upstream)
+    normalized = message_from_pydantic(upstream)
+
+    assert [type(part) for part in normalized.parts] == [OpaqueResponsePart]
+    assert message_to_pydantic(normalized).parts == upstream.parts

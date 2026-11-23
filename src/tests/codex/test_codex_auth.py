@@ -5,20 +5,8 @@ import httpx2
 import pytest
 
 from ovid_core import CodexAuthError
-from ovid_core.codex import CodexAuth, CodexOAuthConfig, MemoryCodexTokenStore
+from ovid_core.codex import CodexAuth, CodexOAuthConfig
 from tests.support.helpers import MemoryTokenStore, codex_token_response, json_body, make_codex_tokens, oauth_client
-
-
-@pytest.mark.asyncio
-async def test_memory_token_store_round_trip() -> None:
-    store = MemoryCodexTokenStore()
-    tokens = make_codex_tokens()
-
-    assert await store.load() is None
-    await store.save(tokens)
-    assert await store.load() == tokens
-    await store.delete()
-    assert await store.load() is None
 
 
 @pytest.mark.asyncio

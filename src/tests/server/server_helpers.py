@@ -43,8 +43,12 @@ async def allow(context: RequestContext, agent_id: str) -> AuthorizationResult:
     return AuthorizationResult(allowed=context.header('authorization') == 'Bearer allowed', principal='user-1')
 
 
-async def build_registration(*, policy: AgentRunPolicy = AgentRunPolicy()) -> AgentRegistration[AgentDependencies, str]:
-    model = FunctionModel(function=text_response, stream_function=text_stream, model_name='server')
+async def build_registration(
+    *,
+    policy: AgentRunPolicy = AgentRunPolicy(),
+    model: FunctionModel | None = None,
+) -> AgentRegistration[AgentDependencies, str]:
+    model = model or FunctionModel(function=text_response, stream_function=text_stream, model_name='server')
     definition = replace(text_definition(), policy=policy)
     agent = await agent_factory({'primary': model}).build(definition)
 

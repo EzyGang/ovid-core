@@ -188,7 +188,7 @@ class AgentCompiler(Protocol):
 
 ```text
 async def run(
-    prompt: str,
+    prompt: str | Sequence[UserContent],
     *,
     deps: Deps,
     messages: tuple[AgentMessage, ...],
@@ -198,7 +198,7 @@ async def run(
 ) -> RunResult[Output]
 
 def stream(
-    prompt: str,
+    prompt: str | Sequence[UserContent],
     *,
     deps: Deps,
     messages: tuple[AgentMessage, ...],
@@ -210,6 +210,33 @@ def stream(
 
 `AgentStream[Output]` is an `AsyncIterator[AgentEvent]` with a `result: RunResult[Output]` property.
 The result becomes available after complete consumption inside the context manager.
+
+A custom `AgentRuntime` must accept both prompt types.
+
+### Prompt types
+
+`OvidAgent.run` and `OvidAgent.stream` accept the same `prompt` types as the runtime.
+A prompt is a string or a sequence of `UserContent` items from `ovid_core.messages`.
+Use a sequence to send text with images, audio, video, or documents.
+
+```python
+import base64
+
+from ovid_core.messages import BinaryContent, ImageUrl, TextContent
+
+result = await agent.run(
+    (
+        TextContent(content='Compare these images.'),
+        ImageUrl(url='https://example.com/chart.png'),
+        BinaryContent(data=base64.b64encode(image_bytes), media_type='image/png'),
+    ),
+    deps=deps,
+)
+```
+
+The run history holds the prompt as a `UserPromptPart` with the same items.
+The selected model must accept each media type.
+[User content items](runtime.md#user-content-items) lists each item and its fields.
 
 ## Constructing and running agents
 

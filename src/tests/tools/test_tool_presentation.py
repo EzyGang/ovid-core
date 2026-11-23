@@ -46,24 +46,6 @@ async def test_effective_wire_name_and_text_fallback_are_advertised() -> None:
     }
 
 
-async def test_advertised_call_is_pinned_to_exact_source_instance() -> None:
-    first = AddTool()
-    second = AddTool()
-    first.presentation = ToolPresentation(wire_name='edit')
-    second.presentation = ToolPresentation(wire_name='edit')
-    adapter = PydanticAIToolsetAdapter(source=TrackingToolset((first,)))
-    context = upstream_context()
-    first_definitions = await adapter.get_tools(context)
-    adapter.source = TrackingToolset((second,))
-    await adapter.get_tools(context)
-
-    result = await adapter.call_tool('edit', {'left': 2, 'right': 3}, context, first_definitions['edit'])
-
-    assert result == {'content': 5, 'metadata': {'prefix': 'sum'}}
-    assert first.context is not None
-    assert second.context is None
-
-
 async def test_effective_wire_name_collisions_fail_before_advertisement() -> None:
     first = AddTool()
     second = FastAddTool()

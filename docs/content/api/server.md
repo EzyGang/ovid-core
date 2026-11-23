@@ -18,7 +18,28 @@ Import from `ovid_core.server.models`.
 | `allowed_origins` | `()` | exact CORS origins |
 | `shutdown_grace_seconds` | `10` | positive |
 
-`AgentRunRequest` contains a non-empty `prompt` and optional `conversation_id`.
+`AgentRunRequest` contains a `prompt` and optional `conversation_id`.
+`prompt` is a non-empty string or a non-empty array of content items.
+[User content items](runtime.md#user-content-items) lists each item and its JSON fields.
+
+```json
+{
+  "prompt": [
+    {"kind": "text", "content": "Describe this image."},
+    {"kind": "image_url", "url": "https://example.com/chart.png"},
+    {"kind": "binary", "data": "iVBORw0KGgo=", "media_type": "image/png"}
+  ]
+}
+```
+
+Validation rejects these prompts:
+
+- An item with a `kind` that the content items do not include, such as a cache point.
+- A URL item with `force_download='allow-local'`, because a client must not make the server read a private address.
+- A `binary` item whose `data` is not Base64 text.
+
+`max_body_bytes` is the only size limit for a prompt.
+Base64 text is approximately 4/3 the size of its bytes, so increase `max_body_bytes` for large inline files.
 
 `AgentRunResponse` contains JSON-compatible `output`, normalized `messages`, `usage`, `run_id`, and `conversation_id`. `RunResultSSEEvent` adds `kind='run_result'`.
 
@@ -232,6 +253,9 @@ The server controls system prompts, tools, context, resume state, forwarded prop
 
 The server rejects client control of these values. A client thread ID maps to an Ovid `ConversationId`.
 
+The server rejects a user message whose content is not a string.
+Use the native HTTP server or the stdio server to send a prompt with content items.
+
 ## Stdio server
 
 Import from `ovid_core.server.stdio`.
@@ -250,6 +274,8 @@ await server.run()
 ```
 
 `StdioAgentServer.run()` reads one UTF-8 JSON request per line from stdin and writes one JSON response per line to stdout. It shares agent authorization, limits, persistence, and lifecycle behavior with the native server. An oversized line writes `request_too_large` and ends the server.
+
+One request line, with its prompt, must not exceed `max_body_bytes`.
 
 ### Stdio request models
 

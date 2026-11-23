@@ -1,9 +1,2 @@
-from ovid_core.models import UUIDRootModel
-
-
-class RunId(UUIDRootModel):
-    pass
-
-
-class ConversationId(UUIDRootModel):
-    pass
+from ovid_core.identifiers import ConversationId as ConversationId
+from ovid_core.identifiers import RunId as RunId

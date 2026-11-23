@@ -150,10 +150,32 @@ Both functions convert:
 - provider metadata
 - finish reasons
 
-`message_from_pydantic` converts a request part that Ovid Core does not model to an `OpaqueRequestPart`.
-`message_to_pydantic` restores the same upstream part.
-`message_from_pydantic` raises `ProviderError` for an unsupported response part or an invalid upstream message.
-`message_to_pydantic` raises `ProviderError` for an invalid normalized conversion.
+`message_from_pydantic` does not raise for a part kind that Ovid Core does not model.
+It converts that part to an `OpaqueRequestPart` or an `OpaqueResponsePart`.
+It also converts a part to an opaque part when the typed Ovid part cannot hold its value.
+Examples are a request part with more data than the typed part holds, a capability load call without an ID, and a tool call with an empty tool name.
+`message_to_pydantic` restores the same upstream part from the payload of an opaque part.
+
+The conversion of these parts is exact, except for part timestamps:
+
+- `OpaqueRequestPart` and `OpaqueResponsePart`
+- `NativeToolCallPart`, `NativeToolReturnPart`, and `FilePart`
+- A `UserPromptPart` with a tuple of content items
+- The content of a `ToolReturnPart` that holds files
+
+`message_to_pydantic` selects the Pydantic AI subclass for a provider-run tool part from `tool_kind`.
+For example, `tool_kind='tool-search'` restores a `NativeToolSearchCallPart`.
+
+Other typed parts do not keep each Pydantic AI field.
+[Pydantic AI fields that typed parts do not keep](runtime.md#pydantic-ai-fields-that-typed-parts-do-not-keep) lists those fields.
+
+`message_from_pydantic` raises `ProviderError` only for these conditions:
+
+- A run ID or a conversation ID that is not a UUID.
+- Usage data that Ovid Core cannot normalize.
+- A part with a value that Pydantic AI cannot serialize to JSON.
+
+`message_to_pydantic` raises `ProviderError` for an invalid normalized conversion, such as a changed opaque payload.
 
 ## Result conversion
 

@@ -1,7 +1,8 @@
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import Field, JsonValue, PositiveInt
+from pydantic import Field, JsonValue, PositiveInt, field_validator
 
+from ovid_core.messages.content import FileUrl, UserContent
 from ovid_core.messages.models import AgentMessage
 from ovid_core.models import BaseModel
 from ovid_core.runtime.identifiers import ConversationId, RunId
@@ -19,8 +20,18 @@ class ServerConfig(BaseModel):
 
 
 class AgentRunRequest(BaseModel):
-    prompt: str = Field(min_length=1)
+    prompt: Annotated[str, Field(min_length=1)] | Annotated[tuple[UserContent, ...], Field(min_length=1)]
     conversation_id: ConversationId | None = None
+
+    @field_validator('prompt')
+    @classmethod
+    def reject_local_downloads(cls, value: str | tuple[UserContent, ...]) -> str | tuple[UserContent, ...]:
+        if isinstance(value, str):
+            return value
+        if any(isinstance(item, FileUrl) and item.force_download == 'allow-local' for item in value):
+            raise ValueError('a request prompt cannot allow downloads from local addresses')
+
+        return value
 
 
 class AgentRunResponse(BaseModel):
