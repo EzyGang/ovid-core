@@ -6,7 +6,7 @@ from abc import abstractmethod
 from collections.abc import Mapping
 from typing import Literal, Protocol
 
-import httpx
+import httpx2
 from pydantic import Field, JsonValue, SecretStr, TypeAdapter, ValidationError
 
 from ovid_core.codex.models import CodexOAuthConfig, CodexTokens, CodexTokenSnapshot
@@ -16,7 +16,7 @@ from ovid_core.models import BaseModel
 
 _JSON_OBJECT_ADAPTER = TypeAdapter(dict[str, JsonValue])
 _AUTH_CLAIM = 'https://api.openai.com/auth'
-_JSON_HEADERS = httpx.Headers({'Content-Type': 'application/json'})
+_JSON_HEADERS = httpx2.Headers({'Content-Type': 'application/json'})
 
 
 class CodexTokenStore(Protocol):
@@ -76,7 +76,7 @@ class _RefreshRequest(BaseModel):
 
 
 class _CodexTokenManager:
-    def __init__(self, *, store: CodexTokenStore, http_client: httpx.AsyncClient, config: CodexOAuthConfig) -> None:
+    def __init__(self, *, store: CodexTokenStore, http_client: httpx2.AsyncClient, config: CodexOAuthConfig) -> None:
         self._store = store
         self._client = http_client
         self._config = config
@@ -129,7 +129,7 @@ class _CodexTokenManager:
             if not response.is_success:
                 raise CodexAuthError(f'Codex token refresh failed with status {response.status_code}')
             refreshed = _RefreshResponse.model_validate_json(response.content, extra='ignore')
-        except httpx.HTTPError, ValidationError:
+        except httpx2.HTTPError, ValidationError:
             raise CodexAuthError('Codex token refresh failed') from None
 
         updated = CodexTokens(

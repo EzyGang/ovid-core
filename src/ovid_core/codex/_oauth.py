@@ -1,16 +1,16 @@
-import httpx
+import httpx2
 from pydantic import ValidationError
 
 from ovid_core.codex.models import CodexOAuthConfig, CodexTokens, _AuthorizationCodeExchangeRequest, _OAuthTokenResponse
 from ovid_core.errors import CodexAuthError
 
 
-_FORM_HEADERS = httpx.Headers({'Content-Type': 'application/x-www-form-urlencoded'})
+_FORM_HEADERS = httpx2.Headers({'Content-Type': 'application/x-www-form-urlencoded'})
 
 
 async def exchange_authorization_code(
     *,
-    http_client: httpx.AsyncClient,
+    http_client: httpx2.AsyncClient,
     config: CodexOAuthConfig,
     code: str,
     redirect_uri: str,
@@ -31,7 +31,7 @@ async def exchange_authorization_code(
         if not response.is_success:
             raise CodexAuthError(f'Codex token exchange failed with status {response.status_code}')
         payload = _OAuthTokenResponse.model_validate_json(response.content, extra='ignore')
-    except httpx.HTTPError, ValidationError:
+    except httpx2.HTTPError, ValidationError:
         raise CodexAuthError('Codex token exchange failed') from None
 
     return CodexTokens(

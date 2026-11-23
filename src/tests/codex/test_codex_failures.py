@@ -1,6 +1,6 @@
 import asyncio
 
-import httpx
+import httpx2
 import pytest
 from pydantic import SecretStr
 
@@ -12,22 +12,22 @@ from ovid_core.config import ModelConfig
 from tests.support.helpers import MemoryTokenStore, make_codex_tokens, make_jwt, oauth_client
 
 
-def device_start_response() -> httpx.Response:
-    return httpx.Response(200, json={'device_auth_id': 'secret-device', 'user_code': 'CODE', 'interval': 0.001})
+def device_start_response() -> httpx2.Response:
+    return httpx2.Response(200, json={'device_auth_id': 'secret-device', 'user_code': 'CODE', 'interval': 0.001})
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     ('response', 'message'),
     [
-        (httpx.Response(500), 'status 500'),
-        (httpx.Response(200, json={'device_auth_id': 'id', 'user_code': 'code', 'interval': 0}), 'failed'),
-        (httpx.Response(200, json={'device_auth_id': 'id', 'user_code': 'code', 'interval': 'nan'}), 'failed'),
-        (httpx.Response(200, json={'device_auth_id': 'id', 'user_code': 'code', 'interval': 'inf'}), 'failed'),
-        (httpx.Response(200, content=b'invalid'), 'failed'),
+        (httpx2.Response(500), 'status 500'),
+        (httpx2.Response(200, json={'device_auth_id': 'id', 'user_code': 'code', 'interval': 0}), 'failed'),
+        (httpx2.Response(200, json={'device_auth_id': 'id', 'user_code': 'code', 'interval': 'nan'}), 'failed'),
+        (httpx2.Response(200, json={'device_auth_id': 'id', 'user_code': 'code', 'interval': 'inf'}), 'failed'),
+        (httpx2.Response(200, content=b'invalid'), 'failed'),
     ],
 )
-async def test_device_start_failures_are_safe(response: httpx.Response, message: str) -> None:
+async def test_device_start_failures_are_safe(response: httpx2.Response, message: str) -> None:
     async with oauth_client(lambda request: response) as client, CodexAuth.ephemeral(http_client=client) as auth:
         with pytest.raises(CodexAuthError, match=message) as captured:
             await auth.start_device_login()
@@ -35,13 +35,13 @@ async def test_device_start_failures_are_safe(response: httpx.Response, message:
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize('token_response', [httpx.Response(500), httpx.Response(200, content=b'invalid')])
-async def test_device_token_exchange_failures_are_safe(token_response: httpx.Response) -> None:
-    def handler(request: httpx.Request) -> httpx.Response:
+@pytest.mark.parametrize('token_response', [httpx2.Response(500), httpx2.Response(200, content=b'invalid')])
+async def test_device_token_exchange_failures_are_safe(token_response: httpx2.Response) -> None:
+    def handler(request: httpx2.Request) -> httpx2.Response:
         if request.url.path.endswith('/deviceauth/usercode'):
             return device_start_response()
         if request.url.path.endswith('/deviceauth/token'):
-            return httpx.Response(
+            return httpx2.Response(
                 200,
                 json={'authorization_code': 'secret-code', 'code_challenge': 'unused', 'code_verifier': 'verifier'},
             )
@@ -56,9 +56,9 @@ async def test_device_token_exchange_failures_are_safe(token_response: httpx.Res
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize('poll_response', [httpx.Response(500), httpx.Response(200, content=b'invalid')])
-async def test_device_poll_failures_are_safe(poll_response: httpx.Response) -> None:
-    def handler(request: httpx.Request) -> httpx.Response:
+@pytest.mark.parametrize('poll_response', [httpx2.Response(500), httpx2.Response(200, content=b'invalid')])
+async def test_device_poll_failures_are_safe(poll_response: httpx2.Response) -> None:
+    def handler(request: httpx2.Request) -> httpx2.Response:
         return device_start_response() if request.url.path.endswith('/deviceauth/usercode') else poll_response
 
     async with oauth_client(handler) as client, CodexAuth.ephemeral(http_client=client) as auth:
@@ -70,8 +70,8 @@ async def test_device_poll_failures_are_safe(poll_response: httpx.Response) -> N
 
 @pytest.mark.asyncio
 async def test_device_poll_timeout_is_explicit() -> None:
-    def handler(request: httpx.Request) -> httpx.Response:
-        return device_start_response() if request.url.path.endswith('/deviceauth/usercode') else httpx.Response(403)
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        return device_start_response() if request.url.path.endswith('/deviceauth/usercode') else httpx2.Response(403)
 
     config = CodexOAuthConfig(login_timeout_seconds=0.001)
     async with oauth_client(handler) as client, CodexAuth.ephemeral(http_client=client, config=config) as auth:
@@ -82,7 +82,7 @@ async def test_device_poll_timeout_is_explicit() -> None:
 
 @pytest.mark.asyncio
 async def test_device_login_timeout_bounds_stalled_requests() -> None:
-    async def handler(request: httpx.Request) -> httpx.Response:
+    async def handler(request: httpx2.Request) -> httpx2.Response:
         if request.url.path.endswith('/deviceauth/usercode'):
             return device_start_response()
 
@@ -91,7 +91,7 @@ async def test_device_login_timeout_bounds_stalled_requests() -> None:
 
     config = CodexOAuthConfig(login_timeout_seconds=0.001)
     async with (
-        httpx.AsyncClient(transport=httpx.MockTransport(handler), timeout=None) as client,
+        httpx2.AsyncClient(transport=httpx2.MockTransport(handler), timeout=None) as client,
         CodexAuth.ephemeral(http_client=client, config=config) as auth,
     ):
         login = await auth.start_device_login()
@@ -101,13 +101,13 @@ async def test_device_login_timeout_bounds_stalled_requests() -> None:
 
 @pytest.mark.asyncio
 async def test_device_start_timeout_is_explicit() -> None:
-    async def handler(request: httpx.Request) -> httpx.Response:
+    async def handler(request: httpx2.Request) -> httpx2.Response:
         await asyncio.Event().wait()
         raise AssertionError('The timed out request resumed')
 
     config = CodexOAuthConfig(login_timeout_seconds=0.001)
     async with (
-        httpx.AsyncClient(transport=httpx.MockTransport(handler), timeout=None) as client,
+        httpx2.AsyncClient(transport=httpx2.MockTransport(handler), timeout=None) as client,
         CodexAuth.ephemeral(http_client=client, config=config) as auth,
     ):
         with pytest.raises(CodexAuthError, match='timed out'):
@@ -117,7 +117,7 @@ async def test_device_start_timeout_is_explicit() -> None:
 @pytest.mark.asyncio
 async def test_auth_rejects_missing_malformed_and_failed_refreshes() -> None:
     config = CodexOAuthConfig()
-    async with oauth_client(lambda request: httpx.Response(500, text='refresh-secret')) as client:
+    async with oauth_client(lambda request: httpx2.Response(500, text='refresh-secret')) as client:
         async with CodexAuth(store=MemoryTokenStore(), http_client=client, config=config) as missing:
             with pytest.raises(CodexAuthError, match='required'):
                 await missing._request_tokens()
@@ -129,7 +129,7 @@ async def test_auth_rejects_missing_malformed_and_failed_refreshes() -> None:
             assert 'refresh-secret' not in repr(captured.value)
             assert await store.load() is not None
 
-    async with oauth_client(lambda request: httpx.Response(200, content=b'invalid')) as client:
+    async with oauth_client(lambda request: httpx2.Response(200, content=b'invalid')) as client:
         store = MemoryTokenStore(make_codex_tokens(expired=True))
         async with CodexAuth(store=store, http_client=client, config=config) as invalid:
             with pytest.raises(CodexAuthError, match='refresh failed'):
@@ -143,7 +143,7 @@ async def test_partial_refresh_preserves_omitted_rotating_tokens() -> None:
     store = MemoryTokenStore(original)
 
     async with oauth_client(
-        lambda request: httpx.Response(200, json={'access_token': new_access.get_secret_value()})
+        lambda request: httpx2.Response(200, json={'access_token': new_access.get_secret_value()})
     ) as client:
         async with CodexAuth(store=store, http_client=client) as auth:
             updated = await auth._request_tokens()
@@ -186,7 +186,7 @@ async def test_access_token_validation_is_safe(access_token: str) -> None:
     )
     store = MemoryTokenStore(tokens)
     async with (
-        oauth_client(lambda request: httpx.Response(500)) as client,
+        oauth_client(lambda request: httpx2.Response(500)) as client,
         CodexAuth(store=store, http_client=client) as auth,
     ):
         with pytest.raises(CodexAuthError):
@@ -196,7 +196,7 @@ async def test_access_token_validation_is_safe(access_token: str) -> None:
 def test_codex_request_authentication_preserves_responses_payloads() -> None:
     tokens = make_codex_tokens()
     content = b'{"input":[{"type":"item_reference","id":"response-item"}],"store":false,"stream":true}'
-    request = httpx.Request(
+    request = httpx2.Request(
         'POST',
         'https://chatgpt.com/backend-api/codex/responses',
         headers={'x-api-key': 'remove'},
@@ -214,12 +214,12 @@ def test_codex_request_authentication_preserves_responses_payloads() -> None:
 
 @pytest.mark.asyncio
 async def test_backend_transport_redacts_network_failures() -> None:
-    def fail(request: httpx.Request) -> httpx.Response:
-        raise httpx.ConnectError('signed-url-secret', request=request)
+    def fail(request: httpx2.Request) -> httpx2.Response:
+        raise httpx2.ConnectError('signed-url-secret', request=request)
 
-    transport = _RedactingTransport(httpx.MockTransport(fail))
-    with pytest.raises(httpx.TransportError) as captured:
-        await transport.handle_async_request(httpx.Request('POST', 'https://chatgpt.example/responses'))
+    transport = _RedactingTransport(httpx2.MockTransport(fail))
+    with pytest.raises(httpx2.TransportError) as captured:
+        await transport.handle_async_request(httpx2.Request('POST', 'https://chatgpt.example/responses'))
     await transport.aclose()
     assert 'signed-url-secret' not in repr(captured.value)
 
@@ -235,9 +235,9 @@ async def test_backend_transport_redacts_network_failures() -> None:
 )
 async def test_subscription_factory_rejects_invalid_model_catalogs(status_code: int, content: bytes) -> None:
     store = MemoryTokenStore(make_codex_tokens())
-    backend = httpx.MockTransport(lambda request: httpx.Response(status_code, content=content))
+    backend = httpx2.MockTransport(lambda request: httpx2.Response(status_code, content=content))
     async with (
-        oauth_client(lambda request: httpx.Response(500)) as client,
+        oauth_client(lambda request: httpx2.Response(500)) as client,
         CodexAuth(store=store, http_client=client) as auth,
     ):
         factory = CodexSubscriptionModelFactory(auth=auth, backend_transport=backend)

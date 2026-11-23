@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 from types import TracebackType
 from typing import Any, cast
 
-import httpx
+import httpx2
 from openai import Omit
 from openai.types.responses import EasyInputMessageParam, ResponseInputItemParam
 from pydantic import JsonValue
@@ -36,7 +36,7 @@ class CodexSubscriptionModelFactory:
         *,
         auth: CodexAuth,
         fallback: DefaultModelFactory | None = None,
-        backend_transport: httpx.AsyncBaseTransport | None = None,
+        backend_transport: httpx2.AsyncBaseTransport | None = None,
     ) -> None:
         self._auth = auth
         self._config = auth.config
@@ -48,8 +48,8 @@ class CodexSubscriptionModelFactory:
 
     async def provider_options(self) -> ModelProviderOption:
         auth = _CodexHttpxAuth(self._auth)
-        transport = _RedactingTransport(self._backend_transport or httpx.AsyncHTTPTransport())
-        async with httpx.AsyncClient(auth=auth, transport=transport) as http_client:
+        transport = _RedactingTransport(self._backend_transport or httpx2.AsyncHTTPTransport())
+        async with httpx2.AsyncClient(auth=auth, transport=transport) as http_client:
             catalog = await self._catalog(http_client=http_client)
 
         model_names = sorted(set(catalog.model_names()))
@@ -68,13 +68,13 @@ class CodexSubscriptionModelFactory:
     async def _model_details_for(
         self,
         *,
-        http_client: httpx.AsyncClient,
+        http_client: httpx2.AsyncClient,
         model_name: str,
     ) -> tuple[str, int | None]:
         catalog = await self._catalog(http_client=http_client)
         return catalog.instructions_for(model_name), catalog.context_window_for(model_name)
 
-    async def _catalog(self, *, http_client: httpx.AsyncClient) -> CodexInstructionCatalog:
+    async def _catalog(self, *, http_client: httpx2.AsyncClient) -> CodexInstructionCatalog:
         async with self._instruction_lock:
             revision = await self._auth._credential_revision()
             catalog = self._instruction_catalog
@@ -91,12 +91,12 @@ class CodexSubscriptionModelFactory:
         if config.provider != _PROVIDER:
             return await self._fallback.build(model_id=model_id, config=config)
 
-        http_client: httpx.AsyncClient | None = None
+        http_client: httpx2.AsyncClient | None = None
         try:
             _validate_settings(config.settings)
             auth = _CodexHttpxAuth(self._auth)
-            transport = _RedactingTransport(self._backend_transport or httpx.AsyncHTTPTransport())
-            http_client = httpx.AsyncClient(auth=auth, transport=transport)
+            transport = _RedactingTransport(self._backend_transport or httpx2.AsyncHTTPTransport())
+            http_client = httpx2.AsyncClient(auth=auth, transport=transport)
             base_instructions, context_window = await self._model_details_for(
                 http_client=http_client,
                 model_name=config.model,

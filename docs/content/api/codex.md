@@ -30,7 +30,8 @@ async with CodexAuth.persistent() as auth:
 Objects created in the context remain in Python scope after exit.
 They must not make Codex requests after the authentication service closes.
 
-Pass an `httpx.AsyncClient` when the application owns the client lifecycle:
+The Codex integration uses `httpx2` for every HTTP request.
+Pass an `httpx2.AsyncClient` when the application owns the client lifecycle:
 
 ```python
 auth = CodexAuth.persistent(http_client=http_client)
@@ -238,6 +239,12 @@ For subscription models, the factory:
 8. Adds the Codex account and authentication headers.
 
 The model owns its HTTP client after successful construction.
+
+`backend_transport` is an optional `httpx2.AsyncBaseTransport` for the Codex backend.
+The factory uses it for the model catalog and for model requests.
+Without it, the factory uses `httpx2.AsyncHTTPTransport()`.
+
+`load_instruction_catalog(http_client=..., backend_url=...)` from `ovid_core.codex` loads the same catalog through an `httpx2.AsyncClient`.
 
 The factory rejects stateful Responses API settings, including:
 

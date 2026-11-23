@@ -3,7 +3,7 @@ from collections.abc import Awaitable, Callable
 from typing import cast
 from urllib.parse import parse_qs, urlsplit
 
-import httpx
+import httpx2
 import pytest
 from pytest_mock import MockerFixture
 
@@ -14,8 +14,8 @@ from tests.support.helpers import codex_token_response, oauth_client
 
 async def browser_callback(
     login_url: str,
-    callback: Callable[[str, str], Awaitable[httpx.Response]],
-) -> httpx.Response:
+    callback: Callable[[str, str], Awaitable[httpx2.Response]],
+) -> httpx2.Response:
     authorization = urlsplit(login_url)
     query = parse_qs(authorization.query)
     redirect = urlsplit(query['redirect_uri'][0])
@@ -42,8 +42,8 @@ async def test_browser_callback_failures_are_terminal(params: dict[str, str], me
         login = await auth.start_browser_login()
         wait_task = asyncio.create_task(login.wait())
 
-        async def submit(redirect_uri: str, state: str) -> httpx.Response:
-            async with httpx.AsyncClient(trust_env=False) as callback_client:
+        async def submit(redirect_uri: str, state: str) -> httpx2.Response:
+            async with httpx2.AsyncClient(trust_env=False) as callback_client:
                 return await callback_client.get(redirect_uri, params={'state': state, **params})
 
         response = await browser_callback(login.authorization_url, submit)
@@ -67,20 +67,20 @@ async def test_browser_login_times_out() -> None:
 
 @pytest.mark.asyncio
 async def test_browser_login_timeout_bounds_stalled_token_exchange() -> None:
-    async def handler(request: httpx.Request) -> httpx.Response:
+    async def handler(request: httpx2.Request) -> httpx2.Response:
         await asyncio.Event().wait()
         raise AssertionError('The timed out request resumed')
 
     config = CodexOAuthConfig(callback_ports=(0,), login_timeout_seconds=0.05)
     async with (
-        httpx.AsyncClient(transport=httpx.MockTransport(handler), timeout=None) as client,
+        httpx2.AsyncClient(transport=httpx2.MockTransport(handler), timeout=None) as client,
         CodexAuth.ephemeral(http_client=client, config=config) as auth,
     ):
         login = await auth.start_browser_login()
         wait_task = asyncio.create_task(login.wait())
 
-        async def submit(redirect_uri: str, state: str) -> httpx.Response:
-            async with httpx.AsyncClient(trust_env=False) as callback_client:
+        async def submit(redirect_uri: str, state: str) -> httpx2.Response:
+            async with httpx2.AsyncClient(trust_env=False) as callback_client:
                 return await callback_client.get(redirect_uri, params={'code': 'code', 'state': state})
 
         callback_task = asyncio.create_task(browser_callback(login.authorization_url, submit))
@@ -104,7 +104,7 @@ async def test_browser_callback_rejects_invalid_http_and_paths() -> None:
         redirect = urlsplit(query['redirect_uri'][0])
         callback_url = redirect._replace(netloc=f'127.0.0.1:{redirect.port}').geturl()
 
-        async with httpx.AsyncClient(trust_env=False) as callback_client:
+        async with httpx2.AsyncClient(trust_env=False) as callback_client:
             missing = await callback_client.get(f'http://127.0.0.1:{redirect.port}/wrong')
             missing_state = await callback_client.get(callback_url, params={'code': 'code'})
 
@@ -147,14 +147,14 @@ async def test_browser_callback_is_released_when_login_is_cancelled() -> None:
 async def test_browser_exchange_failure_updates_callback() -> None:
     config = CodexOAuthConfig(callback_ports=(0,))
     async with (
-        oauth_client(lambda request: httpx.Response(500)) as client,
+        oauth_client(lambda request: httpx2.Response(500)) as client,
         CodexAuth.ephemeral(http_client=client, config=config) as auth,
     ):
         login = await auth.start_browser_login()
         wait_task = asyncio.create_task(login.wait())
 
-        async def submit(redirect_uri: str, state: str) -> httpx.Response:
-            async with httpx.AsyncClient(trust_env=False) as callback_client:
+        async def submit(redirect_uri: str, state: str) -> httpx2.Response:
+            async with httpx2.AsyncClient(trust_env=False) as callback_client:
                 return await callback_client.get(redirect_uri, params={'code': 'code', 'state': state})
 
         callback_task = asyncio.create_task(browser_callback(login.authorization_url, submit))
@@ -189,11 +189,11 @@ async def test_browser_callback_uses_fallback_port_and_reports_exhaustion() -> N
 
 @pytest.mark.asyncio
 async def test_external_task_cancellation_cleans_up_logins(mocker: MockerFixture) -> None:
-    def handler(request: httpx.Request) -> httpx.Response:
+    def handler(request: httpx2.Request) -> httpx2.Response:
         if request.url.path.endswith('/deviceauth/usercode'):
-            return httpx.Response(200, json={'device_auth_id': 'id', 'user_code': 'CODE', 'interval': 60})
+            return httpx2.Response(200, json={'device_auth_id': 'id', 'user_code': 'CODE', 'interval': 60})
 
-        return httpx.Response(403)
+        return httpx2.Response(403)
 
     async with oauth_client(handler) as client, CodexAuth.ephemeral(http_client=client) as auth:
         device = await auth.start_device_login()

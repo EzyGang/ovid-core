@@ -1,7 +1,7 @@
 import json
 import time
 
-import httpx
+import httpx2
 import pytest
 from pydantic_ai import Agent
 from pydantic_ai.models import Model
@@ -17,12 +17,12 @@ from tests.support.helpers import MemoryTokenStore, json_body, make_codex_tokens
 
 @pytest.mark.asyncio
 async def test_subscription_factory_runs_stateless_responses_and_retries_unauthorized() -> None:
-    backend_requests: list[httpx.Request] = []
-    response_requests: list[httpx.Request] = []
+    backend_requests: list[httpx2.Request] = []
+    response_requests: list[httpx2.Request] = []
     refreshed = make_codex_tokens(suffix='new')
 
-    def oauth_handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(
+    def oauth_handler(request: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(
             200,
             json={
                 'id_token': refreshed.id_token.get_secret_value(),
@@ -31,10 +31,10 @@ async def test_subscription_factory_runs_stateless_responses_and_retries_unautho
             },
         )
 
-    def backend_handler(request: httpx.Request) -> httpx.Response:
+    def backend_handler(request: httpx2.Request) -> httpx2.Response:
         backend_requests.append(request)
         if request.url.path.endswith('/models'):
-            return httpx.Response(
+            return httpx2.Response(
                 200,
                 json={
                     'models': [
@@ -48,7 +48,7 @@ async def test_subscription_factory_runs_stateless_responses_and_retries_unautho
             )
         response_requests.append(request)
         if len(response_requests) == 1:
-            return httpx.Response(401, json={'error': 'expired bearer-secret'})
+            return httpx2.Response(401, json={'error': 'expired bearer-secret'})
         response = {
             'id': 'resp_1',
             'created_at': time.time(),
@@ -75,14 +75,14 @@ async def test_subscription_factory_runs_stateless_responses_and_retries_unautho
         )
         content = ''.join(f'data: {json.dumps(event)}\n\n' for event in events)
 
-        return httpx.Response(200, text=content, headers={'content-type': 'text/event-stream'})
+        return httpx2.Response(200, text=content, headers={'content-type': 'text/event-stream'})
 
     store = MemoryTokenStore(make_codex_tokens())
     async with oauth_client(oauth_handler) as oauth_http_client:
         async with CodexAuth(store=store, http_client=oauth_http_client) as auth:
             factory = CodexSubscriptionModelFactory(
                 auth=auth,
-                backend_transport=httpx.MockTransport(backend_handler),
+                backend_transport=httpx2.MockTransport(backend_handler),
             )
             definition = codex_subscription_provider_definition(
                 auth=auth,
@@ -135,7 +135,7 @@ async def test_subscription_factory_runs_stateless_responses_and_retries_unautho
 @pytest.mark.asyncio
 async def test_factory_delegates_non_subscription_models_and_rejects_stateful_settings() -> None:
     store = MemoryTokenStore(make_codex_tokens())
-    async with oauth_client(lambda request: httpx.Response(500)) as client:
+    async with oauth_client(lambda request: httpx2.Response(500)) as client:
         async with CodexAuth(store=store, http_client=client) as auth:
             factory = CodexSubscriptionModelFactory(auth=auth)
             delegated = await factory.build(model_id='test', config=ModelConfig(provider='test', model='test'))
@@ -156,11 +156,11 @@ async def test_factory_delegates_non_subscription_models_and_rejects_stateful_se
 @pytest.mark.asyncio
 async def test_subscription_provider_options_reject_empty_catalog() -> None:
     store = MemoryTokenStore(make_codex_tokens())
-    async with oauth_client(lambda _request: httpx.Response(500)) as client:
+    async with oauth_client(lambda _request: httpx2.Response(500)) as client:
         async with CodexAuth(store=store, http_client=client) as auth:
             factory = CodexSubscriptionModelFactory(
                 auth=auth,
-                backend_transport=httpx.MockTransport(lambda _request: httpx.Response(200, json={'models': []})),
+                backend_transport=httpx2.MockTransport(lambda _request: httpx2.Response(200, json={'models': []})),
             )
 
             with pytest.raises(ModelResolutionError):

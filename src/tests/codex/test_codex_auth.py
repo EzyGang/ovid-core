@@ -1,7 +1,7 @@
 import asyncio
 from urllib.parse import parse_qs, urlsplit
 
-import httpx
+import httpx2
 import pytest
 
 from ovid_core import CodexAuthError
@@ -23,21 +23,21 @@ async def test_memory_token_store_round_trip() -> None:
 
 @pytest.mark.asyncio
 async def test_device_login_polls_exchanges_and_persists_tokens() -> None:
-    requests: list[httpx.Request] = []
+    requests: list[httpx2.Request] = []
     polls = 0
 
-    def handler(request: httpx.Request) -> httpx.Response:
+    def handler(request: httpx2.Request) -> httpx2.Response:
         nonlocal polls
         requests.append(request)
         if request.url.path.endswith('/deviceauth/usercode'):
-            return httpx.Response(
+            return httpx2.Response(
                 200, json={'device_auth_id': 'device-secret', 'user_code': 'ABCD', 'interval': '0.001'}
             )
         if request.url.path.endswith('/deviceauth/token'):
             polls += 1
             if polls == 1:
-                return httpx.Response(403)
-            return httpx.Response(
+                return httpx2.Response(403)
+            return httpx2.Response(
                 200,
                 json={'authorization_code': 'code-secret', 'code_challenge': 'unused', 'code_verifier': 'verifier'},
             )
@@ -65,9 +65,9 @@ async def test_device_login_polls_exchanges_and_persists_tokens() -> None:
 
 @pytest.mark.asyncio
 async def test_browser_login_validates_state_exchanges_and_persists_tokens() -> None:
-    requests: list[httpx.Request] = []
+    requests: list[httpx2.Request] = []
 
-    def handler(request: httpx.Request) -> httpx.Response:
+    def handler(request: httpx2.Request) -> httpx2.Response:
         requests.append(request)
 
         return codex_token_response()
@@ -85,7 +85,7 @@ async def test_browser_login_validates_state_exchanges_and_persists_tokens() -> 
         assert len(query['code_challenge'][0]) == 43
 
         wait_task = asyncio.create_task(login.wait())
-        async with httpx.AsyncClient(trust_env=False) as callback_client:
+        async with httpx2.AsyncClient(trust_env=False) as callback_client:
             rejected = await callback_client.get(redirect_uri, params={'code': 'secret', 'state': 'wrong'})
             callback_task = asyncio.create_task(
                 callback_client.get(redirect_uri, params={'code': 'browser-code', 'state': state})
@@ -106,11 +106,11 @@ async def test_browser_login_validates_state_exchanges_and_persists_tokens() -> 
 
 @pytest.mark.asyncio
 async def test_login_attempts_can_be_cancelled_and_do_not_overlap() -> None:
-    def handler(request: httpx.Request) -> httpx.Response:
+    def handler(request: httpx2.Request) -> httpx2.Response:
         if request.url.path.endswith('/deviceauth/usercode'):
-            return httpx.Response(200, json={'device_auth_id': 'id', 'user_code': 'CODE', 'interval': 60})
+            return httpx2.Response(200, json={'device_auth_id': 'id', 'user_code': 'CODE', 'interval': 60})
 
-        return httpx.Response(403)
+        return httpx2.Response(403)
 
     async with oauth_client(handler) as client, CodexAuth.ephemeral(http_client=client) as auth:
         login = await auth.start_device_login()

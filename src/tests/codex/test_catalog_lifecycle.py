@@ -1,6 +1,6 @@
 import asyncio
 
-import httpx
+import httpx2
 import pytest
 
 from ovid_core.adapters.pydantic_ai import CodexSubscriptionModelFactory
@@ -17,14 +17,14 @@ async def test_provider_catalog_observes_replacement_and_disconnect() -> None:
     second = make_codex_tokens(suffix='replacement')
     await store.save(first)
 
-    def backend(request: httpx.Request) -> httpx.Response:
+    def backend(request: httpx2.Request) -> httpx2.Response:
         model = (
             'first' if request.headers['authorization'].endswith(first.access_token.get_secret_value()) else 'second'
         )
-        return httpx.Response(200, json={'models': [{'slug': model, 'base_instructions': model}]})
+        return httpx2.Response(200, json={'models': [{'slug': model, 'base_instructions': model}]})
 
     async with CodexAuth(store=store) as auth:
-        factory = CodexSubscriptionModelFactory(auth=auth, backend_transport=httpx.MockTransport(backend))
+        factory = CodexSubscriptionModelFactory(auth=auth, backend_transport=httpx2.MockTransport(backend))
         assert tuple(model.value for model in (await factory.provider_options()).models) == ('first',)
         await store.save(second)
         assert tuple(model.value for model in (await factory.provider_options()).models) == ('second',)
@@ -38,13 +38,13 @@ async def test_model_activation_auth_failure_recovers_after_credential_replaceme
     await store.save(make_codex_tokens())
     rejected = True
 
-    def backend(_request: httpx.Request) -> httpx.Response:
+    def backend(_request: httpx2.Request) -> httpx2.Response:
         if rejected:
-            return httpx.Response(403, json={'error': 'provider-secret'})
-        return httpx.Response(200, json={'models': [{'slug': 'gpt-5', 'base_instructions': 'Instructions'}]})
+            return httpx2.Response(403, json={'error': 'provider-secret'})
+        return httpx2.Response(200, json={'models': [{'slug': 'gpt-5', 'base_instructions': 'Instructions'}]})
 
     async with CodexAuth(store=store) as auth:
-        factory = CodexSubscriptionModelFactory(auth=auth, backend_transport=httpx.MockTransport(backend))
+        factory = CodexSubscriptionModelFactory(auth=auth, backend_transport=httpx2.MockTransport(backend))
         with pytest.raises(CodexAuthError) as failure:
             await factory.build(model_id='primary', config=ModelConfig(provider='codex-subscription', model='gpt-5'))
         assert 'provider-secret' not in repr(failure.value)
@@ -59,13 +59,13 @@ async def test_cancelled_activation_can_be_retried_without_a_cached_failure() ->
     started = asyncio.Event()
     release = asyncio.Event()
 
-    async def backend(_request: httpx.Request) -> httpx.Response:
+    async def backend(_request: httpx2.Request) -> httpx2.Response:
         started.set()
         await release.wait()
-        return httpx.Response(200, json={'models': [{'slug': 'gpt-5', 'base_instructions': 'Instructions'}]})
+        return httpx2.Response(200, json={'models': [{'slug': 'gpt-5', 'base_instructions': 'Instructions'}]})
 
     async with CodexAuth(store=store) as auth:
-        factory = CodexSubscriptionModelFactory(auth=auth, backend_transport=httpx.MockTransport(backend))
+        factory = CodexSubscriptionModelFactory(auth=auth, backend_transport=httpx2.MockTransport(backend))
         activation = asyncio.create_task(
             factory.build(model_id='primary', config=ModelConfig(provider='codex-subscription', model='gpt-5'))
         )

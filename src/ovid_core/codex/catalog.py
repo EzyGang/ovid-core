@@ -1,4 +1,4 @@
-import httpx
+import httpx2
 from pydantic import Field, PositiveInt, ValidationError
 
 from ovid_core.errors import CodexAuthError, ModelResolutionError
@@ -33,15 +33,15 @@ class CodexInstructionCatalog(BaseModel):
 
 async def load_instruction_catalog(
     *,
-    http_client: httpx.AsyncClient,
+    http_client: httpx2.AsyncClient,
     backend_url: str,
 ) -> CodexInstructionCatalog:
     endpoint = f'{backend_url.rstrip("/")}/models'
     try:
-        response = await http_client.get(endpoint, params=httpx.QueryParams(client_version='0.0.0'))
+        response = await http_client.get(endpoint, params=httpx2.QueryParams(client_version='0.0.0'))
         if response.status_code in (401, 403):
             raise CodexAuthError('Provider authentication failed')
         response.raise_for_status()
         return CodexInstructionCatalog.model_validate_json(response.content, extra='ignore')
-    except httpx.HTTPError, ValidationError:
+    except httpx2.HTTPError, ValidationError:
         raise ModelResolutionError('Codex model catalog request failed') from None
