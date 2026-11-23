@@ -3,7 +3,6 @@ from collections import deque
 from collections.abc import AsyncIterator
 from typing import cast
 
-from pydantic import JsonValue, TypeAdapter
 from pydantic_ai.messages import (
     AgentStreamEvent,
     FunctionToolCallEvent,
@@ -16,6 +15,7 @@ from pydantic_ai.messages import (
 from pydantic_ai.run import AgentRunResult, AgentRunResultEvent
 
 from ovid_core.adapters.pydantic_ai._agent_errors import normalize_run_error
+from ovid_core.adapters.pydantic_ai._request_parts import tool_content_from_pydantic
 from ovid_core.adapters.pydantic_ai.results import result_from_pydantic
 from ovid_core.agents import AgentStream
 from ovid_core.errors import AgentRunError, OvidCoreError
@@ -32,9 +32,6 @@ from ovid_core.runtime.events import (
 )
 from ovid_core.runtime.identifiers import ConversationId, RunId
 from ovid_core.runtime.results import RunResult
-
-
-_JSON_VALUE_ADAPTER = TypeAdapter(JsonValue)
 
 
 class PydanticAIStream[Output](AgentStream[Output]):
@@ -110,7 +107,7 @@ class PydanticAIStream[Output](AgentStream[Output]):
                     content=event.delta.content_delta,
                 ),
             )
-        if isinstance(event, FunctionToolCallEvent):
+        if isinstance(event, FunctionToolCallEvent) and event.part.tool_name and event.part.tool_call_id:
             return (
                 ToolCallEvent(
                     run_id=self._run_id,
@@ -123,6 +120,8 @@ class PydanticAIStream[Output](AgentStream[Output]):
             )
         if isinstance(event, FunctionToolResultEvent):
             self._expect_request = True
+            if not (event.part.tool_name and event.part.tool_call_id):
+                return ()
 
             return (
                 ToolResultEvent(
@@ -130,7 +129,7 @@ class PydanticAIStream[Output](AgentStream[Output]):
                     conversation_id=self._conversation_id,
                     sequence=self._next_sequence(),
                     tool_name=event.part.tool_name,
-                    content=_JSON_VALUE_ADAPTER.validate_python(event.part.content),
+                    content=tool_content_from_pydantic(event.part)[0],
                     tool_call_id=event.part.tool_call_id,
                     outcome=event.part.outcome,
                 ),

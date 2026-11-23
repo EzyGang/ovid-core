@@ -3,8 +3,9 @@ from typing import Annotated, Literal, Self
 
 from pydantic import Field, JsonValue, model_validator
 
+from ovid_core.identifiers import ConversationId, RunId
+from ovid_core.messages.content import BinaryContent, UserContent
 from ovid_core.models import BaseModel
-from ovid_core.runtime.identifiers import ConversationId, RunId
 from ovid_core.usage.models import RequestUsage
 
 
@@ -15,7 +16,7 @@ class SystemPromptPart(BaseModel):
 
 class UserPromptPart(BaseModel):
     kind: Literal['user_prompt'] = 'user_prompt'
-    content: str
+    content: str | Annotated[tuple[UserContent, ...], Field(min_length=1)]
 
 
 class TextPart(BaseModel):
@@ -23,21 +24,21 @@ class TextPart(BaseModel):
     content: str
 
 
-class ThinkingPart(BaseModel):
+class ProviderPartData(BaseModel):
+    id: str | None = None
+    provider_name: str | None = None
+    provider_details: dict[str, JsonValue] | None = None
+
+
+class ThinkingPart(ProviderPartData):
     kind: Literal['thinking'] = 'thinking'
     content: str
-    id: str | None = None
     signature: str | None = None
-    provider_name: str | None = None
-    provider_details: dict[str, JsonValue] | None = None
 
 
-class CompactionPart(BaseModel):
+class CompactionPart(ProviderPartData):
     kind: Literal['compaction'] = 'compaction'
     content: str | None = None
-    id: str | None = None
-    provider_name: str | None = None
-    provider_details: dict[str, JsonValue] | None = None
 
 
 type ToolArguments = str | dict[str, JsonValue] | None
@@ -53,6 +54,11 @@ class ToolCallPart(ToolCallData):
     kind: Literal['tool_call'] = 'tool_call'
 
 
+class NativeToolCallPart(ToolCallData, ProviderPartData):
+    kind: Literal['native_tool_call'] = 'native_tool_call'
+    tool_kind: str | None = None
+
+
 class ToolReturnData(BaseModel):
     tool_name: str = Field(min_length=1)
     content: JsonValue
@@ -62,6 +68,21 @@ class ToolReturnData(BaseModel):
 
 class ToolReturnPart(ToolReturnData):
     kind: Literal['tool_return'] = 'tool_return'
+    content_file_digests: tuple[str, ...] | None = None
+
+
+class NativeToolReturnPart(ToolReturnData):
+    kind: Literal['native_tool_return'] = 'native_tool_return'
+    content_file_digests: tuple[str, ...] | None = None
+    tool_kind: str | None = None
+    metadata: JsonValue = None
+    provider_name: str | None = None
+    provider_details: dict[str, JsonValue] | None = None
+
+
+class FilePart(ProviderPartData):
+    kind: Literal['file'] = 'file'
+    content: BinaryContent
 
 
 class CapabilityLoadCallPart(BaseModel):
@@ -91,6 +112,12 @@ class OpaqueRequestPart(BaseModel):
     payload: dict[str, JsonValue]
 
 
+class OpaqueResponsePart(BaseModel):
+    kind: Literal['opaque_response'] = 'opaque_response'
+    part_kind: str = Field(min_length=1)
+    payload: dict[str, JsonValue]
+
+
 MessagePart = Annotated[
     SystemPromptPart
     | UserPromptPart
@@ -98,11 +125,15 @@ MessagePart = Annotated[
     | CompactionPart
     | ThinkingPart
     | ToolCallPart
+    | NativeToolCallPart
     | ToolReturnPart
+    | NativeToolReturnPart
+    | FilePart
     | CapabilityLoadCallPart
     | CapabilityLoadReturnPart
     | RetryPromptPart
-    | OpaqueRequestPart,
+    | OpaqueRequestPart
+    | OpaqueResponsePart,
     Field(discriminator='kind'),
 ]
 
@@ -117,7 +148,19 @@ _REQUEST_PART_KINDS = frozenset(
         'opaque_request',
     }
 )
-_RESPONSE_PART_KINDS = frozenset({'text', 'thinking', 'compaction', 'tool_call', 'capability_load_call'})
+_RESPONSE_PART_KINDS = frozenset(
+    {
+        'text',
+        'thinking',
+        'compaction',
+        'tool_call',
+        'native_tool_call',
+        'native_tool_return',
+        'file',
+        'capability_load_call',
+        'opaque_response',
+    }
+)
 
 
 class AgentMessage(BaseModel):

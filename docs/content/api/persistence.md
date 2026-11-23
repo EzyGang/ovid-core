@@ -53,6 +53,24 @@ message = codec.decode(payload)
 
 The codec stores the normalized message directly.
 
+### Record compatibility
+
+A newer Ovid Core release reads records that an older release wrote.
+An older release cannot read a record that contains a part kind, a field, or a content item from a newer release.
+`decode` raises `PersistenceError` for such a record.
+
+These values appear only in records from a release with typed multimodal content:
+
+- The part kinds `native_tool_call`, `native_tool_return`, `file`, and `opaque_response`
+- A `user_prompt` part whose `content` is an array of content items
+- The `content_file_digests` field, which each `tool_return` part contains
+
+Upgrade each reader of a shared store before a writer.
+
+A record can contain inline file bytes as Base64 text, which makes the record large.
+An opaque part and a tool return with files contain data in the serialized form of Pydantic AI.
+A later Pydantic AI release can change that form.
+
 ## `InMemoryConversationStore`
 
 A process-local reference implementation:

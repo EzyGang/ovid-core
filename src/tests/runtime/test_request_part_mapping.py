@@ -6,7 +6,6 @@ from pydantic_ai.messages import (
     AgentInstructionSource,
     CapabilityInstructionSource,
     CapabilityLoadDeltaPart,
-    ImageUrl,
     InstructionBaselinePart,
     InstructionDeltaPart,
     InstructionDigest,
@@ -22,7 +21,6 @@ from pydantic_ai.messages import (
 from pydantic_ai.messages import CompactionPart as PydanticCompactionPart
 from pydantic_ai.messages import SystemPromptPart as PydanticSystemPromptPart
 from pydantic_ai.messages import ToolReturnPart as PydanticToolReturnPart
-from pydantic_ai.messages import UserPromptPart as PydanticUserPromptPart
 
 from ovid_core import MessageCodec
 from ovid_core.adapters.pydantic_ai import message_from_pydantic, message_to_pydantic
@@ -50,7 +48,6 @@ _CAPABILITY_BLOCK = InstructionId(CapabilityInstructionSource('notes'), name='ru
         ),
         PydanticSystemPromptPart('Remaining budget: 3.', scope='request'),
         PydanticCompactionPart('Summary.', metadata={'writer': 'application'}),
-        PydanticUserPromptPart(['Describe this.', ImageUrl(url='https://example.com/a.png')]),
     ),
 )
 def test_unmodelled_request_parts_round_trip_losslessly_through_storage(part: ModelRequestPart) -> None:

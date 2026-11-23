@@ -1,6 +1,6 @@
 import asyncio
 from abc import abstractmethod
-from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable, Sequence
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import replace
 from typing import Any, Protocol, cast
@@ -14,6 +14,7 @@ from ovid_core.config.models import OvidConfig
 from ovid_core.credentials.resolvers import CredentialResolver, ProviderAPIKeyResolver
 from ovid_core.errors import ModelResolutionError
 from ovid_core.mcp.capability import create_mcp_capability
+from ovid_core.messages.content import UserContent
 from ovid_core.messages.models import AgentMessage
 from ovid_core.routing.factory import ModelFactory
 from ovid_core.routing.models import ResolvedModel
@@ -34,7 +35,7 @@ class AgentRuntime[Deps, Output](Protocol):
     @abstractmethod
     async def run(
         self,
-        prompt: str,
+        prompt: str | Sequence[UserContent],
         *,
         deps: Deps,
         messages: tuple[AgentMessage, ...],
@@ -46,7 +47,7 @@ class AgentRuntime[Deps, Output](Protocol):
     @abstractmethod
     def stream(
         self,
-        prompt: str,
+        prompt: str | Sequence[UserContent],
         *,
         deps: Deps,
         messages: tuple[AgentMessage, ...],
@@ -79,7 +80,7 @@ class OvidAgent[Deps, Output]:
 
     async def run(
         self,
-        prompt: str,
+        prompt: str | Sequence[UserContent],
         *,
         deps: Deps,
         messages: tuple[AgentMessage, ...] = (),
@@ -101,7 +102,7 @@ class OvidAgent[Deps, Output]:
 
     def stream(
         self,
-        prompt: str,
+        prompt: str | Sequence[UserContent],
         *,
         deps: Deps,
         messages: tuple[AgentMessage, ...] = (),
@@ -123,7 +124,7 @@ class OvidAgent[Deps, Output]:
     @asynccontextmanager
     async def _stream(
         self,
-        prompt: str,
+        prompt: str | Sequence[UserContent],
         *,
         deps: Deps,
         messages: tuple[AgentMessage, ...],

@@ -1,6 +1,6 @@
 import asyncio
 import json
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
 from typing import cast
 
@@ -10,7 +10,7 @@ from starlette.applications import Starlette
 
 from ovid_core import AgentRunError, AgentRunPolicy, InMemoryConversationStore
 from ovid_core.agents import AgentStream
-from ovid_core.messages.models import AgentMessage
+from ovid_core.messages import AgentMessage, UserContent
 from ovid_core.runtime import AgentEvent, ConversationId, RunCompletedEvent, RunId
 from ovid_core.server import AgentRunRequest, AuthorizationResult, RequestContext, ServerConfig, create_agent_app
 from ovid_core.server.errors import _AuthorizationDeniedError, _UnknownAgentError
@@ -233,7 +233,7 @@ async def test_server_delivers_persisted_result_without_optional_completion_even
 
     @asynccontextmanager
     async def result_only_stream(
-        prompt: str,
+        prompt: str | Sequence[UserContent],
         *,
         deps: AgentDependencies,
         messages: tuple[AgentMessage, ...],
