@@ -12,7 +12,7 @@ from pytest_mock import MockerFixture
 
 import tests.support.integration_consumer as consumer
 from ovid_core import AgentConstructionError, CredentialError
-from ovid_core.adapters.pydantic_ai import adapt_capabilities, inspect_mcp_server
+from ovid_core.adapters.pydantic_ai import adapt_integration_capability, inspect_mcp_server
 from ovid_core.credentials import EnvironmentCredentialRef, EnvironmentCredentialResolver
 from ovid_core.mcp import (
     MCPHTTPTransportConfig,
@@ -123,7 +123,7 @@ async def test_http_mcp_resolves_headers_and_builds_explicit_local_toolset() -> 
         config,
         resolver=EnvironmentCredentialResolver({'MCP_AUTH': 'Bearer mcp-secret'}),
     )
-    adapted = adapt_capabilities((capability,))[0]
+    adapted = adapt_integration_capability(capability)
 
     assert isinstance(adapted, Capability)
     toolset = adapted.get_toolset()
@@ -164,6 +164,6 @@ async def test_mcp_adapter_redacts_construction_failures(
     )
 
     with pytest.raises(AgentConstructionError, match='MCP capability construction failed') as captured:
-        adapt_capabilities((capability,))
+        adapt_integration_capability(capability)
 
     assert 'secret backend detail' not in repr(captured.value)

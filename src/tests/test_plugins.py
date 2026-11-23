@@ -65,9 +65,6 @@ def test_plugin_registrar_collects_and_selects_explicit_factories() -> None:
         requirements=(requirement,),
         factory=create_capability,
     )
-    assert registrar.service_factories.providers[0].id == 'test.provider'
-    assert registrar.service_factories.configurators[0].id == 'test.configure'
-    assert registrar.capability_factories[0].id == 'test.capability'
     services = registrar.select_service_factories(
         providers=('test.provider',),
         configurators=('test.configure',),

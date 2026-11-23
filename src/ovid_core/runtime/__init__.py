@@ -9,7 +9,6 @@ from ovid_core.runtime.events import TextDeltaEvent as TextDeltaEvent
 from ovid_core.runtime.events import ToolCallEvent as ToolCallEvent
 from ovid_core.runtime.events import ToolResultEvent as ToolResultEvent
 from ovid_core.runtime.events import UsageUpdateEvent as UsageUpdateEvent
-from ovid_core.runtime.events import tool_events_from_messages as tool_events_from_messages
 from ovid_core.runtime.identifiers import ConversationId as ConversationId
 from ovid_core.runtime.identifiers import RunId as RunId
 from ovid_core.runtime.results import ResultMetadataEntry as ResultMetadataEntry

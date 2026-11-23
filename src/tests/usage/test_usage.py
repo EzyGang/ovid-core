@@ -4,14 +4,9 @@ from pydantic_ai.usage import RequestUsage as PydanticRequestUsage
 from pydantic_ai.usage import RunUsage as PydanticRunUsage
 
 from ovid_core import ProviderError
-from ovid_core.adapters.pydantic_ai import (
-    PYDANTIC_AI_USAGE_FIELDS,
-    request_usage_from_pydantic,
-    usage_from_pydantic,
-    usage_update_event_from_pydantic,
-)
+from ovid_core.adapters.pydantic_ai import request_usage_from_pydantic, usage_from_pydantic
 from ovid_core.usage import RequestUsage, Usage
-from tests.support.helpers import CONVERSATION_ID, RUN_ID, make_request_usage
+from tests.support.helpers import make_request_usage
 
 
 def test_zero_usage_serialization_round_trip() -> None:
@@ -122,32 +117,12 @@ def test_pydantic_usage_adapter_rejects_invalid_or_inconsistent_values() -> None
     assert isinstance(run_error.value.__cause__, ValidationError)
 
 
-def test_pydantic_usage_adapter_aggregates_and_streams_snapshots() -> None:
+def test_pydantic_usage_adapter_aggregates_request_usage() -> None:
     first = make_request_usage(input_tokens=2, output_tokens=1)
     upstream_request = PydanticRequestUsage(input_tokens=3, output_tokens=4)
     second = request_usage_from_pydantic(upstream_request, provider_namespace='test')
     upstream_run = PydanticRunUsage(requests=2, input_tokens=5, output_tokens=5, tool_calls=1)
 
     usage = usage_from_pydantic(upstream_run, (first, second))
-    event = usage_update_event_from_pydantic(
-        upstream_request,
-        completed_requests=(first,),
-        provider_namespace='test',
-        run_id=RUN_ID,
-        conversation_id=CONVERSATION_ID,
-        sequence=4,
-    )
 
     assert usage == Usage.from_requests((first, second), tool_calls=1)
-    assert event.kind == 'usage_update'
-    assert event.usage.input_tokens == 5
-    assert event.request_usage == second
-
-
-def test_upstream_usage_inventory_classifies_active_fields() -> None:
-    classifications = {item.name: item.classification for item in PYDANTIC_AI_USAGE_FIELDS}
-
-    assert classifications['requests'] == 'stable'
-    assert classifications['input_audio_tokens'] == 'optional'
-    assert classifications['details'] == 'provider_specific'
-    assert classifications['dynamic attributes'] == 'upstream_private'

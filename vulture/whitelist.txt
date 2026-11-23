@@ -3,14 +3,10 @@ DefaultModelFactory
 _._settings
 known_models
 result_from_pydantic
-classification
-PYDANTIC_AI_USAGE_FIELDS
-usage_update_event_from_pydantic
 request_limit
 tool_call_limit
 timeout_seconds
 enabled
-service_name
 attributes
 run_policy
 observability
@@ -82,13 +78,10 @@ approved
 run
 approval_metadata
 reason
-adapt_capabilities
 _.get_instructions
 _.get_model_settings
-_.get_toolset
 _.for_run_step
 _.call_tool
-tool_events_from_messages
 AgentFactory
 DefaultAgentCompiler
 _.instrument
@@ -134,8 +127,6 @@ _.validate_features
 _.create
 _.configure
 configuration
-PluginRegistrar.service_factories
-PluginRegistrar.capability_factories
 PluginRegistrar.register_service_provider_factory
 PluginRegistrar.register_service_configurator_factory
 PluginRegistrar.register_capability_factory

@@ -13,10 +13,8 @@ from pydantic_ai.toolsets import AbstractToolset, CombinedToolset
 from pydantic_ai.toolsets.abstract import ToolsetTool
 from pydantic_core import SchemaValidator, core_schema
 
-from ovid_core.adapters.pydantic_ai._extension_validation import validate_extension_ids
 from ovid_core.adapters.pydantic_ai._tool_context import run_context_from_pydantic
 from ovid_core.adapters.pydantic_ai._tool_execution import execute_tool
-from ovid_core.adapters.pydantic_ai.integrations import adapt_integration_capability
 from ovid_core.capabilities.base import BaseCapability
 from ovid_core.errors import ExtensionCollisionError, ToolExecutionError
 from ovid_core.hooks.base import BaseToolHook
@@ -118,69 +116,18 @@ class _CollisionCheckedToolset[Deps](CombinedToolset[Deps]):
 
 
 class PydanticAICapabilityAdapter[Deps](AbstractCapability[Deps]):
-    def __init__(
-        self,
-        source: BaseCapability[Deps],
-        *,
-        hooks: tuple[BaseToolHook[Deps], ...] = (),
-        include_toolset: bool = True,
-        tool_approval: ToolApproval | None = None,
-        retries: AgentRetryPolicy = AgentRetryPolicy(),
-    ) -> None:
+    def __init__(self, source: BaseCapability[Deps]) -> None:
         self.id = source.id
         self.description = source.description
         self.defer_loading = source.defer_loading
-        self._source = source
-        self._hooks = hooks
-        self._include_toolset = include_toolset
-        self._tool_approval = tool_approval
-        self._retries = retries
+        self._instructions = source.contributions.instructions
+        self._model_settings = source.contributions.model_settings.values
 
     def get_instructions(self) -> list[str] | None:
-        instructions = self._source.contributions.instructions
-        return list(instructions) if instructions else None
+        return list(self._instructions) if self._instructions else None
 
     def get_model_settings(self) -> ModelSettings | None:
-        values = self._source.contributions.model_settings.values
-        return cast(ModelSettings, dict(values)) if values else None
-
-    def get_toolset(self) -> AbstractToolset[Deps] | None:
-        if not self._include_toolset:
-            return None
-
-        contributions = self._source.contributions
-        hooks = (*self._hooks, *contributions.hooks)
-        sources = list(contributions.toolsets)
-        if contributions.tools:
-            sources.insert(0, _StaticToolset(id=self._source.id, tools=contributions.tools))
-
-        return _combine_toolsets(
-            tuple(
-                PydanticAIToolsetAdapter(
-                    source=source,
-                    hooks=hooks,
-                    tool_approval=self._tool_approval,
-                    retries=self._retries,
-                )
-                for source in sources
-            )
-        )
-
-
-def adapt_capabilities[Deps](
-    capabilities: Sequence[BaseCapability[Deps]],
-    *,
-    tool_approval: ToolApproval | None = None,
-    retries: AgentRetryPolicy = AgentRetryPolicy(),
-) -> tuple[AbstractCapability[Deps], ...]:
-    validate_extension_ids(capabilities)
-
-    return tuple(
-        integration
-        if (integration := adapt_integration_capability(capability)) is not None
-        else PydanticAICapabilityAdapter(capability, tool_approval=tool_approval, retries=retries)
-        for capability in capabilities
-    )
+        return cast(ModelSettings, dict(self._model_settings)) if self._model_settings else None
 
 
 def _unique_tools[Deps](tools: Sequence[BaseTool[Deps, Any, Any]]) -> dict[str, BaseTool[Deps, Any, Any]]:

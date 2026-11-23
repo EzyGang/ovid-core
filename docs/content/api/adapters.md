@@ -103,8 +103,8 @@ Import from `ovid_core.adapters.pydantic_ai.tools`:
 
 - `PydanticAIToolsetAdapter(source=..., hooks=(), tool_approval=None, deferred_capability_id=None, retries=AgentRetryPolicy())` adapts a `BaseToolset` to Pydantic AI lifecycle and execution.
   `deferred_capability_id` names the deferred capability that owns the tools.
-- `PydanticAICapabilityAdapter(source, hooks=(), include_toolset=True, tool_approval=None, retries=AgentRetryPolicy())` adapts Ovid capability contributions.
-- `adapt_capabilities(capabilities, tool_approval=None, retries=AgentRetryPolicy())` adapts a sequence after collision validation.
+- `PydanticAICapabilityAdapter(source)` adapts the instructions and model settings of an Ovid capability.
+  `adapt_agent_extensions` adapts the tools, toolsets, and hooks of the capability.
 
 `retries` supplies the tool retry budget, the tool failure mode, and the maximum failure text length to each adapted Ovid tool.
 `DefaultAgentCompiler` passes `AgentDefinition.policy.retries`.
@@ -200,26 +200,11 @@ Invalid upstream state raises `ProviderError`.
 
 Import from `ovid_core.adapters.pydantic_ai.usage`.
 
-### Upstream field classification
-
-`UpstreamUsageField(name, classification)` is a frozen dataclass.
-The classification is one of:
-
-- `stable`
-- `optional`
-- `provider_specific`
-- `upstream_private`
-
-`PYDANTIC_AI_USAGE_FIELDS` describes the exact upstream fields that the adapter normalizes.
-
-### Functions
-
 | Function | Contract |
 | --- | --- |
 | `request_usage_from_pydantic(value, provider_namespace=...)` | Normalizes one request, preserving provider details under the supplied namespace. |
 | `usage_from_pydantic(value, requests)` | Aggregates normalized requests and rejects disagreement with upstream run totals. |
 | `aggregate_usage_from_pydantic(value)` | Converts aggregate counters when request detail is unavailable. |
-| `usage_update_event_from_pydantic(value, *, completed_requests, provider_namespace, run_id, conversation_id, sequence)` | Creates a stable incremental `UsageUpdateEvent`. |
 
 Invalid or inconsistent provider usage raises `ProviderError`.
 

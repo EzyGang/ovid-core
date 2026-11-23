@@ -3,24 +3,29 @@ from dataclasses import replace
 from uuid import uuid4
 
 import pytest
-from pydantic_ai import Agent
 from pydantic_ai import RunContext as PydanticRunContext
+from pydantic_ai.messages import ModelMessage, ModelResponse, TextPart, ToolCallPart
+from pydantic_ai.models.function import AgentInfo, FunctionModel
 from pydantic_ai.models.test import TestModel
 from pydantic_ai.usage import RunUsage
 
 import tests.tools.tool_consumer as consumer_module
 from ovid_core import (
+    AgentDefinition,
     AgentRetryPolicy,
+    AgentRunPolicy,
     ExtensionCollisionError,
     ToolExecutionError,
     ToolTimeoutError,
     ToolValidationError,
 )
-from ovid_core.adapters.pydantic_ai import PydanticAIToolsetAdapter, adapt_capabilities, result_from_pydantic
+from ovid_core.adapters.pydantic_ai import PydanticAIToolsetAdapter
+from ovid_core.adapters.pydantic_ai.extensions import adapt_agent_extensions
 from ovid_core.capabilities import BaseCapability, CapabilityContributions
 from ovid_core.hooks import BaseToolHook
-from ovid_core.runtime import tool_events_from_messages
+from ovid_core.routing import ModelRef
 from ovid_core.tools import ToolApproval, ToolExecutionContext, ToolGrammar, ToolPresentation, ToolResult
+from tests.support.agent_helpers import agent_factory
 from tests.tools.tool_consumer import (
     AddArguments,
     AddTool,
@@ -216,28 +221,26 @@ async def test_capabilities_compile_contributions_and_execute_through_real_agent
     hook = RecordingHook()
     toolset = TrackingToolset(())
     capability = arithmetic_capability(tool, toolset, hook)
-    adapted = adapt_capabilities((capability,))
+    requests: list[AgentInfo] = []
 
-    assert adapted[0].get_instructions() == ['Use arithmetic when needed.']
-    assert adapted[0].get_model_settings() == {'temperature': 0}
-    assert adapted[0].get_toolset() is not None
+    def respond(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        requests.append(info)
+        if len(messages) > 1:
+            return ModelResponse(parts=(TextPart('done'),))
 
-    agent = Agent(
-        TestModel(call_tools=['fast_add']),
+        return ModelResponse(parts=(ToolCallPart('fast_add', {'left': 2, 'right': 3}, 'call-1'),))
+
+    definition = AgentDefinition[Dependencies, str](
+        model=ModelRef(name='primary'),
         deps_type=Dependencies,
-        capabilities=adapted,
+        output_type=str,
+        capabilities=(capability,),
     )
-    upstream_result = await agent.run('Add values', deps=Dependencies(prefix='agent'))
-    result = result_from_pydantic(upstream_result)
-    events = tool_events_from_messages(
-        result.messages,
-        run_id=result.run_id,
-        conversation_id=result.conversation_id,
-    )
+    agent = await agent_factory({'primary': FunctionModel(respond)}).build(definition)
+    result = await agent.run('Add values', deps=Dependencies(prefix='agent'))
 
-    assert [event.kind for event in events] == ['tool_call', 'tool_result']
-    assert [event.sequence for event in events] == [0, 1]
-
+    assert requests[0].instructions == 'Use arithmetic when needed.'
+    assert requests[0].model_settings == {'temperature': 0}
     assert tool.context is not None
     assert tool.context.run.run_id == result.run_id
     assert tool.context.run.conversation_id == result.conversation_id
@@ -246,6 +249,32 @@ async def test_capabilities_compile_contributions_and_execute_through_real_agent
     assert any(part.kind == 'tool_call' for message in result.messages for part in message.parts)
     assert any(part.kind == 'tool_return' for message in result.messages for part in message.parts)
     assert hook.events == ['before:fast_add', 'after:fast_add']
+
+
+async def test_agent_retry_policy_reaches_capability_tools_through_the_compiler() -> None:
+    hook = RecordingHook()
+    capability = BaseCapability(
+        id='controlled',
+        contributions=CapabilityContributions(tools=(ControlledTool(mode='typed_error'),), hooks=(hook,)),
+    )
+
+    def respond(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        del messages, info
+        return ModelResponse(parts=(ToolCallPart('controlled', {'left': 1, 'right': 2}, 'call-1'),))
+
+    definition = AgentDefinition[Dependencies, str](
+        model=ModelRef(name='primary'),
+        deps_type=Dependencies,
+        output_type=str,
+        capabilities=(capability,),
+        policy=AgentRunPolicy(retries=AgentRetryPolicy(tools=0, tool_failures='raise')),
+    )
+    agent = await agent_factory({'primary': FunctionModel(respond)}).build(definition)
+
+    with pytest.raises(ToolExecutionError, match='controlled failure'):
+        await agent.run('Fail.', deps=Dependencies(prefix='raise'))
+
+    assert hook.events == ['before:controlled', 'error:controlled']
 
 
 def test_extension_ids_collide_deterministically() -> None:
@@ -266,7 +295,7 @@ def test_extension_ids_collide_deterministically() -> None:
         ((duplicate_toolsets,), "Duplicate toolset ID: 'arithmetic'"),
     ):
         with pytest.raises(ExtensionCollisionError, match=message):
-            adapt_capabilities(capabilities)
+            adapt_agent_extensions(capabilities, (), ())
 
 
 async def test_dynamic_tool_collisions_and_empty_capabilities_are_stable() -> None:
@@ -292,14 +321,16 @@ async def test_dynamic_tool_collisions_and_empty_capabilities_are_stable() -> No
     text_adapter = PydanticAIToolsetAdapter(source=TrackingToolset((TextAddTool(),)))
     text_definitions = await text_adapter.get_tools(context)
     assert text_definitions['add'].tool_def.parameters_json_schema['properties'].keys() == {'left', 'right'}
-    one_toolset = adapt_capabilities(
+    one_toolset = adapt_agent_extensions(
         (BaseCapability(id='one', contributions=CapabilityContributions(toolsets=(TrackingToolset(()),))),),
+        (),
+        (),
         retries=AgentRetryPolicy(tools=5),
-    )[0].get_toolset()
+    ).toolsets[0]
     assert isinstance(one_toolset, PydanticAIToolsetAdapter)
     assert one_toolset.retries.tools == 5
 
-    conflicting = adapt_capabilities(
+    conflicting = adapt_agent_extensions(
         (
             BaseCapability(
                 id='conflicting',
@@ -308,16 +339,17 @@ async def test_dynamic_tool_collisions_and_empty_capabilities_are_stable() -> No
                     toolsets=(TrackingToolset((AddTool(),)),),
                 ),
             ),
-        )
-    )[0].get_toolset()
-    assert conflicting is not None
+        ),
+        (),
+        (),
+    ).toolsets[0]
     with pytest.raises(ExtensionCollisionError, match='conflicting tool IDs'):
         await conflicting.get_tools(context)
 
-    empty = adapt_capabilities((BaseCapability(id='empty'),))[0]
-    assert empty.get_instructions() is None
-    assert empty.get_model_settings() is None
-    assert empty.get_toolset() is None
+    empty = adapt_agent_extensions((BaseCapability(id='empty'),), (), ())
+    assert empty.capabilities[0].get_instructions() is None
+    assert empty.capabilities[0].get_model_settings() is None
+    assert empty.toolsets == ()
 
 
 def test_consumer_module_has_no_pydantic_ai_dependency() -> None:

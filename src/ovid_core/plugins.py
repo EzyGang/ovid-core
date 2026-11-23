@@ -114,17 +114,6 @@ class PluginRegistrar:
         self._configurators: dict[str, AgentServiceConfiguratorFactory] = {}
         self._capabilities: dict[str, CapabilityFactory] = {}
 
-    @property
-    def service_factories(self) -> PluginServiceFactories:
-        return PluginServiceFactories(
-            providers=tuple(self._providers.values()),
-            configurators=tuple(self._configurators.values()),
-        )
-
-    @property
-    def capability_factories(self) -> tuple[CapabilityFactory, ...]:
-        return tuple(self._capabilities.values())
-
     def register_service_provider_factory(self, *, id: str, factory: ServiceProviderBuilder) -> None:
         registered = _RegisteredServiceProviderFactory(id=id, factory=factory)
         self._register(self._providers, registered, kind='service provider')
