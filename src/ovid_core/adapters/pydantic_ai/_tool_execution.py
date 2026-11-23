@@ -14,6 +14,7 @@ from ovid_core.tools.base import BaseTool
 
 
 async def execute_tool[Deps](
+    name: str,
     tool: BaseTool[Deps, Any, Any],
     raw_arguments: dict[str, Any],
     ctx: PydanticRunContext[Deps],
@@ -21,7 +22,7 @@ async def execute_tool[Deps](
     retries: AgentRetryPolicy,
 ) -> dict[str, JsonValue]:
     context = tool_context_from_pydantic(ctx)
-    arguments = _validated_arguments(tool, raw_arguments, retries)
+    arguments = _validated_arguments(name, tool, raw_arguments, retries)
     returning = retries.tool_failures == 'return'
     deadline = asyncio.timeout(tool.timeout_seconds)
     validating_result = False
@@ -39,7 +40,7 @@ async def execute_tool[Deps](
         if returning and isinstance(error, (ModelRetry, ToolFailed, ApprovalRequired, CallDeferred)):
             raise
 
-        failure, reply = _classified_failure(tool, error, deadline.expired(), validating_result, retries)
+        failure, reply = _classified_failure(name, tool, error, deadline.expired(), validating_result, retries)
     else:
         return result.model_dump(mode='json')
 
@@ -52,6 +53,7 @@ async def execute_tool[Deps](
 
 
 def _validated_arguments(
+    name: str,
     tool: BaseTool[Any, Any, Any],
     raw_arguments: dict[str, Any],
     retries: AgentRetryPolicy,
@@ -66,11 +68,12 @@ def _validated_arguments(
             f'{".".join(str(item) for item in detail["loc"]) or "arguments"}: {detail["msg"]}'
             for detail in error.errors(include_url=False)
         )
-        message = f'Invalid arguments for tool {tool.id!r}:\n{lines}'
+        message = f'Invalid arguments for tool {name!r}:\n{lines}'
         raise ModelRetry(_truncated(message, retries.error_max_chars)) from error
 
 
 def _classified_failure(
+    name: str,
     tool: BaseTool[Any, Any, Any],
     error: Exception,
     deadline_expired: bool,
@@ -91,7 +94,7 @@ def _classified_failure(
         detail = f'timed out after {tool.timeout_seconds}s' if deadline_expired else detail
     failure.__cause__ = error
 
-    return failure, ToolFailed(_truncated(f'Tool {tool.id!r} {detail}', limit))
+    return failure, ToolFailed(_truncated(f'Tool {name!r} {detail}', limit))
 
 
 def _truncated(text: str, limit: int) -> str:

@@ -80,13 +80,16 @@ The model can then correct the call or continue with a different step.
 
 | Failure | Result outcome | Result text | Uses the retry budget |
 | --- | --- | --- | --- |
-| The arguments do not match `args_type`. | `retried` | `Invalid arguments for tool '<id>':` and one `<field>: <message>` line for each error | Yes |
+| The arguments do not match `args_type`. | `retried` | `Invalid arguments for tool '<name>':` and one `<field>: <message>` line for each error | Yes |
 | The tool raises `ToolRetryError`. | `retried` | The error text | Yes |
 | The model calls an unknown tool name. | `retried` | The Pydantic AI message that lists the available tools | Yes |
 | The tool raises `ToolExecutionError`. | `failed` | The error text | No |
-| The tool does not complete in `timeout_seconds`. | `failed` | `Tool '<id>' timed out after <seconds>s` | No |
-| The tool returns a value that does not match `result_type`. | `failed` | `Tool '<id>' returned an invalid result` | No |
-| The tool or a tool hook raises a different exception. | `failed` | `Tool '<id>' failed: <exception type>: <exception text>` | No |
+| The tool does not complete in `timeout_seconds`. | `failed` | `Tool '<name>' timed out after <seconds>s` | No |
+| The tool returns a value that does not match `result_type`. | `failed` | `Tool '<name>' returned an invalid result` | No |
+| The tool or a tool hook raises a different exception. | `failed` | `Tool '<name>' failed: <exception type>: <exception text>` | No |
+
+`<name>` is the tool name that the model called.
+This name is `ToolPresentation.wire_name` when the tool sets it, and the tool `id` otherwise.
 
 Raise `ToolExecutionError` when the call cannot succeed, for example when a file does not exist.
 Raise `ToolRetryError` when the model can correct the arguments and call the tool again.
@@ -129,6 +132,7 @@ The last three conditions raise `ToolExecutionError`.
 Set `AgentRetryPolicy(tool_failures='raise')` to stop the run on each tool failure.
 In this mode the adapter raises `ToolValidationError`, `ToolExecutionError`, or `ToolTimeoutError`.
 The message of an unexpected exception is then `Tool '<id>' failed`, and the original exception is the cause.
+The messages of these errors contain the tool `id`, not the wire name.
 
 These rules apply to Ovid tools.
 Pydantic AI owns the failure behavior of MCP tools and of tools from a Pydantic AI capability passthrough.
@@ -160,6 +164,7 @@ The adapter calls `on_tool_error` one time for each failed tool execution, befor
 This behavior is the same for each `AgentRetryPolicy.tool_failures` value.
 A timeout supplies `ToolTimeoutError`.
 An unexpected exception or an invalid result supplies `ToolExecutionError("Tool '<id>' failed")` with the original exception as `__cause__`.
+The hook receives the tool `id` in `tool_id` and in these messages, not the wire name.
 The adapter does not call `on_tool_error` for invalid arguments, because the tool did not start.
 
 ## Capability contracts

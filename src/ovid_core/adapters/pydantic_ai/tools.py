@@ -96,7 +96,7 @@ class PydanticAIToolsetAdapter[Deps](AbstractToolset[Deps]):
         if not isinstance(tool, _BoundToolsetTool) or tool.toolset is not self:
             raise ToolExecutionError(f'Tool {name!r} is not available for this model step')
 
-        return await execute_tool(tool.source_tool, tool_args, ctx, self.hooks, self.retries)
+        return await execute_tool(name, tool.source_tool, tool_args, ctx, self.hooks, self.retries)
 
 
 class _StaticToolset[Deps](BaseToolset[Deps]):

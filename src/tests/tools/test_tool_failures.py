@@ -29,7 +29,7 @@ from ovid_core.hooks import BaseToolHook
 from ovid_core.messages import ToolReturnPart
 from ovid_core.routing import ModelRef
 from ovid_core.runtime import AgentEvent, RunResult
-from ovid_core.tools import BaseTool, ToolExecutionContext, ToolResult
+from ovid_core.tools import BaseTool, ToolExecutionContext, ToolPresentation, ToolResult
 from tests.support.agent_consumer import AgentDependencies, ConsumerToolset, WaitTool
 from tests.support.agent_helpers import agent_factory
 
@@ -39,7 +39,8 @@ class FailArguments(BaseModel):
 
 
 class FailTool(BaseTool[AgentDependencies, FailArguments, ToolResult]):
-    id = 'fail'
+    id = 'consumer_fail'
+    presentation = ToolPresentation(wire_name='fail')
     description = 'Fail in the requested way.'
     args_type = FailArguments
     result_type = ToolResult
@@ -71,6 +72,7 @@ class FailTool(BaseTool[AgentDependencies, FailArguments, ToolResult]):
 class ErrorHook(BaseToolHook[AgentDependencies]):
     def __init__(self) -> None:
         self.errors: list[ToolExecutionError] = []
+        self.tool_ids: list[str] = []
 
     async def on_tool_error(
         self,
@@ -78,8 +80,9 @@ class ErrorHook(BaseToolHook[AgentDependencies]):
         tool_id: str,
         error: ToolExecutionError,
     ) -> None:
-        del context, tool_id
+        del context
         self.errors.append(error)
+        self.tool_ids.append(tool_id)
 
 
 class CallingModel:
@@ -149,7 +152,7 @@ async def test_tool_execution_error_returns_failed_result_in_history_and_stream(
     assert (result.usage.request_count, result.usage.tool_calls) == (2, 0)
 
 
-async def test_each_failure_kind_returns_its_documented_tool_result() -> None:
+async def test_each_failure_kind_returns_its_result_under_the_wire_name_and_hooks_keep_the_tool_id() -> None:
     kinds = ('execution', 'retry', 'generic', 'own_timeout', 'slow', 'invalid', 'model_retry', 'tool_failed')
     hook = ErrorHook()
     agent = await failing_agent(FunctionModel(CallingModel(*({'kind': kind} for kind in kinds))), hook=hook)
@@ -170,11 +173,12 @@ async def test_each_failure_kind_returns_its_documented_tool_result() -> None:
     assert [(type(error), str(error), type(error.__cause__)) for error in hook.errors] == [
         (ToolExecutionError, 'missing file', type(None)),
         (ToolRetryError, 'use an absolute path', type(None)),
-        (ToolExecutionError, "Tool 'fail' failed", ValueError),
-        (ToolTimeoutError, "Tool 'fail' timed out", TimeoutError),
-        (ToolTimeoutError, "Tool 'fail' timed out", TimeoutError),
-        (ToolExecutionError, "Tool 'fail' failed", ValidationError),
+        (ToolExecutionError, "Tool 'consumer_fail' failed", ValueError),
+        (ToolTimeoutError, "Tool 'consumer_fail' timed out", TimeoutError),
+        (ToolTimeoutError, "Tool 'consumer_fail' timed out", TimeoutError),
+        (ToolExecutionError, "Tool 'consumer_fail' failed", ValidationError),
     ]
+    assert set(hook.tool_ids) == {'consumer_fail'}
     assert 'private result' not in str(tool_returns(result))
 
 
@@ -224,8 +228,8 @@ async def test_endless_tool_failures_stop_at_the_request_limit() -> None:
     (
         ({'kind': 'execution'}, ToolExecutionError, 'missing file'),
         ({'kind': 'retry'}, ToolRetryError, 'use an absolute path'),
-        ({'kind': 'model_retry'}, ToolExecutionError, "Tool 'fail' failed"),
-        ({}, ToolValidationError, "Invalid arguments for tool 'fail'"),
+        ({'kind': 'model_retry'}, ToolExecutionError, "Tool 'consumer_fail' failed"),
+        ({}, ToolValidationError, "Invalid arguments for tool 'consumer_fail'"),
     ),
 )
 async def test_raise_mode_aborts_the_run_with_the_ovid_tool_error(
@@ -260,7 +264,9 @@ async def test_on_tool_error_fires_once_per_failed_execution_in_both_modes() -> 
     assert tool_returns(result) == [('failed', "Tool 'fail' failed: ValueError: boom")]
     assert raising_hook.errors == [raised.value]
     for hook in (returning_hook, raising_hook):
-        assert [(type(error), str(error)) for error in hook.errors] == [(ToolExecutionError, "Tool 'fail' failed")]
+        assert [(type(error), str(error)) for error in hook.errors] == [
+            (ToolExecutionError, "Tool 'consumer_fail' failed")
+        ]
         assert isinstance(hook.errors[0].__cause__, ValueError)
 
 
