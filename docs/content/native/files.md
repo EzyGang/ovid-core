@@ -46,6 +46,9 @@ Approval is an application tool-call policy.
 The example overrides the tool defaults.
 It removes the approval pause for all Ovid tools in this agent.
 Omit `tool_approval` to keep the defaults in the table.
+A `write` or `edit` call then pauses the run, and `OvidAgent.run` returns a `DeferredRunResult`.
+The application approves or denies each call in a resume run, as [Deferred runs](../api/agents.md#deferred-runs) shows.
+An approved call runs once, with `ToolExecutionContext.approved=True`.
 Path policy, observation checks, validation, timeouts, and cancellation always apply.
 
 All built-in and custom modes use the wire name `edit`.

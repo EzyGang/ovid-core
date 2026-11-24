@@ -39,6 +39,41 @@ Servers use `commit` when the store supports this protocol. Other stores continu
 
 Applications can keep an append-only transcript from `messages` while replacing a separate active context projection with `history`.
 
+## `DeferredToolRequestStore`
+
+`DeferredToolRequestStore` extends `ConversationStore`.
+It keeps the pending tool calls of a paused run for each conversation:
+
+```python
+async def load_deferred_requests(self, conversation_id: ConversationId) -> DeferredToolRequests | None: ...
+
+async def save_deferred_requests(self, conversation_id: ConversationId, requests: DeferredToolRequests) -> None: ...
+
+async def clear_deferred_requests(self, conversation_id: ConversationId) -> None: ...
+```
+
+The protocol is optional and runtime-checkable.
+A server resumes a paused run only when its store supports this protocol.
+The stored record is the authority for the kind and the metadata of each pending call.
+Client answers do not supply these values.
+
+A server writes in this order:
+
+1. After a paused run, it stores the messages, and then it saves the record.
+2. After a completed run, it stores the messages, and then it clears the record.
+
+A completed run can be a resume or a new prompt that closed the pending calls as `interrupted`.
+
+A server accepts an answer only for a call that is in the record and has no result in the stored messages.
+The record must contain every pending call, and a resume needs an answer for each pending call.
+Thus a failure between the two writes cannot make a call run twice:
+
+- Messages without a record: the server rejects the resume.
+- A record without the messages of its run: the stored messages do not show the calls as pending, so the server rejects the resume.
+
+A new prompt works in both conditions, and the completed run clears the record.
+A durable store can keep `requests.model_dump_json()` and read it with `DeferredToolRequests.model_validate_json`.
+
 ## `MessageCodec`
 
 ```python
@@ -82,6 +117,7 @@ loaded = await store.load(conversation_id)
 ```
 
 An unknown conversation loads as `()`. Empty append operations do nothing. `commit` replaces the active in-memory history.
+The store also implements `DeferredToolRequestStore` and keeps pending tool calls in memory.
 
 Use this store for tests and temporary applications. It has no durability or external concurrency control.
 

@@ -92,7 +92,9 @@ A different exception also becomes a tool result, with the exception type and te
 Refer to [Tool failure results](../api/extensions.md#tool-failure-results) for the full rules.
 
 Each tool declares its default approval value.
-The application controls approval and supplies approval data in the execution context.
+A tool that requires approval pauses the run, and the run returns a `DeferredRunResult`.
+The application approves or denies the call in a resume run, as [Deferred runs](../api/agents.md#deferred-runs) shows.
+A tool can also raise `ToolApprovalRequired` or `ToolDeferred` to pause the run at run time.
 Set `AgentDefinition.tool_approval` to replace every Ovid tool default for one agent.
 For example, `ToolApproval(required=False)` removes approval pauses for all Ovid tools.
 Other workspace and tool checks still apply.

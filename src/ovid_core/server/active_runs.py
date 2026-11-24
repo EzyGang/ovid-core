@@ -4,8 +4,9 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import Any, cast
 
-from ovid_core.runtime.identifiers import RunId
+from ovid_core.runtime.identifiers import ConversationId, RunId
 from ovid_core.server.contracts import AuthorizationResult
+from ovid_core.server.errors import _ConversationBusyError
 
 
 class _ConnectionOwner:
@@ -19,6 +20,7 @@ class _ActiveRun:
     done: asyncio.Future[None]
     owner: _ConnectionOwner | None = None
     authorization: AuthorizationResult | None = None
+    conversation_id: ConversationId | None = None
     task: asyncio.Task[Any] | None = None
     cancelled: bool = False
     terminal: bool = False
@@ -27,6 +29,7 @@ class _ActiveRun:
 class _ActiveRuns:
     def __init__(self) -> None:
         self._runs: dict[RunId, _ActiveRun] = {}
+        self._conversations: set[ConversationId] = set()
 
     def start(
         self,
@@ -71,8 +74,18 @@ class _ActiveRuns:
         self._runs[active.run_id] = active
         return active
 
+    def admit(self, active: _ActiveRun, conversation_id: ConversationId) -> None:
+        if conversation_id in self._conversations:
+            raise _ConversationBusyError
+
+        self._conversations.add(conversation_id)
+        active.conversation_id = conversation_id
+
     def _finish(self, active: _ActiveRun) -> None:
         self._runs.pop(active.run_id, None)
+        if active.conversation_id is not None:
+            self._conversations.remove(active.conversation_id)
+            active.conversation_id = None
         if not active.done.done():
             active.done.set_result(None)
 

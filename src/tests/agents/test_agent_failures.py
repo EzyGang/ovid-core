@@ -231,6 +231,8 @@ async def test_multiple_response_parts_share_one_model_request_event() -> None:
         events=_multiple_response_parts(),
         run_id=RUN_ID,
         conversation_id=CONVERSATION_ID,
+        approvals={},
+        interrupted=None,
     )
 
     assert [event.kind for event in await _collect(stream)] == ['run_started', 'model_request_started']
@@ -242,6 +244,8 @@ async def test_thinking_parts_are_not_projected_to_user_events() -> None:
         events=_thinking_response_parts(),
         run_id=RUN_ID,
         conversation_id=CONVERSATION_ID,
+        approvals={},
+        interrupted=None,
     )
 
     events = await _collect(stream)

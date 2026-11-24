@@ -1,10 +1,11 @@
 from typing import Annotated, Literal
 
-from pydantic import Field, NonNegativeInt
+from pydantic import Field, JsonValue, NonNegativeInt
 
 from ovid_core.messages.models import ToolCallData, ToolReturnData
 from ovid_core.models import BaseModel
 from ovid_core.runtime.identifiers import ConversationId, RunId
+from ovid_core.tools.deferred import DeferredToolKind
 from ovid_core.usage.models import RequestUsage, Usage
 
 
@@ -36,6 +37,16 @@ class ToolResultEvent(ToolReturnData, EventIdentity):
     kind: Literal['tool_result'] = 'tool_result'
 
 
+class ToolDeferredEvent(EventIdentity):
+    kind: Literal['tool_deferred'] = 'tool_deferred'
+    tool_call_id: str = Field(min_length=1)
+    tool_name: str = Field(min_length=1)
+    arguments: dict[str, JsonValue]
+    deferral_kind: DeferredToolKind
+    reason: str | None = None
+    metadata: dict[str, JsonValue] | None = None
+
+
 class UsageUpdateEvent(EventIdentity):
     kind: Literal['usage_update'] = 'usage_update'
     usage: Usage
@@ -45,6 +56,11 @@ class UsageUpdateEvent(EventIdentity):
 
 class RunCompletedEvent(EventIdentity):
     kind: Literal['run_completed'] = 'run_completed'
+    usage: Usage
+
+
+class RunDeferredEvent(EventIdentity):
+    kind: Literal['run_deferred'] = 'run_deferred'
     usage: Usage
 
 
@@ -60,8 +76,10 @@ AgentEvent = Annotated[
     | TextDeltaEvent
     | ToolCallEvent
     | ToolResultEvent
+    | ToolDeferredEvent
     | UsageUpdateEvent
     | RunCompletedEvent
+    | RunDeferredEvent
     | RunFailedEvent,
     Field(discriminator='kind'),
 ]

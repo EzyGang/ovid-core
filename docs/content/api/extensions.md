@@ -11,8 +11,11 @@ Import from `ovid_core.tools.models`.
 - `metadata: dict[str, JsonValue] = {}`
 
 The approval value controls the Pydantic AI tool definition.
-When `required=True`, Pydantic AI defers the call before tool execution.
-The application can approve or reject the exact call.
+When `required=True`, the run pauses before the tool runs.
+The run returns a `DeferredRunResult` with one `approval` request for the call.
+The request carries the call arguments and this `ToolApproval` value, which includes `reason`.
+The application approves or denies the exact call in the next run.
+[Deferred runs](agents.md#deferred-runs) shows the resume step.
 
 Set `AgentDefinition.tool_approval` to override this value for every Ovid tool in one agent.
 For example, `ToolApproval(required=False)` removes all approval pauses for Ovid tools.
@@ -24,6 +27,57 @@ The override does not change tools from a Pydantic AI capability passthrough.
 
 - `content: JsonValue` contains the required result content.
 - `metadata: dict[str, JsonValue] = {}` contains non-secret result metadata.
+
+## Deferred tool values
+
+Import from `ovid_core.tools` or `ovid_core.tools.deferred`.
+All values are frozen Ovid models that serialize to JSON.
+
+### `DeferredToolRequest`
+
+One tool call that waits for the application.
+
+- `tool_call_id: str`
+- `tool_name: str`
+- `arguments: dict[str, JsonValue]` contains the arguments that the model sent.
+- `kind: DeferredToolKind` is `approval`, `external`, or `question`.
+- `approval: ToolApproval | None` is the effective `ToolApproval` when the approval setting of the tool caused the pause.
+- `metadata: dict[str, JsonValue] | None` is the metadata of `ToolApprovalRequired` or `ToolDeferred`.
+
+`approval` is `None` for a call that raised `ToolApprovalRequired`.
+It is also `None` for a tool from a Pydantic AI capability passthrough.
+
+### `DeferredToolRequests`
+
+- `calls: tuple[DeferredToolRequest, ...]` contains at least one call. The call IDs are unique.
+
+`resume(answers)` takes a mapping from call ID to answer and returns `DeferredToolResume`.
+Use this method to build the resume input.
+
+### Answers
+
+`DeferredToolAnswer` is the discriminated union of these models:
+
+| Model | `kind` | Answers a call of kind | Result |
+| --- | --- | --- | --- |
+| `ToolCallApproved()` | `approved` | `approval` | The tool runs with `ToolExecutionContext.approved=True`. |
+| `ToolCallDenied(message='The tool call was denied.')` | `denied` | `approval` | The tool does not run. The model receives `message` with outcome `denied`. |
+| `ToolCallReturned(value)` | `returned` | `external`, `question` | The model receives the JSON `value` with outcome `success`. |
+| `ToolCallFailed(message)` | `failed` | `external`, `question` | The model receives `message` with outcome `failed`. |
+
+An answer cannot change the call arguments.
+
+### `DeferredToolResume`
+
+- `requests: DeferredToolRequests`
+- `answers: dict[str, DeferredToolAnswer]`
+
+The model checks the answers against the requests each time it is built, also from JSON.
+It raises `DeferredToolAnswerError` in these conditions:
+
+- A pending call has no answer.
+- An answer names a call that is not pending.
+- An answer does not match the call kind. For example, a `ToolCallReturned` cannot answer an `approval` call.
 
 ## Tool contracts
 
@@ -37,6 +91,10 @@ Frozen dataclass with:
 - `tool_call_id: str`
 - `approved: bool = False`
 - `approval_metadata: JsonValue = None`
+
+`approved` is `True` when the application approved this call with `ToolCallApproved` or a Pydantic AI capability approved it.
+`approval_metadata` holds the metadata that a Pydantic AI capability supplies with an approval.
+An Ovid resume supplies no approval metadata, so the value is `None`.
 
 ### `BaseTool[Deps, Args, Result]`
 
@@ -136,6 +194,43 @@ The messages of these errors contain the tool `id`, not the wire name.
 
 These rules apply to Ovid tools.
 Pydantic AI owns the failure behavior of MCP tools and of tools from a Pydantic AI capability passthrough.
+
+### Ask for approval or defer a call
+
+A tool can pause the run at run time.
+Raise one of these exceptions from `ovid_core.errors` in `execute` or in a tool hook:
+
+- `ToolApprovalRequired(metadata=None)` asks the application to approve the call.
+- `ToolDeferred(metadata=None, kind='external')` gives the call to the application, which supplies the result.
+
+`metadata` is an optional JSON object.
+The request of the call carries it in `DeferredToolRequest.metadata`.
+Set `kind='question'` when the call asks the user for content instead of work outside the agent.
+
+```python
+from ovid_core.errors import ToolApprovalRequired
+
+
+async def execute(self, context, arguments):
+    if arguments.amount > 100 and not context.approved:
+        raise ToolApprovalRequired(metadata={'amount': arguments.amount})
+    ...
+```
+
+When the application approves the call, the tool runs again with `context.approved=True`.
+When the application answers a `ToolDeferred` call, the tool does not run again.
+The model receives the answer as the tool result.
+
+A deferral is not a failure.
+Both exceptions pause the run in the `'return'` and the `'raise'` failure modes.
+A deferral does not use the retry budget, and `on_tool_error` does not run for it.
+The adapter also passes the Pydantic AI exceptions `ApprovalRequired` and `CallDeferred` through in both modes.
+
+The tool hooks run in this order:
+
+- `before_tool` runs each time the tool starts. This includes the start that raises the exception and the approved start.
+- `after_tool` runs only when the tool returns a valid result.
+- No hook runs for a call that waits because the tool requires approval. That call starts only after approval.
 
 ### `BaseToolset[Deps]`
 

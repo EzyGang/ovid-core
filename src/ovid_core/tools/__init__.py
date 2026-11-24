@@ -3,6 +3,15 @@ from ovid_core.tools.base import BaseToolset as BaseToolset
 from ovid_core.tools.base import ToolExecutionContext as ToolExecutionContext
 from ovid_core.tools.base import ToolGrammar as ToolGrammar
 from ovid_core.tools.base import ToolPresentation as ToolPresentation
+from ovid_core.tools.deferred import DeferredToolAnswer as DeferredToolAnswer
+from ovid_core.tools.deferred import DeferredToolKind as DeferredToolKind
+from ovid_core.tools.deferred import DeferredToolRequest as DeferredToolRequest
+from ovid_core.tools.deferred import DeferredToolRequests as DeferredToolRequests
+from ovid_core.tools.deferred import DeferredToolResume as DeferredToolResume
+from ovid_core.tools.deferred import ToolCallApproved as ToolCallApproved
+from ovid_core.tools.deferred import ToolCallDenied as ToolCallDenied
+from ovid_core.tools.deferred import ToolCallFailed as ToolCallFailed
+from ovid_core.tools.deferred import ToolCallReturned as ToolCallReturned
 from ovid_core.tools.models import AgentToolDescriptor as AgentToolDescriptor
 from ovid_core.tools.models import AgentToolsetDescriptor as AgentToolsetDescriptor
 from ovid_core.tools.models import ToolApproval as ToolApproval

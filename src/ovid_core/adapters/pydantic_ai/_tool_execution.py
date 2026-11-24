@@ -6,7 +6,14 @@ from pydantic_ai import RunContext as PydanticRunContext
 from pydantic_ai.exceptions import ApprovalRequired, CallDeferred, ModelRetry, ToolFailed
 
 from ovid_core.adapters.pydantic_ai._tool_context import tool_context_from_pydantic
-from ovid_core.errors import ToolExecutionError, ToolRetryError, ToolTimeoutError, ToolValidationError
+from ovid_core.errors import (
+    ToolApprovalRequired,
+    ToolDeferred,
+    ToolExecutionError,
+    ToolRetryError,
+    ToolTimeoutError,
+    ToolValidationError,
+)
 from ovid_core.hooks.base import BaseToolHook
 from ovid_core.models import BaseModel
 from ovid_core.policy import AgentRetryPolicy
@@ -36,10 +43,13 @@ async def execute_tool[Deps](
         validating_result = False
         for hook in hooks:
             await hook.after_tool(context, tool.id, result)
+    except ApprovalRequired, CallDeferred:
+        raise
+    except (ToolApprovalRequired, ToolDeferred) as error:
+        raise _upstream_deferral(error) from error
     except Exception as error:
-        if returning and isinstance(error, (ModelRetry, ToolFailed, ApprovalRequired, CallDeferred)):
+        if returning and isinstance(error, (ModelRetry, ToolFailed)):
             raise
-
         failure, reply = _classified_failure(name, tool, error, deadline.expired(), validating_result, retries)
     else:
         return result.model_dump(mode='json')
@@ -50,6 +60,13 @@ async def execute_tool[Deps](
         raise failure
 
     raise reply from failure
+
+
+def _upstream_deferral(error: ToolApprovalRequired | ToolDeferred) -> ApprovalRequired | CallDeferred:
+    if isinstance(error, ToolApprovalRequired):
+        return ApprovalRequired(error.metadata)
+
+    return CallDeferred(error.metadata, kind=error.kind)
 
 
 def _validated_arguments(

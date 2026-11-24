@@ -21,11 +21,13 @@ from ovid_core.runtime import (
     ModelRequestStartedEvent,
     RunCompletedEvent,
     RunContext,
+    RunDeferredEvent,
     RunFailedEvent,
     RunId,
     RunStartedEvent,
     TextDeltaEvent,
     ToolCallEvent,
+    ToolDeferredEvent,
     ToolResultEvent,
     UsageUpdateEvent,
 )
@@ -91,24 +93,33 @@ def test_all_normalized_events_serialize_through_discriminated_union() -> None:
             content={'found': True},
             tool_call_id='call-1',
         ),
-        UsageUpdateEvent(
+        ToolDeferredEvent(
             run_id=RUN_ID,
             conversation_id=CONVERSATION_ID,
             sequence=5,
+            tool_name='delete',
+            arguments={'path': 'notes.txt'},
+            tool_call_id='call-2',
+            deferral_kind='approval',
+            reason='Deletes files',
+        ),
+        UsageUpdateEvent(
+            run_id=RUN_ID,
+            conversation_id=CONVERSATION_ID,
+            sequence=6,
             usage=usage,
             request_usage=make_request_usage(),
         ),
-        RunCompletedEvent(run_id=RUN_ID, conversation_id=CONVERSATION_ID, sequence=6, usage=usage),
+        RunCompletedEvent(run_id=RUN_ID, conversation_id=CONVERSATION_ID, sequence=7, usage=usage),
+        RunDeferredEvent(run_id=RUN_ID, conversation_id=CONVERSATION_ID, sequence=8, usage=usage),
         RunFailedEvent(
             run_id=RUN_ID,
             conversation_id=CONVERSATION_ID,
-            sequence=7,
+            sequence=9,
             error_type='provider_error',
             message='request failed',
         ),
     )
     adapter = TypeAdapter(AgentEvent)
 
-    assert tuple(adapter.validate_json(adapter.dump_json(event)).kind for event in events) == tuple(
-        event.kind for event in events
-    )
+    assert tuple(adapter.validate_json(adapter.dump_json(event)) for event in events) == events

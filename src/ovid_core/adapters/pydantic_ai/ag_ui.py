@@ -12,6 +12,8 @@ from ag_ui.core import (
     ToolMessage,
     UserMessage,
 )
+from pydantic_ai.exceptions import UserError
+from pydantic_ai.messages import DeferredToolRequestsEvent
 from pydantic_ai.run import AgentRunResult
 from pydantic_ai.ui import NativeEvent
 from pydantic_ai.ui.ag_ui import AGUIAdapter
@@ -21,18 +23,22 @@ from ovid_core.adapters.pydantic_ai._agent_runtime import PydanticAIAgentRuntime
 from ovid_core.adapters.pydantic_ai._usage_tracking import RunUsageRecorder, UsageTrackingCapability
 from ovid_core.adapters.pydantic_ai.messages import message_from_pydantic, message_to_pydantic
 from ovid_core.adapters.pydantic_ai.results import result_from_pydantic
-from ovid_core.agents import OvidAgent
+from ovid_core.agent_runtime import OvidAgent
 from ovid_core.errors import AgentRunError, ServerConstructionError
 from ovid_core.messages.models import AgentMessage
 from ovid_core.runtime.identifiers import ConversationId, RunId
-from ovid_core.runtime.results import RunResult
+from ovid_core.runtime.results import DeferredRunResult, RunResult
 
 
 type AGUINativeEvent = NativeEvent
-type CompletionCallback[Output] = Callable[[RunResult[Output]], Awaitable[None]]
+type CompletionCallback[Output] = Callable[[RunResult[Output] | DeferredRunResult], Awaitable[None]]
 
 
 class AGUIAuthorityError(ValueError):
+    pass
+
+
+class AGUIDeferredToolsError(AgentRunError):
     pass
 
 
@@ -81,10 +87,14 @@ class PydanticAIAGUIRun[Deps, Output]:
             capabilities=(capability,),
         )
 
+        deferred = False
         try:
             async for event in events:
+                deferred = deferred or isinstance(event, DeferredToolRequestsEvent)
                 yield event
         except Exception as error:
+            if deferred and isinstance(error, UserError):
+                raise AGUIDeferredToolsError('The AG-UI bridge does not support deferred tool calls') from error
             _raise_normalized(error)
 
     async def stream(

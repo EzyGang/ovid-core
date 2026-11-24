@@ -5,6 +5,7 @@ from ovid_core.errors import (
     AuthenticationError,
     ContextWindowError,
     CredentialError,
+    DeferredToolAnswerError,
     OvidCoreError,
     TransportError,
 )
@@ -27,6 +28,14 @@ class _CommandExecutionError(TransportError):
     pass
 
 
+class _ConversationBusyError(TransportError):
+    pass
+
+
+class _DeferredToolsUnavailableError(TransportError):
+    pass
+
+
 def _server_error_from_exception(error: BaseException) -> ServerErrorResponse:
     if isinstance(error, asyncio.CancelledError):
         return ServerErrorResponse(code='run_cancelled', message='Run cancelled')
@@ -37,6 +46,16 @@ def _server_error_from_exception(error: BaseException) -> ServerErrorResponse:
     if isinstance(error, CredentialError):
         return ServerErrorResponse(code='credential_error', message='Provider credentials are unavailable')
 
+    if isinstance(error, TimeoutError):
+        return ServerErrorResponse(code='timeout', message='Request timed out')
+
+    if isinstance(error, OvidCoreError):
+        return _ovid_error_response(error)
+
+    return ServerErrorResponse(code='internal_error', message='Internal server error')
+
+
+def _ovid_error_response(error: OvidCoreError) -> ServerErrorResponse:
     if isinstance(error, _UnknownAgentError):
         return ServerErrorResponse(code='agent_not_found', message='Agent was not found')
 
@@ -46,19 +65,24 @@ def _server_error_from_exception(error: BaseException) -> ServerErrorResponse:
     if isinstance(error, _AuthorizationDeniedError):
         return ServerErrorResponse(code='forbidden', message='Request is not authorized')
 
-    if isinstance(error, TimeoutError):
-        return ServerErrorResponse(code='timeout', message='Request timed out')
+    if isinstance(error, _ConversationBusyError):
+        return ServerErrorResponse(code='conversation_busy', message='Conversation already has an active run')
 
-    if isinstance(error, ContextWindowError):
-        return ServerErrorResponse(code='context_window_exceeded', message=str(error))
+    if isinstance(error, _DeferredToolsUnavailableError):
+        return ServerErrorResponse(
+            code='deferred_tools_unavailable', message='Server cannot resume deferred tool calls'
+        )
 
     if isinstance(error, _CommandExecutionError):
         return ServerErrorResponse(code='command_failed', message='Command execution failed')
 
+    if isinstance(error, ContextWindowError):
+        return ServerErrorResponse(code='context_window_exceeded', message=str(error))
+
+    if isinstance(error, DeferredToolAnswerError):
+        return ServerErrorResponse(code='invalid_tool_answers', message=str(error))
+
     if isinstance(error, AgentRunError):
         return ServerErrorResponse(code='agent_run_failed', message=str(error))
 
-    if isinstance(error, OvidCoreError):
-        return ServerErrorResponse(code='server_failure', message='Server operation failed')
-
-    return ServerErrorResponse(code='internal_error', message='Internal server error')
+    return ServerErrorResponse(code='server_failure', message='Server operation failed')

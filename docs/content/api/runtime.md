@@ -179,6 +179,9 @@ The adapter restores a base Pydantic AI tool part without `tool_kind='tool-searc
 A request `SystemPromptPart` or `CompactionPart` with a field that the typed part does not hold becomes an `OpaqueRequestPart`.
 
 `AgentMessage.provider_details` keeps only the compaction marker of a Pydantic AI response.
+`AgentMessage` does not keep the `metadata` or `state` of a Pydantic AI message.
+Thus a stored history does not keep the Pydantic AI marker of a deferred pause.
+[Deferred runs](agents.md#deferred-runs) gives the rule that Ovid applies to a new prompt instead.
 
 ### `AgentMessage`
 
@@ -218,15 +221,31 @@ Import from `ovid_core.runtime.events`. Every event extends `EventIdentity` and 
 | `TextDeltaEvent` | `text_delta` | `content` |
 | `ToolCallEvent` | `tool_call` | `tool_name`, `arguments`, `tool_call_id` |
 | `ToolResultEvent` | `tool_result` | `tool_name`, JSON `content`, `tool_call_id`, `outcome` |
+| `ToolDeferredEvent` | `tool_deferred` | `tool_call_id`, `tool_name`, JSON object `arguments`, `deferral_kind`, optional `reason`, optional JSON object `metadata` |
 | `UsageUpdateEvent` | `usage_update` | aggregate `usage`, optional latest `request_usage`, `is_final=False` |
 | `RunCompletedEvent` | `run_completed` | final `usage` |
+| `RunDeferredEvent` | `run_deferred` | final `usage` |
 | `RunFailedEvent` | `run_failed` | non-empty `error_type`, non-empty `message` |
 
-`AgentEvent` is the discriminated union of these eight event models.
+`AgentEvent` is the discriminated union of these ten event models.
 
 A `ToolResultEvent` has the same `outcome` values as a `ToolReturnPart`.
 A stream emits a `ToolResultEvent` with `outcome='retried'` for each retried tool call.
 A stream emits no tool event for a tool call with an empty `tool_name` or an empty `tool_call_id`, and the run continues.
+
+A paused run ends with these events:
+
+1. One `ToolDeferredEvent` for each call in `DeferredRunResult.requests`, in the same order.
+2. The final `UsageUpdateEvent`.
+3. `RunDeferredEvent`, in place of `RunCompletedEvent`.
+
+`deferral_kind` is `approval`, `external`, or `question`.
+`reason` is the `ToolApproval.reason` of a tool whose approval setting caused the pause.
+`metadata` is the metadata of `ToolApprovalRequired` or `ToolDeferred`.
+
+A resumed run emits `ToolCallEvent` again for each answered call, before the `ToolResultEvent` of that call.
+No `ModelRequestStartedEvent` comes before these events, because the model did not make the calls in this run.
+Thus the events of each run contain each call that the run completes.
 
 ## Results
 
@@ -250,7 +269,7 @@ Ovid Core rejects metadata keys that identify secret data. This check includes n
 | `conversation_id` | `ConversationId` | required |
 | `metadata` | `tuple[ResultMetadataEntry, ...]` | `()` |
 
-Validation enforces three invariants:
+Validation enforces four invariants:
 
 1. Any current-run message identity present must equal the result identity.
 2. Current-run messages must end a non-empty active history.
@@ -260,3 +279,22 @@ Validation enforces three invariants:
 `messages` is the current run delta. `history` is the effective model history after provider compaction or history processing.
 
 A result contains only the current run's usage. A parent `UsageTracker` may separately contain aggregate nested usage.
+
+### `DeferredRunResult`
+
+A run that pauses for deferred tool calls returns `DeferredRunResult`.
+It has no `output`.
+
+| Field | Type | Default |
+| --- | --- | --- |
+| `requests` | `DeferredToolRequests` | required |
+| `messages` | `tuple[AgentMessage, ...]` | required |
+| `history` | `tuple[AgentMessage, ...]` | `()` |
+| `usage` | `Usage` | required |
+| `run_id` | `RunId` | required |
+| `conversation_id` | `ConversationId` | required |
+
+Validation enforces the first three `RunResult` invariants.
+The last message of `messages` is the response with the pending calls, or a request with the results of other calls from the same response.
+Pass `history` to the next run together with the resume input.
+[Deferred tool values](extensions.md#deferred-tool-values) describes `DeferredToolRequests`.

@@ -108,8 +108,26 @@ Import from `ovid_core.adapters.pydantic_ai.tools`:
 
 `retries` supplies the tool retry budget, the tool failure mode, and the maximum failure text length to each adapted Ovid tool.
 `DefaultAgentCompiler` passes `AgentDefinition.policy.retries`.
-In `'return'` mode, the adapter passes a Pydantic AI `ModelRetry`, `ToolFailed`, `ApprovalRequired`, or `CallDeferred` exception from a tool to Pydantic AI unchanged.
-In `'raise'` mode, the adapter wraps these exceptions in `ToolExecutionError`.
+The adapter passes a Pydantic AI `ApprovalRequired` or `CallDeferred` exception from a tool to Pydantic AI unchanged in both failure modes.
+It converts `ToolApprovalRequired` to `ApprovalRequired` and `ToolDeferred` to `CallDeferred`, with the same metadata and kind.
+In `'return'` mode, the adapter also passes a Pydantic AI `ModelRetry` or `ToolFailed` exception unchanged.
+In `'raise'` mode, the adapter wraps these two exceptions in `ToolExecutionError`.
+
+`PydanticAIAgentRuntime` adds `DeferredToolRequests` to the output types of each run, not to the compiled agent.
+`upstream_agent.output_type` stays the definition output type.
+The runtime converts resume input to Pydantic AI `DeferredToolResults`:
+
+| Ovid answer | Pydantic AI value |
+| --- | --- |
+| `ToolCallApproved()` | `ToolApproved()` in `approvals` |
+| `ToolCallDenied(message)` | `ToolDenied(message)` in `approvals` |
+| `ToolCallReturned(value)` | `value` in `calls` |
+| `ToolCallFailed(message)` | `ToolFailed(message)` in `calls` |
+
+For a run with a prompt and no resume input, the runtime closes each pending call of the last response as `interrupted`.
+It adds one request with a tool result for each call, with the Pydantic AI text `INTERRUPTED_TOOL_RETURN_CONTENT`.
+The request has no run ID, because Pydantic AI rejects a history that contains the ID of the current run.
+The request is the first message of `result.messages`, and `result.history` is the input history followed by `result.messages`.
 
 Import `adapt_integration_capability` from `ovid_core.adapters.pydantic_ai.integrations`.
 
@@ -183,8 +201,10 @@ Import `result_from_pydantic` from `ovid_core.adapters.pydantic_ai.results`.
 
 ```text
 def result_from_pydantic[Output](
-    value: AgentRunResult[Output],
-) -> RunResult[Output]
+    value: AgentRunResult[Output] | AgentRunResult[Output | DeferredToolRequests],
+    *,
+    approvals: Mapping[str, ToolApproval] = {},
+) -> RunResult[Output] | DeferredRunResult
 ```
 
 `result_from_pydantic`:
@@ -192,7 +212,11 @@ def result_from_pydantic[Output](
 - converts the new messages and their usage
 - converts UUIDs
 - sorts metadata keys
+- returns `DeferredRunResult` when the output is a Pydantic AI `DeferredToolRequests`
 - validates the complete Ovid result
+
+`approvals` maps a call ID to the Ovid approval of a tool that requires approval.
+The runtime records these values when the run pauses and sets `DeferredToolRequest.approval` from them.
 
 Invalid upstream state raises `ProviderError`.
 
@@ -239,7 +263,8 @@ Other applicable final errors can move to the next model.
 Import from `ovid_core.adapters.pydantic_ai.ag_ui` when building a custom transport.
 
 - `AGUINativeEvent` aliases Pydantic AI's `NativeEvent`.
-- `CompletionCallback[Output]` is an async callback receiving normalized `RunResult[Output]`.
+- `CompletionCallback[Output]` is an async callback receiving normalized `RunResult[Output] | DeferredRunResult`.
+- `AGUIDeferredToolsError` is the `AgentRunError` that ends a run that pauses for a deferred tool call.
 - `AGUIAuthorityError` reports client attempts to control server-authoritative run state.
 - `PydanticAIAGUIRun(agent, agent_id, body, accept)` parses trusted AG-UI input and requires a Pydantic AI runtime.
 
@@ -249,6 +274,9 @@ Import from `ovid_core.adapters.pydantic_ai.ag_ui` when building a custom transp
 - `native_stream(deps, messages, conversation_id)`
 - `stream(events, on_complete=...)`
 - `streaming_response(events)`
+
+The bridge uses `upstream_agent` without `DeferredToolRequests` in its output types.
+A pause therefore ends the native stream with `AGUIDeferredToolsError`.
 
 Most applications should use `create_ag_ui_app` instead.
 

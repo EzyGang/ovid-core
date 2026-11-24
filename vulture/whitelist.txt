@@ -35,11 +35,16 @@ deps
 request_index
 is_final
 error_type
+deferral_kind
 AgentEvent
 _.new
 _.reject_secret_keys
 _.reject_local_downloads
+_.require_run_input
 _.validate_normalized_values
+_.validate_unique_metadata
+_.validate_unique_calls
+_.validate_answers
 cache_read_tokens
 cache_write_tokens
 input_audio_tokens
@@ -92,6 +97,7 @@ _.before_model_request
 _.after_node_run
 _.before_tool_execute
 _.wrap_run
+_.handle_deferred_tool_calls
 ConversationStore
 InMemoryConversationStore
 MessageCodec
