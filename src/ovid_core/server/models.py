@@ -1,11 +1,12 @@
-from typing import Annotated, Literal
+from typing import Annotated, Literal, Self
 
-from pydantic import Field, JsonValue, PositiveInt, field_validator
+from pydantic import Field, JsonValue, PositiveInt, field_validator, model_validator
 
 from ovid_core.messages.content import FileUrl, UserContent
 from ovid_core.messages.models import AgentMessage
 from ovid_core.models import BaseModel
 from ovid_core.runtime.identifiers import ConversationId, RunId
+from ovid_core.tools.deferred import DeferredToolAnswer, DeferredToolRequests
 from ovid_core.usage.models import Usage
 
 
@@ -20,18 +21,31 @@ class ServerConfig(BaseModel):
 
 
 class AgentRunRequest(BaseModel):
-    prompt: Annotated[str, Field(min_length=1)] | Annotated[tuple[UserContent, ...], Field(min_length=1)]
+    prompt: Annotated[str, Field(min_length=1)] | Annotated[tuple[UserContent, ...], Field(min_length=1)] | None = None
+    answers: Annotated[dict[str, DeferredToolAnswer], Field(min_length=1)] | None = None
     conversation_id: ConversationId | None = None
 
     @field_validator('prompt')
     @classmethod
-    def reject_local_downloads(cls, value: str | tuple[UserContent, ...]) -> str | tuple[UserContent, ...]:
-        if isinstance(value, str):
+    def reject_local_downloads(
+        cls,
+        value: str | tuple[UserContent, ...] | None,
+    ) -> str | tuple[UserContent, ...] | None:
+        if value is None or isinstance(value, str):
             return value
         if any(isinstance(item, FileUrl) and item.force_download == 'allow-local' for item in value):
             raise ValueError('a request prompt cannot allow downloads from local addresses')
 
         return value
+
+    @model_validator(mode='after')
+    def require_run_input(self) -> Self:
+        if self.prompt is None and self.answers is None:
+            raise ValueError('a run request requires a prompt or tool answers')
+        if self.answers is not None and self.conversation_id is None:
+            raise ValueError('tool answers require a conversation ID')
+
+        return self
 
 
 class AgentRunResponse(BaseModel):
@@ -40,6 +54,7 @@ class AgentRunResponse(BaseModel):
     usage: Usage
     run_id: RunId
     conversation_id: ConversationId
+    requests: DeferredToolRequests | None = Field(default=None, exclude_if=lambda requests: requests is None)
 
 
 class RunResultSSEEvent(AgentRunResponse):

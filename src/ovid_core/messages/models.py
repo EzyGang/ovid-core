@@ -1,3 +1,4 @@
+from collections.abc import Sequence
 from datetime import datetime
 from typing import Annotated, Literal, Self
 
@@ -189,3 +190,23 @@ class AgentMessage(BaseModel):
             raise ValueError('response messages require request_usage')
 
         return self
+
+
+def pending_tool_calls(messages: Sequence[AgentMessage]) -> tuple[ToolCallPart, ...]:
+    """Return the tool calls of the last response that have no result in a later request."""
+    responses = [index for index, message in enumerate(messages) if message.role == 'response']
+    if not responses:
+        return ()
+
+    answered = {
+        part.tool_call_id
+        for message in messages[responses[-1] + 1 :]
+        for part in message.parts
+        if isinstance(part, ToolReturnPart | RetryPromptPart)
+    }
+
+    return tuple(
+        part
+        for part in messages[responses[-1]].parts
+        if isinstance(part, ToolCallPart) and part.tool_call_id not in answered
+    )

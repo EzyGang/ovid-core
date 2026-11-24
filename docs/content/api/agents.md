@@ -147,6 +147,8 @@ The compiler also adds direct toolsets and hooks.
 
 The `tool_approval` value overrides the approval value on every Ovid `BaseTool` in the agent.
 The default value, `None`, keeps the value from each tool.
+A tool that requires approval pauses the run before the tool runs.
+[Deferred runs](#deferred-runs) shows how to answer the pause.
 
 Use this value to let the application run all Ovid tools without an approval pause:
 
@@ -188,18 +190,20 @@ class AgentCompiler(Protocol):
 
 ```text
 async def run(
-    prompt: str | Sequence[UserContent],
+    prompt: str | Sequence[UserContent] | None,
     *,
+    resume: DeferredToolResume | None,
     deps: Deps,
     messages: tuple[AgentMessage, ...],
     run_id: RunId | None,
     conversation_id: ConversationId | None,
     usage_tracker: UsageTracker | None,
-) -> RunResult[Output]
+) -> RunResult[Output] | DeferredRunResult
 
 def stream(
-    prompt: str | Sequence[UserContent],
+    prompt: str | Sequence[UserContent] | None,
     *,
+    resume: DeferredToolResume | None,
     deps: Deps,
     messages: tuple[AgentMessage, ...],
     run_id: RunId | None,
@@ -208,10 +212,59 @@ def stream(
 ) -> AbstractAsyncContextManager[AgentStream[Output]]
 ```
 
-`AgentStream[Output]` is an `AsyncIterator[AgentEvent]` with a `result: RunResult[Output]` property.
+`AgentStream[Output]` is an `AsyncIterator[AgentEvent]` with a `result: RunResult[Output] | DeferredRunResult` property.
 The result becomes available after complete consumption inside the context manager.
 
-A custom `AgentRuntime` must accept both prompt types.
+A custom `AgentRuntime` must accept both prompt types and the `resume` value.
+It must raise `AgentRunInputError` when `prompt` and `resume` are both `None`.
+
+### Deferred runs
+
+A run pauses when a tool call waits for the application.
+These conditions pause a run:
+
+- The model calls a tool that requires approval.
+- A tool raises `ToolApprovalRequired`.
+- A tool raises `ToolDeferred`.
+
+A paused run returns `DeferredRunResult` instead of `RunResult[Output]`.
+`DeferredRunResult.requests` lists every pending call.
+[Results](runtime.md#results) describes the two result models.
+
+To continue the run, build the resume input from the requests and pass it with the paused history:
+
+```python
+from ovid_core.runtime import DeferredRunResult
+from ovid_core.tools import ToolCallApproved, ToolCallDenied
+
+result = await agent.run('Delete the old notes.', deps=deps)
+if isinstance(result, DeferredRunResult):
+    answers = {
+        call.tool_call_id: ToolCallApproved() if user_approves(call) else ToolCallDenied(message='Not now.')
+        for call in result.requests.calls
+    }
+    result = await agent.run(
+        resume=result.requests.resume(answers),
+        deps=deps,
+        messages=result.history,
+    )
+```
+
+`DeferredToolRequests.resume` checks the answers before any model call.
+It raises `DeferredToolAnswerError` when an answer is missing, names an unknown call, or has the wrong kind.
+Every pending call needs an answer in the same resume.
+A resume can also contain a new prompt.
+The model then receives the prompt after the tool results.
+
+A run with neither a prompt nor resume input raises `AgentRunInputError` before any model call.
+
+A new prompt without resume input closes each pending call in `messages`.
+Each call gets a tool result with outcome `interrupted`, and the tool does not run.
+The model receives these results before the new prompt.
+The first message of `RunResult.messages` is a request with these results.
+Thus a store that receives only `messages` also keeps them.
+This rule applies when the history ends on the paused response and when it ends on a request with results of other calls.
+A resume does not close the pending calls.
 
 ### Prompt types
 

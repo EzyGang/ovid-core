@@ -17,6 +17,7 @@ from ovid_core.adapters.starlette.http import (
 )
 from ovid_core.persistence import ConversationStore
 from ovid_core.server.contracts import AgentRegistration, AuthorizationCallback, RequestContext
+from ovid_core.server.conversations import _persist_result
 from ovid_core.server.models import ServerConfig
 from ovid_core.server.runtime import _AgentServerRuntime
 
@@ -30,14 +31,26 @@ def create_starlette_ag_ui_app(
 ) -> Starlette:
     runtime = _AgentServerRuntime(agents=agents, authorize=authorize, config=config, store=store)
     app = Starlette(
-        routes=[Route('/agents/{agent_id:str}', partial(_run, runtime=runtime, config=config), methods=['POST'])]
+        routes=[
+            Route(
+                '/agents/{agent_id:str}',
+                partial(_run, runtime=runtime, config=config, store=store),
+                methods=['POST'],
+            )
+        ]
     )
     _apply_cors(app, config.allowed_origins)
 
     return app
 
 
-async def _run(request: Request, *, runtime: _AgentServerRuntime, config: ServerConfig) -> Response:
+async def _run(
+    request: Request,
+    *,
+    runtime: _AgentServerRuntime,
+    config: ServerConfig,
+    store: ConversationStore | None,
+) -> Response:
     agent_id = request.path_params['agent_id']
 
     try:
@@ -64,7 +77,9 @@ async def _run(request: Request, *, runtime: _AgentServerRuntime, config: Server
         context=request_context(request),
     )
 
-    return integration.streaming_response(integration.stream(native_events, on_complete=runtime.persist))
+    return integration.streaming_response(
+        integration.stream(native_events, on_complete=partial(_persist_result, store))
+    )
 
 
 async def _native_events[Deps, Output](

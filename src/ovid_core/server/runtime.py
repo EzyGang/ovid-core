@@ -4,23 +4,17 @@ from contextlib import asynccontextmanager, nullcontext
 from dataclasses import dataclass
 from typing import Any
 
-from pydantic import JsonValue, TypeAdapter
-from pydantic_core import to_jsonable_python
-
-from ovid_core.agents import AgentStream, OvidAgent
+from ovid_core.agent_runtime import AgentStream, OvidAgent
 from ovid_core.messages.models import AgentMessage
-from ovid_core.persistence import ConversationHistoryStore, ConversationStore
-from ovid_core.runtime.events import AgentEvent, RunCompletedEvent, RunFailedEvent
+from ovid_core.persistence import ConversationStore
+from ovid_core.runtime.events import AgentEvent, RunCompletedEvent, RunDeferredEvent, RunFailedEvent
 from ovid_core.runtime.identifiers import ConversationId, RunId
-from ovid_core.runtime.results import RunResult
 from ovid_core.server.active_runs import _ActiveRun, _ActiveRuns, _ConnectionOwner
 from ovid_core.server.contracts import AgentRegistration, AuthorizationCallback, LifecycleCallback, RequestContext
+from ovid_core.server.conversations import _persist_result, _response_from_result, _stored_resume
 from ovid_core.server.errors import _AuthorizationDeniedError, _server_error_from_exception, _UnknownAgentError
 from ovid_core.server.models import AgentRunRequest, AgentRunResponse, ServerConfig, ServerErrorResponse
 from ovid_core.server.registry import AgentRegistry
-
-
-_JSON_VALUE_ADAPTER = TypeAdapter(JsonValue)
 
 
 @dataclass(frozen=True, slots=True)
@@ -67,11 +61,11 @@ class _AgentServerRuntime:
         operation: _ActiveRun,
     ) -> None:
         last_event: AgentEvent | None = None
-        completion: RunCompletedEvent | None = None
+        completion: RunCompletedEvent | RunDeferredEvent | None = None
         try:
             async with self.stream(agent_id, request, context, operation=operation) as stream:
                 async for event in stream:
-                    if isinstance(event, RunCompletedEvent):
+                    if isinstance(event, RunCompletedEvent | RunDeferredEvent):
                         completion = event
                     else:
                         last_event = event
@@ -125,8 +119,10 @@ class _AgentServerRuntime:
         lifetime = self._active_runs.run(agent_id) if operation is None else nullcontext(operation)
         async with lifetime as active:
             async with self.session(agent_id, request.conversation_id, context, operation=active) as session:
+                resume = await _stored_resume(self._store, session.conversation_id, session.messages, request.answers)
                 async with session.agent.stream(
                     request.prompt,
+                    resume=resume,
                     deps=session.deps,
                     messages=session.messages,
                     conversation_id=session.conversation_id,
@@ -134,7 +130,7 @@ class _AgentServerRuntime:
                 ) as stream:
                     yield stream
 
-                await self.persist(stream.result)
+                await _persist_result(self._store, stream.result)
                 active.terminal = True
 
     @asynccontextmanager
@@ -157,9 +153,10 @@ class _AgentServerRuntime:
                 authorization = await self._authorize(context, registration.id)
                 if not authorization.allowed:
                     raise _AuthorizationDeniedError
+                conversation_id = conversation_id or ConversationId.new()
                 if operation is not None:
                     operation.authorization = authorization
-                conversation_id = conversation_id or ConversationId.new()
+                    self._active_runs.admit(operation, conversation_id)
                 messages = await self._store.load(conversation_id) if self._store is not None else ()
                 deps = await registration.dependencies(context, authorization)
 
@@ -187,12 +184,6 @@ class _AgentServerRuntime:
     async def close(self) -> None:
         await self._active_runs.close()
 
-    async def persist(self, result: RunResult[Any]) -> None:
-        if isinstance(self._store, ConversationHistoryStore) and result.history:
-            await self._store.commit(result.conversation_id, result.messages, result.history)
-        elif self._store is not None:
-            await self._store.append(result.conversation_id, result.messages)
-
     def agent(self, agent_id: str) -> OvidAgent[Any, Any]:
         return self._registration(agent_id).agent
 
@@ -216,16 +207,6 @@ def _agent_concurrency(registration: AgentRegistration[Any, Any], server_limit: 
     agent_limit = registration.agent.diagnostics.policy.max_concurrency
 
     return min(agent_limit, server_limit) if agent_limit is not None else server_limit
-
-
-def _response_from_result(result: RunResult[Any]) -> AgentRunResponse:
-    return AgentRunResponse(
-        output=_JSON_VALUE_ADAPTER.validate_python(to_jsonable_python(result.output)),
-        messages=result.messages,
-        usage=result.usage,
-        run_id=result.run_id,
-        conversation_id=result.conversation_id,
-    )
 
 
 @asynccontextmanager

@@ -20,12 +20,16 @@ OvidCoreError
 │   └── ExtensionCollisionError
 ├── AgentRunError
 │   ├── AgentTimeoutError (also TimeoutError)
-│   └── UsageLimitError
+│   ├── UsageLimitError
+│   └── AgentRunInputError
+│       └── DeferredToolAnswerError
 ├── ToolError
 │   ├── ToolValidationError
 │   └── ToolExecutionError
 │       ├── ToolRetryError
 │       └── ToolTimeoutError (also TimeoutError)
+├── ToolApprovalRequired
+├── ToolDeferred
 ├── PluginError
 ├── TodoError
 │   ├── TodoOperationError
@@ -57,11 +61,15 @@ OvidCoreError
 | `AgentRunError` | Normalized agent execution failures. |
 | `AgentTimeoutError` | Whole-run timeout. Catch this error as `AgentRunError` or built-in `TimeoutError`. |
 | `UsageLimitError` | Preflight or post-update aggregate usage limit violation. |
+| `AgentRunInputError` | A run with neither a prompt nor resume input. |
+| `DeferredToolAnswerError` | Resume answers that miss a pending call, name a call that is not pending, or do not match the call kind. |
 | `ToolError` | Base for Ovid tool failures. |
 | `ToolValidationError` | Tool argument validation failure when `AgentRetryPolicy.tool_failures` is `'raise'`. |
 | `ToolExecutionError` | Tool implementation or hook execution failure. A tool raises this error to report a failure that the model cannot correct with a new call. |
 | `ToolRetryError` | A tool raises this error to tell the model to correct the call. It uses the tool retry budget. |
 | `ToolTimeoutError` | Tool timeout. Catch this error as `ToolExecutionError` or built-in `TimeoutError`. |
+| `ToolApprovalRequired` | A tool raises this signal to pause the run until the application approves the call. It is not a failure. |
+| `ToolDeferred` | A tool raises this signal to give the call to the application, which supplies the result. It is not a failure. |
 | `PluginError` | Plugin-boundary failure for consumers implementing plugin support. |
 | `TodoError` | Base for Todo reduction and optimistic-concurrency failures. |
 | `TodoOperationError` | Invalid operation for the current state or target status. |

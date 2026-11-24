@@ -17,7 +17,7 @@ class ReleaseAdvisor:
         *,
         deps: AppDeps,
         messages: tuple[AgentMessage, ...] = (),
-    ) -> RunResult[Answer]:
+    ) -> RunResult[Answer] | DeferredRunResult:
         prompt = request.to_prompt()
 
         return await self._agent.run(
@@ -162,11 +162,11 @@ For every run, the shared runtime uses this sequence:
 6. The runtime constructs typed dependencies after authorization.
 7. The runtime selects the smaller server or agent timeout.
 8. The runtime streams the registered agent.
-9. The runtime appends new messages before emitting `run_completed`.
-10. The runtime emits the final `run_result` after `run_completed`.
+9. The runtime stores new messages before emitting `run_completed`, or `run_deferred` for a paused run.
+10. The runtime emits the final `run_result` after `run_completed` or `run_deferred`.
 
 Cancellation or failure before durable completion produces at most one `run_failed` event before `server_error`.
-The runtime does not emit `run_completed` for cancellation or failure before durable completion.
+The runtime does not emit `run_completed` or `run_deferred` for cancellation or failure before durable completion.
 Failures before streaming starts produce only `server_error`.
 The server removes sensitive source details from transport errors.
 

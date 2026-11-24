@@ -1,27 +1,52 @@
 import asyncio
 from collections.abc import AsyncGenerator, Sequence
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
+from dataclasses import dataclass
 from typing import Never
 
 from pydantic_ai import Agent
 from pydantic_ai.exceptions import UsageLimitExceeded
+from pydantic_ai.messages import ModelMessage
+from pydantic_ai.messages import UserContent as PydanticUserContent
+from pydantic_ai.tools import DeferredToolRequests as PydanticDeferredToolRequests
+from pydantic_ai.tools import DeferredToolResults
 from pydantic_ai.usage import UsageLimits
 
 from ovid_core.adapters.pydantic_ai._agent_errors import normalize_run_error
 from ovid_core.adapters.pydantic_ai._agent_stream import PydanticAIStream
+from ovid_core.adapters.pydantic_ai._deferred_tools import (
+    InterruptedCalls,
+    StaticApprovalRecorder,
+    deferred_results_to_pydantic,
+    interrupted_calls,
+)
 from ovid_core.adapters.pydantic_ai._provider_errors import is_context_window_error
 from ovid_core.adapters.pydantic_ai._usage_tracking import RunUsageRecorder, UsageTrackingCapability
 from ovid_core.adapters.pydantic_ai._user_content import user_content_to_pydantic
 from ovid_core.adapters.pydantic_ai.messages import message_to_pydantic
 from ovid_core.adapters.pydantic_ai.results import result_from_pydantic
-from ovid_core.agents import AgentRuntime, AgentStream
-from ovid_core.errors import ContextWindowError, CredentialError
+from ovid_core.agent_runtime import AgentRuntime, AgentStream
+from ovid_core.errors import AgentRunInputError, ContextWindowError, CredentialError
 from ovid_core.messages.content import UserContent
 from ovid_core.messages.models import AgentMessage
 from ovid_core.policy import AgentRunPolicy
 from ovid_core.runtime.identifiers import ConversationId, RunId
-from ovid_core.runtime.results import RunResult
+from ovid_core.runtime.results import DeferredRunResult, RunResult
+from ovid_core.tools.deferred import DeferredToolResume
 from ovid_core.usage.tracking import UsageTracker
+
+
+@dataclass(frozen=True, slots=True)
+class _RunInput[Deps]:
+    prompt: str | Sequence[PydanticUserContent] | None
+    history: tuple[ModelMessage, ...]
+    results: DeferredToolResults | None
+    run_id: RunId
+    conversation_id: ConversationId
+    recorder: RunUsageRecorder
+    approvals: StaticApprovalRecorder[Deps]
+    usage: UsageTrackingCapability[Deps]
+    interrupted: InterruptedCalls | None
 
 
 class PydanticAIAgentRuntime[Deps, Output](AgentRuntime[Deps, Output]):
@@ -39,30 +64,31 @@ class PydanticAIAgentRuntime[Deps, Output](AgentRuntime[Deps, Output]):
 
     async def run(
         self,
-        prompt: str | Sequence[UserContent],
+        prompt: str | Sequence[UserContent] | None,
         *,
+        resume: DeferredToolResume | None,
         deps: Deps,
         messages: tuple[AgentMessage, ...],
         run_id: RunId | None,
         conversation_id: ConversationId | None,
         usage_tracker: UsageTracker | None,
-    ) -> RunResult[Output]:
-        run_identity, conversation_identity = _identities(messages, run_id, conversation_id)
-        recorder = RunUsageRecorder(tracker=usage_tracker)
-        capability = UsageTrackingCapability(tracker=usage_tracker, recorder=recorder)
+    ) -> RunResult[Output] | DeferredRunResult:
+        run = self._run_input(prompt, resume, messages, run_id, conversation_id, usage_tracker)
         try:
             async with asyncio.timeout(self._policy.timeout_seconds):
                 result = await self._agent.run(
-                    prompt if isinstance(prompt, str) else user_content_to_pydantic(prompt),
+                    run.prompt,
+                    output_type=[self._agent.output_type, PydanticDeferredToolRequests],
                     deps=deps,
-                    message_history=tuple(message_to_pydantic(message) for message in messages),
-                    run_id=str(run_identity),
-                    conversation_id=str(conversation_identity),
+                    message_history=run.history,
+                    deferred_tool_results=run.results,
+                    run_id=str(run.run_id),
+                    conversation_id=str(run.conversation_id),
                     usage_limits=_usage_limits(self._policy),
-                    capabilities=(capability,),
+                    capabilities=(run.usage, run.approvals),
                 )
-            normalized = result_from_pydantic(result)
-            await recorder.record(normalized.usage)
+            normalized = result_from_pydantic(result, approvals=run.approvals.approvals, interrupted=run.interrupted)
+            await run.recorder.record(normalized.usage)
         except Exception as error:
             _raise_normalized(error)
 
@@ -70,8 +96,9 @@ class PydanticAIAgentRuntime[Deps, Output](AgentRuntime[Deps, Output]):
 
     def stream(
         self,
-        prompt: str | Sequence[UserContent],
+        prompt: str | Sequence[UserContent] | None,
         *,
+        resume: DeferredToolResume | None,
         deps: Deps,
         messages: tuple[AgentMessage, ...],
         run_id: RunId | None,
@@ -80,6 +107,7 @@ class PydanticAIAgentRuntime[Deps, Output](AgentRuntime[Deps, Output]):
     ) -> AbstractAsyncContextManager[AgentStream[Output]]:
         return self._stream(
             prompt,
+            resume=resume,
             deps=deps,
             messages=messages,
             run_id=run_id,
@@ -90,33 +118,36 @@ class PydanticAIAgentRuntime[Deps, Output](AgentRuntime[Deps, Output]):
     @asynccontextmanager
     async def _stream(
         self,
-        prompt: str | Sequence[UserContent],
+        prompt: str | Sequence[UserContent] | None,
         *,
+        resume: DeferredToolResume | None,
         deps: Deps,
         messages: tuple[AgentMessage, ...],
         run_id: RunId | None,
         conversation_id: ConversationId | None,
         usage_tracker: UsageTracker | None,
     ) -> AsyncGenerator[AgentStream[Output]]:
-        run_identity, conversation_identity = _identities(messages, run_id, conversation_id)
-        recorder = RunUsageRecorder(tracker=usage_tracker)
-        capability = UsageTrackingCapability(tracker=usage_tracker, recorder=recorder)
+        run = self._run_input(prompt, resume, messages, run_id, conversation_id, usage_tracker)
         stream: PydanticAIStream[Output] | None = None
         try:
             async with asyncio.timeout(self._policy.timeout_seconds):
                 async with self._agent.run_stream_events(
-                    prompt if isinstance(prompt, str) else user_content_to_pydantic(prompt),
+                    run.prompt,
+                    output_type=[self._agent.output_type, PydanticDeferredToolRequests],
                     deps=deps,
-                    message_history=tuple(message_to_pydantic(message) for message in messages),
-                    run_id=str(run_identity),
-                    conversation_id=str(conversation_identity),
+                    message_history=run.history,
+                    deferred_tool_results=run.results,
+                    run_id=str(run.run_id),
+                    conversation_id=str(run.conversation_id),
                     usage_limits=_usage_limits(self._policy),
-                    capabilities=(capability,),
+                    capabilities=(run.usage, run.approvals),
                 ) as events:
                     stream = PydanticAIStream(
                         events=events,
-                        run_id=run_identity,
-                        conversation_id=conversation_identity,
+                        run_id=run.run_id,
+                        conversation_id=run.conversation_id,
+                        approvals=run.approvals.approvals,
+                        interrupted=run.interrupted,
                     )
                     yield stream
         except Exception as error:
@@ -125,7 +156,36 @@ class PydanticAIAgentRuntime[Deps, Output](AgentRuntime[Deps, Output]):
         if stream is None or not stream.complete:
             return
 
-        await recorder.record(stream.result.usage)
+        await run.recorder.record(stream.result.usage)
+
+    def _run_input(
+        self,
+        prompt: str | Sequence[UserContent] | None,
+        resume: DeferredToolResume | None,
+        messages: tuple[AgentMessage, ...],
+        run_id: RunId | None,
+        conversation_id: ConversationId | None,
+        usage_tracker: UsageTracker | None,
+    ) -> _RunInput[Deps]:
+        if prompt is None and resume is None:
+            raise AgentRunInputError('Agent run requires a prompt or resume input')
+
+        run_identity, conversation_identity = _identities(messages, run_id, conversation_id)
+        interrupted = interrupted_calls(messages, conversation_identity) if resume is None else None
+        history = messages if interrupted is None else (*messages, interrupted.closing)
+        recorder = RunUsageRecorder(tracker=usage_tracker)
+
+        return _RunInput(
+            prompt=prompt if prompt is None or isinstance(prompt, str) else user_content_to_pydantic(prompt),
+            history=tuple(message_to_pydantic(message) for message in history),
+            results=deferred_results_to_pydantic(resume) if resume is not None else None,
+            run_id=run_identity,
+            conversation_id=conversation_identity,
+            recorder=recorder,
+            approvals=StaticApprovalRecorder[Deps](),
+            usage=UsageTrackingCapability[Deps](tracker=usage_tracker, recorder=recorder),
+            interrupted=interrupted,
+        )
 
 
 def _identities(

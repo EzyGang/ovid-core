@@ -5,6 +5,7 @@ from pydantic import Field, JsonValue, model_validator
 from ovid_core.messages.models import AgentMessage
 from ovid_core.models import BaseModel
 from ovid_core.runtime.identifiers import ConversationId, RunId
+from ovid_core.tools.deferred import DeferredToolRequests
 from ovid_core.usage.models import Usage
 
 
@@ -22,14 +23,12 @@ class ResultMetadataEntry(BaseModel):
         return self
 
 
-class RunResult[Output](BaseModel):
-    output: Output
+class _RunRecord(BaseModel):
     messages: tuple[AgentMessage, ...]
     history: tuple[AgentMessage, ...] = ()
     usage: Usage
     run_id: RunId
     conversation_id: ConversationId
-    metadata: tuple[ResultMetadataEntry, ...] = ()
 
     @model_validator(mode='after')
     def validate_normalized_values(self) -> Self:
@@ -52,12 +51,25 @@ class RunResult[Output](BaseModel):
         if expected_usage != self.usage:
             raise ValueError('result usage must equal the aggregate normalized request usage')
 
+        return self
+
+
+class RunResult[Output](_RunRecord):
+    output: Output
+    metadata: tuple[ResultMetadataEntry, ...] = ()
+
+    @model_validator(mode='after')
+    def validate_unique_metadata(self) -> Self:
         metadata_keys = tuple(item.key for item in self.metadata)
 
         if len(metadata_keys) != len(set(metadata_keys)):
             raise ValueError('result metadata keys must be unique')
 
         return self
+
+
+class DeferredRunResult(_RunRecord):
+    requests: DeferredToolRequests
 
 
 _SECRET_METADATA_KEYS = (

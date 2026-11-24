@@ -17,12 +17,14 @@ from ovid_core.capabilities.base import AgentCapabilityDescriptor as AgentCapabi
 from ovid_core.credentials.resolvers import ProviderAPIKeyResolver as ProviderAPIKeyResolver
 from ovid_core.errors import AgentConstructionError as AgentConstructionError
 from ovid_core.errors import AgentRunError as AgentRunError
+from ovid_core.errors import AgentRunInputError as AgentRunInputError
 from ovid_core.errors import AgentTimeoutError as AgentTimeoutError
 from ovid_core.errors import AuthenticationError as AuthenticationError
 from ovid_core.errors import CodexAuthError as CodexAuthError
 from ovid_core.errors import ConfigurationError as ConfigurationError
 from ovid_core.errors import ContextWindowError as ContextWindowError
 from ovid_core.errors import CredentialError as CredentialError
+from ovid_core.errors import DeferredToolAnswerError as DeferredToolAnswerError
 from ovid_core.errors import ExtensionCollisionError as ExtensionCollisionError
 from ovid_core.errors import ModelResolutionError as ModelResolutionError
 from ovid_core.errors import OvidCoreError as OvidCoreError
@@ -30,6 +32,8 @@ from ovid_core.errors import PersistenceError as PersistenceError
 from ovid_core.errors import PluginError as PluginError
 from ovid_core.errors import ProviderError as ProviderError
 from ovid_core.errors import ServerConstructionError as ServerConstructionError
+from ovid_core.errors import ToolApprovalRequired as ToolApprovalRequired
+from ovid_core.errors import ToolDeferred as ToolDeferred
 from ovid_core.errors import ToolError as ToolError
 from ovid_core.errors import ToolExecutionError as ToolExecutionError
 from ovid_core.errors import ToolRetryError as ToolRetryError
@@ -42,6 +46,7 @@ from ovid_core.models import BaseRootModel as BaseRootModel
 from ovid_core.observability import ObservabilityConfig as ObservabilityConfig
 from ovid_core.persistence import ConversationHistoryStore as ConversationHistoryStore
 from ovid_core.persistence import ConversationStore as ConversationStore
+from ovid_core.persistence import DeferredToolRequestStore as DeferredToolRequestStore
 from ovid_core.persistence import InMemoryConversationStore as InMemoryConversationStore
 from ovid_core.persistence import MessageCodec as MessageCodec
 from ovid_core.plugins import AgentServiceConfiguratorFactory as AgentServiceConfiguratorFactory

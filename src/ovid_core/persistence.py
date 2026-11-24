@@ -6,6 +6,7 @@ from pydantic import ValidationError
 from ovid_core.errors import PersistenceError
 from ovid_core.messages.models import AgentMessage
 from ovid_core.runtime.identifiers import ConversationId
+from ovid_core.tools.deferred import DeferredToolRequests
 
 
 class ConversationStore(Protocol):
@@ -27,6 +28,18 @@ class ConversationHistoryStore(ConversationStore, Protocol):
     ) -> None: ...
 
 
+@runtime_checkable
+class DeferredToolRequestStore(ConversationStore, Protocol):
+    @abstractmethod
+    async def load_deferred_requests(self, conversation_id: ConversationId) -> DeferredToolRequests | None: ...
+
+    @abstractmethod
+    async def save_deferred_requests(self, conversation_id: ConversationId, requests: DeferredToolRequests) -> None: ...
+
+    @abstractmethod
+    async def clear_deferred_requests(self, conversation_id: ConversationId) -> None: ...
+
+
 class MessageCodec:
     def encode(self, message: AgentMessage) -> bytes:
         return message.model_dump_json().encode()
@@ -42,6 +55,7 @@ class MessageCodec:
 class InMemoryConversationStore:
     def __init__(self) -> None:
         self._messages: dict[ConversationId, tuple[AgentMessage, ...]] = {}
+        self._deferred_requests: dict[ConversationId, DeferredToolRequests] = {}
 
     async def load(self, conversation_id: ConversationId) -> tuple[AgentMessage, ...]:
         return self._messages.get(conversation_id, ())
@@ -60,3 +74,12 @@ class InMemoryConversationStore:
     ) -> None:
         del messages
         self._messages[conversation_id] = history
+
+    async def load_deferred_requests(self, conversation_id: ConversationId) -> DeferredToolRequests | None:
+        return self._deferred_requests.get(conversation_id)
+
+    async def save_deferred_requests(self, conversation_id: ConversationId, requests: DeferredToolRequests) -> None:
+        self._deferred_requests[conversation_id] = requests
+
+    async def clear_deferred_requests(self, conversation_id: ConversationId) -> None:
+        self._deferred_requests.pop(conversation_id, None)

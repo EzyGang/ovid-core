@@ -18,8 +18,15 @@ Import from `ovid_core.server.models`.
 | `allowed_origins` | `()` | exact CORS origins |
 | `shutdown_grace_seconds` | `10` | positive |
 
-`AgentRunRequest` contains a `prompt` and optional `conversation_id`.
-`prompt` is a non-empty string or a non-empty array of content items.
+`AgentRunRequest` contains these fields:
+
+- `prompt`: a non-empty string, a non-empty array of content items, or `null`.
+- `answers`: a non-empty object that maps a pending tool call ID to an answer, or `null`.
+- `conversation_id`: optional.
+
+A request needs a `prompt`, `answers`, or both.
+A request with `answers` needs a `conversation_id`.
+[Deferred tool calls](#deferred-tool-calls) describes the answers.
 [User content items](runtime.md#user-content-items) lists each item and its JSON fields.
 
 ```json
@@ -43,9 +50,50 @@ Base64 text is approximately 4/3 the size of its bytes, so increase `max_body_by
 
 `AgentRunResponse` contains JSON-compatible `output`, normalized `messages`, `usage`, `run_id`, and `conversation_id`. `RunResultSSEEvent` adds `kind='run_result'`.
 
+A paused run also sets `requests`, a `DeferredToolRequests` object, and `output` is `null`.
+A completed run has no `requests` key.
+Thus a client that never pauses a run receives the same completed result as before.
+
 `HealthResponse.status` is `ok` or `not_ready`.
 
 `ServerErrorResponse` has non-empty `code` and `message`. `ServerErrorSSEEvent` adds `kind='server_error'`.
+
+### Deferred tool calls
+
+A paused run ends with `tool_deferred` events, the final `usage_update`, `run_deferred`, and a result with `requests`.
+To continue, send a request with the same `conversation_id` and one answer for each call in `requests`:
+
+```json
+{
+  "conversation_id": "7d2c9b0e-4f5a-4bd8-9a39-3b6f0c1e2d4a",
+  "answers": {
+    "call-1": {"kind": "approved"},
+    "call-2": {"kind": "denied", "message": "Do not delete that file."},
+    "call-3": {"kind": "returned", "value": {"rows": 4}},
+    "call-4": {"kind": "failed", "message": "The job did not finish."}
+  }
+}
+```
+
+Use `approved` or `denied` for an `approval` call.
+Use `returned` or `failed` for an `external` or `question` call.
+An answer cannot change the call arguments or supply approval metadata.
+
+The server applies these authority rules before any model call:
+
+- The store must implement `DeferredToolRequestStore`. Otherwise the server returns `deferred_tools_unavailable`.
+- The server builds the resume input from the stored record. It does not use call kinds or metadata from the client.
+- A call is answerable only when it is in the record and has no result in the stored messages.
+- Each pending call needs exactly one answer of the matching kind.
+
+A request that breaks the last two rules, or a request for a conversation without a record, returns `invalid_tool_answers`.
+A new `prompt` without `answers` closes the pending calls as `interrupted`, and the completed run clears the record.
+[DeferredToolRequestStore](persistence.md#deferredtoolrequeststore) describes the write order.
+
+The server admits one active run for each conversation.
+A second run on a conversation with an active run returns `conversation_busy`.
+This rule applies to a new prompt and to a resume.
+Runs on different conversations run at the same time.
 
 ## Registration and callbacks
 
@@ -226,10 +274,10 @@ The server also returns HTTP 204 for these targets without changing another run:
 - A stale run ID.
 - A completed run.
 
-The runtime emits `run_completed` only after persistence succeeds.
-The runtime emits `run_result` after `run_completed`.
+The runtime emits `run_completed` or `run_deferred` only after persistence succeeds.
+The runtime emits `run_result` after `run_completed` or `run_deferred`.
 Cancellation or failure before durable completion produces at most one `run_failed` event before `server_error`.
-The runtime does not emit `run_completed` for cancellation or failure before durable completion.
+The runtime does not emit `run_completed` or `run_deferred` for cancellation or failure before durable completion.
 The runtime emits only `server_error` for failures before streaming starts.
 
 ## AG-UI
@@ -255,6 +303,12 @@ The server rejects client control of these values. A client thread ID maps to an
 
 The server rejects a user message whose content is not a string.
 Use the native HTTP server or the stdio server to send a prompt with content items.
+
+The AG-UI bridge does not support deferred tool calls.
+A run that pauses for a tool call ends with a `RUN_ERROR` event.
+Its message is `The AG-UI bridge does not support deferred tool calls`.
+The bridge also rejects a client `resume` value.
+Use the native HTTP server or the stdio server for tools that need approval, or set `AgentDefinition.tool_approval`.
 
 ## Stdio server
 
@@ -303,6 +357,11 @@ Every response has `version=1` and `request_id: str | None`.
 | `StdioErrorResponse` | `type='error'`, `error: ServerErrorResponse` |
 
 `StdioResponse` is their union. Initialization enumerates registrations. A run may emit multiple event responses and exactly one final result or error response. Commands return one command result or error.
+
+A paused run uses the same frames.
+Its last event response carries `run_deferred`, and its `run_result` frame carries a result with `requests`.
+A `StdioRunRequest` with `request.answers` resumes the paused run on the same `conversation_id`.
+Because runs on one connection execute in FIFO order, a resume that follows a paused run starts after the server stores that run.
 
 Runs and commands execute in FIFO order.
 Initialization and cancellation requests remain available while a run executes.

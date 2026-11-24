@@ -15,6 +15,7 @@ from ovid_core.runtime import AgentEvent, ConversationId, RunCompletedEvent, Run
 from ovid_core.server import AgentRunRequest, AuthorizationResult, RequestContext, ServerConfig, create_agent_app
 from ovid_core.server.errors import _AuthorizationDeniedError, _UnknownAgentError
 from ovid_core.server.runtime import _AgentServerRuntime
+from ovid_core.tools import DeferredToolResume
 from tests.server.server_helpers import allow, build_registration, server_client
 from tests.support.agent_consumer import AgentDependencies
 
@@ -233,8 +234,9 @@ async def test_server_delivers_persisted_result_without_optional_completion_even
 
     @asynccontextmanager
     async def result_only_stream(
-        prompt: str | Sequence[UserContent],
+        prompt: str | Sequence[UserContent] | None,
         *,
+        resume: DeferredToolResume | None,
         deps: AgentDependencies,
         messages: tuple[AgentMessage, ...],
         conversation_id: ConversationId,
@@ -242,6 +244,7 @@ async def test_server_delivers_persisted_result_without_optional_completion_even
     ) -> AsyncIterator[AgentStream[str]]:
         async with original_stream(
             prompt,
+            resume=resume,
             deps=deps,
             messages=messages,
             conversation_id=conversation_id,
