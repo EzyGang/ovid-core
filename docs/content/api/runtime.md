@@ -179,7 +179,7 @@ The adapter restores a base Pydantic AI tool part without `tool_kind='tool-searc
 A request `SystemPromptPart` or `CompactionPart` with a field that the typed part does not hold becomes an `OpaqueRequestPart`.
 
 `AgentMessage.provider_details` keeps only the compaction marker of a Pydantic AI response.
-`AgentMessage` does not keep the `metadata` or `state` of a Pydantic AI message.
+`AgentMessage` does not keep the `metadata` of a Pydantic AI message.
 Thus a stored history does not keep the Pydantic AI marker of a deferred pause.
 [Deferred runs](agents.md#deferred-runs) gives the rule that Ovid applies to a new prompt instead.
 
@@ -197,8 +197,22 @@ Thus a stored history does not keep the Pydantic AI marker of a deferred pause.
 | `model_name`, `provider_name`, `provider_response_id` | `str | None` | `None` |
 | `provider_details` | `dict[str, JsonValue] | None` | `None` |
 | `finish_reason` | `stop | length | content_filter | tool_call | error | None` | `None` |
+| `state` | `complete | interrupted | incomplete | suspended` | `complete` |
 
 Validation rejects parts for the other role. Request messages cannot contain `request_usage`. Response messages must contain it.
+
+### Message state
+
+`state` has the same values as the Pydantic AI `ModelRequest.state` and `ModelResponse.state`, and it converts in both directions without change.
+
+- `complete`: the message is whole.
+- `interrupted`: the run stopped while it made this message, or before it acted on this message.
+- `incomplete`: a response that is still in a stream.
+- `suspended`: a provider paused the response and expects a continuation.
+
+A request message can only be `complete` or `interrupted`, and validation rejects the other values.
+A record that has no `state` field decodes as `complete`.
+Pydantic AI uses an `interrupted` message at the end of a history to close the unanswered tool calls on the next run.
 
 ## Identities and context
 
@@ -225,9 +239,13 @@ Import from `ovid_core.runtime.events`. Every event extends `EventIdentity` and 
 | `UsageUpdateEvent` | `usage_update` | aggregate `usage`, optional latest `request_usage`, `is_final=False` |
 | `RunCompletedEvent` | `run_completed` | final `usage` |
 | `RunDeferredEvent` | `run_deferred` | final `usage` |
-| `RunFailedEvent` | `run_failed` | non-empty `error_type`, non-empty `message` |
+| `RunFailedEvent` | `run_failed` | non-empty `error_type`, non-empty `message`, `persisted=False` |
 
 `AgentEvent` is the discriminated union of these ten event models.
+
+A server sets `RunFailedEvent.persisted` to `true` when the commit of the partial transcript finished before the server sent the event.
+The value is `false` when the commit failed or did not finish in time, when the server has no store, or when the run added no message.
+A stream that runs without a server always emits `persisted=False`.
 
 A `ToolResultEvent` has the same `outcome` values as a `ToolReturnPart`.
 A stream emits a `ToolResultEvent` with `outcome='retried'` for each retried tool call.
@@ -298,3 +316,50 @@ Validation enforces the first three `RunResult` invariants.
 The last message of `messages` is the response with the pending calls, or a request with the results of other calls from the same response.
 Pass `history` to the next run together with the resume input.
 [Deferred tool values](extensions.md#deferred-tool-values) describes `DeferredToolRequests`.
+
+### `PartialRunResult`
+
+A run that fails, is cancelled, reaches a usage limit, fills the context window, or times out has no result.
+`AgentStream.partial()` then returns a `PartialRunResult` with the messages that the run made.
+
+| Field | Type | Default |
+| --- | --- | --- |
+| `messages` | `tuple[AgentMessage, ...]` | required |
+| `history` | `tuple[AgentMessage, ...]` | `()` |
+| `usage` | `Usage` | required |
+| `run_id` | `RunId` | required |
+| `conversation_id` | `ConversationId` | required |
+| `outcome` | `RunOutcome` | required |
+| `error_type` | non-empty `str` | required |
+| `message` | non-empty `str` | required |
+
+`RunOutcome` is one of these values:
+
+| Outcome | Cause |
+| --- | --- |
+| `failed` | Any other run error, for example a provider error or a tool error in `tool_failures='raise'` mode. |
+| `cancelled` | The run task was cancelled. |
+| `usage_limit` | `UsageLimitError` |
+| `context_overflow` | `ContextWindowError` |
+| `timeout` | `AgentTimeoutError`, from `AgentRunPolicy.timeout_seconds` |
+
+`error_type` is the class name of the normalized Ovid error, or `CancelledError`.
+`message` is the text of the normalized Ovid error, or `Run cancelled`.
+It never contains the text of a provider exception or of an exception that is not an Ovid error.
+
+`messages` are the messages of this run, which are the history messages with the run ID.
+When the run closed pending calls of the stored history, `messages` starts with that closing request, as in `RunResult`.
+`history` is the full history of the run.
+Both end with one synthesized boundary response:
+
+- `parts` is one `TextPart` with the text `[Run ended: {outcome}: {message}]`.
+- `finish_reason` is `error`, `state` is `interrupted`, and `provider_name` is `ovid`.
+- `request_usage` is a zero `RequestUsage`.
+
+The partial keeps the interrupted response or request that Pydantic AI recorded.
+A tool call in an interrupted response whose arguments are not valid JSON is removed.
+On the next run, Pydantic AI closes each tool call that has no result with an `interrupted` result before it sends the request.
+The model thus sees the closed calls and the boundary text.
+
+Validation enforces the first two `RunResult` invariants.
+`usage` is the aggregate usage that Pydantic AI reported for the run, so it can differ from the sum of the response usage.

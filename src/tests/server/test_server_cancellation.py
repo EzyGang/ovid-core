@@ -10,11 +10,12 @@ from pydantic_ai.models.function import AgentInfo
 from pytest_mock import MockerFixture
 
 from ovid_core import InMemoryConversationStore
-from ovid_core.messages.models import AgentMessage
+from ovid_core.messages.models import AgentMessage, TextPart
 from ovid_core.runtime import AgentEvent, ConversationId, RunCompletedEvent, RunId
 from ovid_core.server import AgentRunRequest, AuthorizationResult, RequestContext, ServerConfig, create_agent_app
 from ovid_core.server.active_runs import _ActiveRun
 from ovid_core.server.contracts import ASGIMessage, ASGIReceive, ASGIScope, ASGISend
+from ovid_core.server.errors import _server_error_from_exception
 from ovid_core.server.models import AgentRunResponse, ServerErrorResponse
 from ovid_core.server.runtime import _AgentServerRuntime
 from tests.server.server_helpers import allow, build_registration, server_client
@@ -249,7 +250,9 @@ async def test_cancellation_after_persistence_preserves_terminal_delivery() -> N
     assert await store.load(conversation_id) == persisted
 
 
-async def test_http_disconnect_waits_for_cleanup_and_suppresses_terminal_sends(mocker: MockerFixture) -> None:
+async def test_http_disconnect_waits_for_cleanup_persists_partial_and_suppresses_terminal_sends(
+    mocker: MockerFixture,
+) -> None:
     started = asyncio.Event()
     cleaned = asyncio.Event()
     disconnect = asyncio.Event()
@@ -308,7 +311,13 @@ async def test_http_disconnect_waits_for_cleanup_and_suppresses_terminal_sends(m
         incoming.put_nowait({'type': 'http.disconnect'})
         await running
     assert cleaned.is_set()
-    assert await store.load(conversation_id) == ()
+    stored = await store.load(conversation_id)
+    suppressed = _server_error_from_exception(asyncio.CancelledError())
+    assert suppressed.code == 'run_cancelled'
+    assert [(message.role, message.state, message.parts[0]) for message in stored[1:]] == [
+        ('response', 'interrupted', TextPart(content='Hello')),
+        ('response', 'interrupted', TextPart(content=f'[Run ended: cancelled: {suppressed.message}]')),
+    ]
     body = b''.join(message.get('body', b'') for message in messages)
     assert b'event: run_started\n' in body
     assert b'event: run_completed\n' not in body

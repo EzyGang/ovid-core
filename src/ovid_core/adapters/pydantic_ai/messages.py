@@ -33,6 +33,7 @@ def message_from_pydantic(value: ModelMessage) -> AgentMessage:
                 conversation_id=ConversationId(value.conversation_id) if value.conversation_id is not None else None,
                 timestamp=value.timestamp,
                 instructions=value.instructions,
+                state=value.state,
             )
 
         return AgentMessage(
@@ -56,6 +57,7 @@ def message_from_pydantic(value: ModelMessage) -> AgentMessage:
                 else None
             ),
             finish_reason=value.finish_reason,
+            state=value.state,
         )
     except (TypeError, ValidationError, ValueError) as error:
         raise ProviderError('Pydantic AI returned an unsupported or invalid message') from error
@@ -70,6 +72,7 @@ def message_to_pydantic(value: AgentMessage) -> ModelMessage:
                 instructions=value.instructions,
                 run_id=str(value.run_id) if value.run_id is not None else None,
                 conversation_id=str(value.conversation_id) if value.conversation_id is not None else None,
+                state='interrupted' if value.state == 'interrupted' else 'complete',
             )
         if value.timestamp is None:
             raise ValueError('response messages require a timestamp for upstream conversion')
@@ -87,6 +90,7 @@ def message_to_pydantic(value: AgentMessage) -> ModelMessage:
             finish_reason=value.finish_reason,
             run_id=str(value.run_id) if value.run_id is not None else None,
             conversation_id=str(value.conversation_id) if value.conversation_id is not None else None,
+            state=value.state,
         )
     except (TypeError, ValidationError, ValueError) as error:
         raise ProviderError('Normalized message cannot be converted to Pydantic AI') from error

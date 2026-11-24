@@ -5,9 +5,10 @@ from typing import Any
 
 from ovid_core.persistence import ConversationStore
 from ovid_core.server.contracts import AgentRegistration, AuthorizationCallback, CommandRegistration, LifecycleCallback
+from ovid_core.server.lifespan import _server_lifespan
 from ovid_core.server.models import ServerConfig
 from ovid_core.server.registry import AgentRegistry
-from ovid_core.server.runtime import _AgentServerRuntime, _server_lifespan
+from ovid_core.server.runtime import _AgentServerRuntime
 from ovid_core.server.stdio_connection import _StdioConnection, _StdioWrite
 
 

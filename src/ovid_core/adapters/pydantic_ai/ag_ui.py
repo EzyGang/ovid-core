@@ -12,6 +12,7 @@ from ag_ui.core import (
     ToolMessage,
     UserMessage,
 )
+from pydantic_ai import capture_run_messages
 from pydantic_ai.exceptions import UserError
 from pydantic_ai.messages import DeferredToolRequestsEvent
 from pydantic_ai.run import AgentRunResult
@@ -19,15 +20,16 @@ from pydantic_ai.ui import NativeEvent
 from pydantic_ai.ui.ag_ui import AGUIAdapter
 from starlette.responses import StreamingResponse
 
-from ovid_core.adapters.pydantic_ai._agent_runtime import PydanticAIAgentRuntime, _raise_normalized, _usage_limits
+from ovid_core.adapters.pydantic_ai._agent_errors import normalize_run_error
+from ovid_core.adapters.pydantic_ai._agent_runtime import PydanticAIAgentRuntime, _raise_as, _usage_limits
 from ovid_core.adapters.pydantic_ai._usage_tracking import RunUsageRecorder, UsageTrackingCapability
 from ovid_core.adapters.pydantic_ai.messages import message_from_pydantic, message_to_pydantic
-from ovid_core.adapters.pydantic_ai.results import result_from_pydantic
+from ovid_core.adapters.pydantic_ai.results import partial_from_pydantic, result_from_pydantic
 from ovid_core.agent_runtime import OvidAgent
 from ovid_core.errors import AgentRunError, ServerConstructionError
 from ovid_core.messages.models import AgentMessage
 from ovid_core.runtime.identifiers import ConversationId, RunId
-from ovid_core.runtime.results import DeferredRunResult, RunResult
+from ovid_core.runtime.results import DeferredRunResult, PartialRunResult, RunResult
 
 
 type AGUINativeEvent = NativeEvent
@@ -66,6 +68,10 @@ class PydanticAIAGUIRun[Deps, Output]:
         )
         self._messages = tuple(message_from_pydantic(message) for message in self._adapter.messages)
         self._recorder = RunUsageRecorder(tracker=None)
+        self._partial: PartialRunResult | None = None
+
+    def partial(self) -> PartialRunResult | None:
+        return self._partial
 
     def streaming_response(self, events: AsyncIterator[BaseEvent]) -> StreamingResponse:
         return self._adapter.streaming_response(events)
@@ -78,24 +84,33 @@ class PydanticAIAGUIRun[Deps, Output]:
         conversation_id: ConversationId,
     ) -> AsyncIterator[NativeEvent]:
         capability = UsageTrackingCapability(tracker=None, recorder=self._recorder)
+        run_id = RunId.new()
         events = self._adapter.run_stream_native(
             message_history=tuple(message_to_pydantic(message) for message in messages),
             conversation_id=str(conversation_id),
-            run_id=str(RunId.new()),
+            run_id=str(run_id),
             deps=deps,
             usage_limits=_usage_limits(self._runtime.policy),
             capabilities=(capability,),
         )
 
         deferred = False
-        try:
-            async for event in events:
-                deferred = deferred or isinstance(event, DeferredToolRequestsEvent)
-                yield event
-        except Exception as error:
-            if deferred and isinstance(error, UserError):
-                raise AGUIDeferredToolsError('The AG-UI bridge does not support deferred tool calls') from error
-            _raise_normalized(error)
+        with capture_run_messages() as captured:
+            try:
+                async for event in events:
+                    deferred = deferred or isinstance(event, DeferredToolRequestsEvent)
+                    yield event
+            except (Exception, asyncio.CancelledError) as error:
+                normalized = _normalized_bridge_error(error, deferred=deferred)
+                self._partial = partial_from_pydantic(
+                    captured,
+                    error=normalized,
+                    run_id=run_id,
+                    conversation_id=conversation_id,
+                    usage=self._recorder.usage,
+                    interrupted=None,
+                )
+                _raise_as(error, normalized)
 
     async def stream(
         self,
@@ -123,6 +138,15 @@ class PydanticAIAGUIRun[Deps, Output]:
             raise
         except Exception as error:
             raise AgentRunError('Agent run failed') from error
+
+
+def _normalized_bridge_error(error: Exception | asyncio.CancelledError, *, deferred: bool) -> BaseException:
+    if isinstance(error, asyncio.CancelledError):
+        return error
+    if deferred and isinstance(error, UserError):
+        return AGUIDeferredToolsError('The AG-UI bridge does not support deferred tool calls')
+
+    return normalize_run_error(error)
 
 
 def _trusted_run_input(run_input: RunAgentInput) -> RunAgentInput:

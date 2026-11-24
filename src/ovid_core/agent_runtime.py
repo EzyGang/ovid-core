@@ -11,7 +11,7 @@ from ovid_core.messages.models import AgentMessage
 from ovid_core.routing.models import ResolvedModel
 from ovid_core.runtime.events import AgentEvent
 from ovid_core.runtime.identifiers import ConversationId, RunId
-from ovid_core.runtime.results import DeferredRunResult, RunResult
+from ovid_core.runtime.results import DeferredRunResult, PartialRunResult, RunResult
 from ovid_core.tools.deferred import DeferredToolResume
 from ovid_core.usage.tracking import UsageTracker
 
@@ -20,6 +20,9 @@ class AgentStream[Output](AsyncIterator[AgentEvent], Protocol):
     @property
     @abstractmethod
     def result(self) -> RunResult[Output] | DeferredRunResult: ...
+
+    @abstractmethod
+    def partial(self) -> PartialRunResult | None: ...
 
 
 class AgentRuntime[Deps, Output](Protocol):

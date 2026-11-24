@@ -118,6 +118,7 @@ def test_all_normalized_events_serialize_through_discriminated_union() -> None:
             sequence=9,
             error_type='provider_error',
             message='request failed',
+            persisted=True,
         ),
     )
     adapter = TypeAdapter(AgentEvent)

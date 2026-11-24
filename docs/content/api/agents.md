@@ -212,11 +212,37 @@ def stream(
 ) -> AbstractAsyncContextManager[AgentStream[Output]]
 ```
 
-`AgentStream[Output]` is an `AsyncIterator[AgentEvent]` with a `result: RunResult[Output] | DeferredRunResult` property.
-The result becomes available after complete consumption inside the context manager.
+`AgentStream[Output]` is an `AsyncIterator[AgentEvent]` with these members:
+
+- A `result: RunResult[Output] | DeferredRunResult` property.
+  The result becomes available after complete consumption inside the context manager.
+- A `partial() -> PartialRunResult | None` method.
+  It returns the transcript of a run that ended with an error or a cancellation.
+
+`partial()` returns `None` while the run continues, after a completed or deferred run, and after a failure before the run added a message.
+The stream sets the partial before it raises the normalized error out of the context manager.
+Read it after the `async with` block:
+
+```python
+from ovid_core import AgentRunError
+
+try:
+    async with agent.stream('Fix the tests.', deps=deps) as events:
+        async for event in events:
+            render(event)
+except AgentRunError:
+    partial = events.partial()
+    if partial is not None:
+        await store.append(partial.conversation_id, partial.messages)
+    raise
+```
+
+[`PartialRunResult`](runtime.md#partialrunresult) describes the fields and the boundary message.
+The Ovid servers commit the partial for you, as [Persistence on failure](server.md#persistence-on-failure) describes.
 
 A custom `AgentRuntime` must accept both prompt types and the `resume` value.
 It must raise `AgentRunInputError` when `prompt` and `resume` are both `None`.
+A custom `AgentStream` that keeps no partial transcript returns `None` from `partial()`.
 
 ### Deferred runs
 

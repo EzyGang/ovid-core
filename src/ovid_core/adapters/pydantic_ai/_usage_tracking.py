@@ -18,6 +18,10 @@ class RunUsageRecorder:
         self._tracker = tracker
         self._previous = Usage()
 
+    @property
+    def usage(self) -> Usage:
+        return self._previous
+
     async def record(self, current: Usage) -> None:
         delta = current.delta_since(self._previous)
         self._previous = current

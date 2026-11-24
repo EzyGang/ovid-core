@@ -167,6 +167,12 @@ Both functions convert:
 - usage
 - provider metadata
 - finish reasons
+- message state
+
+The state conversion is exact in both directions.
+`ModelRequest.state` maps to `AgentMessage.state` with the values `complete` and `interrupted`.
+`ModelResponse.state` maps with the values `complete`, `interrupted`, `incomplete`, and `suspended`.
+An `interrupted` message keeps its state after a store round trip, so Pydantic AI can close the unanswered tool calls on the next run.
 
 `message_from_pydantic` does not raise for a part kind that Ovid Core does not model.
 It converts that part to an `OpaqueRequestPart` or an `OpaqueResponsePart`.
@@ -219,6 +225,21 @@ def result_from_pydantic[Output](
 The runtime records these values when the run pauses and sets `DeferredToolRequest.approval` from them.
 
 Invalid upstream state raises `ProviderError`.
+
+### Partial transcripts
+
+`PydanticAIAgentRuntime.stream` wraps the upstream run in Pydantic AI `capture_run_messages()`.
+When the run raises an error or is cancelled, the stream builds a `PartialRunResult` from the captured messages before it raises the normalized error.
+`PydanticAIStream.partial()` returns it.
+
+Pydantic AI marks the message that the run stopped in:
+
+- A stream that stops during a response gives a response with `state='interrupted'`.
+- A cancellation during tool execution gives a request with `state='interrupted'`, which holds the tool results that finished.
+- A response that crossed a token or cost limit gets `state='interrupted'`.
+
+The adapter normalizes the error first, and the boundary response uses only the normalized message.
+A context-window error from a provider normalizes to `ContextWindowError` in a stream, as in `run`.
 
 ## Usage conversion
 
@@ -274,6 +295,7 @@ Import from `ovid_core.adapters.pydantic_ai.ag_ui` when building a custom transp
 - `native_stream(deps, messages, conversation_id)`
 - `stream(events, on_complete=...)`
 - `streaming_response(events)`
+- `partial()`, which returns the `PartialRunResult` of a failed or cancelled `native_stream`, or `None`
 
 The bridge uses `upstream_agent` without `DeferredToolRequests` in its output types.
 A pause therefore ends the native stream with `AGUIDeferredToolsError`.

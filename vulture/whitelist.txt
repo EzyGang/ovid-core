@@ -41,7 +41,8 @@ _.new
 _.reject_secret_keys
 _.reject_local_downloads
 _.require_run_input
-_.validate_normalized_values
+_.validate_identity
+_.validate_usage
 _.validate_unique_metadata
 _.validate_unique_calls
 _.validate_answers
