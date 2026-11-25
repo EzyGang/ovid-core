@@ -8,7 +8,7 @@ from pydantic import JsonValue
 
 from ovid_core.models import BaseModel
 from ovid_core.runtime.context import RunContext
-from ovid_core.tools.models import AgentToolDescriptor, AgentToolsetDescriptor, ToolApproval, ToolResult
+from ovid_core.tools.models import AgentToolDescriptor, AgentToolsetDescriptor, ToolApproval, ToolEffect, ToolResult
 
 
 class ToolGrammar(BaseModel):
@@ -36,6 +36,7 @@ class BaseTool[Deps, Args: BaseModel, Result: ToolResult](ABC):
     args_type: type[Args]
     result_type: type[Result]
     approval: ToolApproval = ToolApproval()
+    effect: ToolEffect = ToolEffect()
     timeout_seconds: float | None = None
     defer_loading: bool = False
     presentation: ToolPresentation = ToolPresentation()
@@ -54,11 +55,16 @@ class BaseTool[Deps, Args: BaseModel, Result: ToolResult](ABC):
             description=self.description,
             parameters_json_schema=cast(dict[str, JsonValue], self.args_type.model_json_schema()),
             approval=approval if approval is not None else self.approval,
+            effect=self.effect,
             timeout_seconds=self.timeout_seconds,
             defer_loading=self.defer_loading,
             input_format=presentation.input_format,
             source=source,
         )
+
+    def idempotency_key(self, arguments: Args) -> str | None:
+        del arguments
+        return None
 
     @abstractmethod
     async def execute(self, context: ToolExecutionContext[Deps], arguments: Args) -> Result: ...

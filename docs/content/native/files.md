@@ -36,11 +36,15 @@ definition = AgentDefinition[AppDependencies, str](
 
 The capability contributes:
 
-| Tool | Default approval | Purpose |
-| --- | --- | --- |
-| `read` | Not required | Read bounded text lines or list one workspace directory |
-| `write` | Required | Create a file or replace a completely observed file |
-| `edit` | Required | Apply the current edit mode |
+| Tool | Default approval | Effect | Purpose |
+| --- | --- | --- | --- |
+| `read` | Not required | `read`, `safe` | Read bounded text lines or list one workspace directory |
+| `write` | Required | `workspace_write`, `unsafe` | Create a file or replace a completely observed file |
+| `edit` | Required | `workspace_write`, `unsafe` | Apply the current edit mode |
+
+The Effect column shows the `ToolEffect` of each tool.
+The four built-in `edit` tools (`native_files_replace`, `native_files_patch`, `native_files_apply_patch`, and `native_files_hashline`) all declare `workspace_write` and `unsafe`.
+[Declaring tool effects](../api/extensions.md#declaring-tool-effects) explains the values.
 
 Approval is an application tool-call policy.
 The example overrides the tool defaults.

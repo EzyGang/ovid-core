@@ -11,12 +11,18 @@ class ToolApproval(BaseModel):
     metadata: dict[str, JsonValue] = Field(default_factory=dict)
 
 
+class ToolEffect(BaseModel):
+    kind: Literal['read', 'workspace_write', 'external'] = 'external'
+    replay: Literal['safe', 'unsafe'] = 'unsafe'
+
+
 class AgentToolDescriptor(BaseModel):
     id: str = Field(min_length=1)
     name: str = Field(min_length=1)
     description: str
     parameters_json_schema: dict[str, JsonValue]
     approval: ToolApproval
+    effect: ToolEffect
     timeout_seconds: float | None = None
     defer_loading: bool
     input_format: Literal['json', 'text']

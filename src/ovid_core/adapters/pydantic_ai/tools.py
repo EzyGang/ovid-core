@@ -160,7 +160,10 @@ def _tool_definition(
 ) -> ToolDefinition:
     presentation = tool.presentation
     approval = tool_approval if tool_approval is not None else tool.approval
-    metadata: dict[str, JsonValue] = {'ovid_approval': approval.model_dump(mode='json')}
+    metadata: dict[str, JsonValue] = {
+        'ovid_approval': approval.model_dump(mode='json'),
+        'ovid_effect': tool.effect.model_dump(mode='json'),
+    }
     if presentation.input_format != 'json' or presentation.grammar is not None:
         metadata['ovid_input_format'] = presentation.input_format
     if presentation.grammar is not None:

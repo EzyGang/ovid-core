@@ -12,7 +12,7 @@ from ovid_core.todo.models import (
 )
 from ovid_core.todo.service import TodoService
 from ovid_core.tools.base import BaseTool, ToolExecutionContext
-from ovid_core.tools.models import ToolApproval
+from ovid_core.tools.models import ToolApproval, ToolEffect
 
 
 TODO_INSTRUCTIONS = (
@@ -36,6 +36,7 @@ class TodoTool[Deps](BaseTool[Deps, TodoArgs, TodoToolResult]):
     args_type = TodoArgs
     result_type = TodoToolResult
     approval = ToolApproval()
+    effect = ToolEffect(kind='workspace_write', replay='safe')
     timeout_seconds = 10.0
     defer_loading = False
 

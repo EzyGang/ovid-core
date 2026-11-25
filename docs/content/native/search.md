@@ -39,14 +39,16 @@ definition = AgentDefinition[AppDependencies, str](
 
 `SearchCapability` contributes one instruction block and two essential read tools:
 
-| Tool | Default timeout | Purpose |
-| --- | --- | --- |
-| `glob` | 5 seconds | Find files and directories through exact paths, directories, or glob patterns |
-| `grep` | 30 seconds | Search UTF-8 file content with literal, Rust regex, or PCRE2 matching |
+| Tool | Default timeout | Effect | Purpose |
+| --- | --- | --- | --- |
+| `glob` | 5 seconds | `read`, `safe` | Find files and directories through exact paths, directories, or glob patterns |
+| `grep` | 30 seconds | `read`, `safe` | Search UTF-8 file content with literal, Rust regex, or PCRE2 matching |
 
 `SearchCapability(workspace='default')` selects the named binding. Its constructor does not accept a root or provider.
 
 Both tools use normal read approval metadata. Omitting `SearchCapability` contributes neither tool.
+The Effect column shows the `ToolEffect` of each tool.
+[Declaring tool effects](../api/extensions.md#declaring-tool-effects) explains the values.
 
 ## Discover paths
 
