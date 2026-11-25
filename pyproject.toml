@@ -72,7 +72,7 @@ tests = "pytest ./src/tests/ -v"
 vulture = "vulture ./src/ovid_core ./vulture/whitelist.txt --sort-by-size"
 ruff-lint = "ruff check ./src/ovid_core"
 ty-lint = "ty check ./src/ovid_core"
-aposlop = "uvx aposlop ci ."
+aposlop = "uvx aposlop@latest ci ."
 checks = "task ruff-lint && task ty-lint && task vulture && task aposlop"
 
 [tool.ty.rules]
