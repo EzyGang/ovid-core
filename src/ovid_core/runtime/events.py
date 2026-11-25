@@ -68,6 +68,7 @@ class RunFailedEvent(EventIdentity):
     kind: Literal['run_failed'] = 'run_failed'
     error_type: str = Field(min_length=1)
     message: str = Field(min_length=1)
+    persisted: bool = False
 
 
 AgentEvent = Annotated[

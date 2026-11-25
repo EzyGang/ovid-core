@@ -14,5 +14,7 @@ from ovid_core.runtime.events import UsageUpdateEvent as UsageUpdateEvent
 from ovid_core.runtime.identifiers import ConversationId as ConversationId
 from ovid_core.runtime.identifiers import RunId as RunId
 from ovid_core.runtime.results import DeferredRunResult as DeferredRunResult
+from ovid_core.runtime.results import PartialRunResult as PartialRunResult
 from ovid_core.runtime.results import ResultMetadataEntry as ResultMetadataEntry
+from ovid_core.runtime.results import RunOutcome as RunOutcome
 from ovid_core.runtime.results import RunResult as RunResult

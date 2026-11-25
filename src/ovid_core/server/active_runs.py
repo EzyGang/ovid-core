@@ -2,6 +2,7 @@ import asyncio
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
+from functools import partial
 from typing import Any, cast
 
 from ovid_core.runtime.identifiers import ConversationId, RunId
@@ -24,12 +25,15 @@ class _ActiveRun:
     task: asyncio.Task[Any] | None = None
     cancelled: bool = False
     terminal: bool = False
+    persisted: bool = False
+    commit: asyncio.Future[None] | None = None
 
 
 class _ActiveRuns:
     def __init__(self) -> None:
         self._runs: dict[RunId, _ActiveRun] = {}
         self._conversations: set[ConversationId] = set()
+        self._commits: set[asyncio.Future[None]] = set()
 
     def start(
         self,
@@ -84,10 +88,23 @@ class _ActiveRuns:
     def _finish(self, active: _ActiveRun) -> None:
         self._runs.pop(active.run_id, None)
         if active.conversation_id is not None:
-            self._conversations.remove(active.conversation_id)
+            self._release(active.conversation_id, active.commit)
             active.conversation_id = None
         if not active.done.done():
             active.done.set_result(None)
+
+    def _release(self, conversation_id: ConversationId, commit: asyncio.Future[None] | None) -> None:
+        """Release the conversation, or keep it admitted until a partial commit that outlived its run ends."""
+        if commit is None or commit.done():
+            self._conversations.remove(conversation_id)
+            return
+
+        self._commits.add(commit)
+        commit.add_done_callback(partial(self._release_committed, conversation_id))
+
+    def _release_committed(self, conversation_id: ConversationId, commit: asyncio.Future[None]) -> None:
+        self._commits.discard(commit)
+        self._conversations.remove(conversation_id)
 
     def cancel(self, run_id: RunId, agent_id: str, principal: str) -> None:
         active = self._runs.get(run_id)

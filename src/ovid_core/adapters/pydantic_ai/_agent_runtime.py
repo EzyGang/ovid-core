@@ -4,8 +4,7 @@ from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import dataclass
 from typing import Never
 
-from pydantic_ai import Agent
-from pydantic_ai.exceptions import UsageLimitExceeded
+from pydantic_ai import Agent, capture_run_messages
 from pydantic_ai.messages import ModelMessage
 from pydantic_ai.messages import UserContent as PydanticUserContent
 from pydantic_ai.tools import DeferredToolRequests as PydanticDeferredToolRequests
@@ -20,13 +19,12 @@ from ovid_core.adapters.pydantic_ai._deferred_tools import (
     deferred_results_to_pydantic,
     interrupted_calls,
 )
-from ovid_core.adapters.pydantic_ai._provider_errors import is_context_window_error
 from ovid_core.adapters.pydantic_ai._usage_tracking import RunUsageRecorder, UsageTrackingCapability
 from ovid_core.adapters.pydantic_ai._user_content import user_content_to_pydantic
 from ovid_core.adapters.pydantic_ai.messages import message_to_pydantic
 from ovid_core.adapters.pydantic_ai.results import result_from_pydantic
 from ovid_core.agent_runtime import AgentRuntime, AgentStream
-from ovid_core.errors import AgentRunInputError, ContextWindowError, CredentialError
+from ovid_core.errors import AgentRunInputError, CredentialError
 from ovid_core.messages.content import UserContent
 from ovid_core.messages.models import AgentMessage
 from ovid_core.policy import AgentRunPolicy
@@ -129,19 +127,22 @@ class PydanticAIAgentRuntime[Deps, Output](AgentRuntime[Deps, Output]):
     ) -> AsyncGenerator[AgentStream[Output]]:
         run = self._run_input(prompt, resume, messages, run_id, conversation_id, usage_tracker)
         stream: PydanticAIStream[Output] | None = None
-        try:
-            async with asyncio.timeout(self._policy.timeout_seconds):
-                async with self._agent.run_stream_events(
-                    run.prompt,
-                    output_type=[self._agent.output_type, PydanticDeferredToolRequests],
-                    deps=deps,
-                    message_history=run.history,
-                    deferred_tool_results=run.results,
-                    run_id=str(run.run_id),
-                    conversation_id=str(run.conversation_id),
-                    usage_limits=_usage_limits(self._policy),
-                    capabilities=(run.usage, run.approvals),
-                ) as events:
+        with capture_run_messages() as captured:
+            try:
+                async with (
+                    asyncio.timeout(self._policy.timeout_seconds),
+                    self._agent.run_stream_events(
+                        run.prompt,
+                        output_type=[self._agent.output_type, PydanticDeferredToolRequests],
+                        deps=deps,
+                        message_history=run.history,
+                        deferred_tool_results=run.results,
+                        run_id=str(run.run_id),
+                        conversation_id=str(run.conversation_id),
+                        usage_limits=_usage_limits(self._policy),
+                        capabilities=(run.usage, run.approvals),
+                    ) as events,
+                ):
                     stream = PydanticAIStream(
                         events=events,
                         run_id=run.run_id,
@@ -150,8 +151,11 @@ class PydanticAIAgentRuntime[Deps, Output](AgentRuntime[Deps, Output]):
                         interrupted=run.interrupted,
                     )
                     yield stream
-        except Exception as error:
-            _raise_normalized(error)
+            except (Exception, asyncio.CancelledError) as error:
+                normalized = error if isinstance(error, asyncio.CancelledError) else normalize_run_error(error)
+                if stream is not None:
+                    stream.record_failure(captured, normalized, run.recorder.usage)
+                _raise_as(error, normalized)
 
         if stream is None or not stream.complete:
             return
@@ -216,11 +220,10 @@ def _usage_limits(policy: AgentRunPolicy) -> UsageLimits:
 
 
 def _raise_normalized(error: Exception) -> Never:
-    input_limit_exceeded = isinstance(error, UsageLimitExceeded) and 'per_request_input_tokens_limit' in str(error)
-    if input_limit_exceeded or is_context_window_error(error):
-        raise ContextWindowError('Model context window is full. Compact the conversation or start a new one') from error
+    _raise_as(error, normalize_run_error(error))
 
-    normalized = normalize_run_error(error)
+
+def _raise_as(error: BaseException, normalized: BaseException) -> Never:
     if normalized is error:
         raise error
     if isinstance(normalized, CredentialError):

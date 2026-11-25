@@ -1,12 +1,13 @@
 import asyncio
 from collections import deque
-from collections.abc import AsyncIterator, Mapping
+from collections.abc import AsyncIterator, Mapping, Sequence
 from typing import Any, cast
 
 from pydantic_ai.messages import (
     AgentStreamEvent,
     FunctionToolCallEvent,
     FunctionToolResultEvent,
+    ModelMessage,
     PartDeltaEvent,
     PartStartEvent,
     TextPart,
@@ -17,7 +18,7 @@ from pydantic_ai.run import AgentRunResult, AgentRunResultEvent
 from ovid_core.adapters.pydantic_ai._agent_errors import normalize_run_error
 from ovid_core.adapters.pydantic_ai._deferred_tools import InterruptedCalls
 from ovid_core.adapters.pydantic_ai._request_parts import tool_content_from_pydantic
-from ovid_core.adapters.pydantic_ai.results import result_from_pydantic
+from ovid_core.adapters.pydantic_ai.results import partial_from_pydantic, result_from_pydantic
 from ovid_core.agent_runtime import AgentStream
 from ovid_core.errors import AgentRunError, OvidCoreError
 from ovid_core.runtime.events import (
@@ -34,8 +35,9 @@ from ovid_core.runtime.events import (
     UsageUpdateEvent,
 )
 from ovid_core.runtime.identifiers import ConversationId, RunId
-from ovid_core.runtime.results import DeferredRunResult, RunResult
+from ovid_core.runtime.results import DeferredRunResult, PartialRunResult, RunResult
 from ovid_core.tools.models import ToolApproval
+from ovid_core.usage.models import Usage
 
 
 class PydanticAIStream[Output](AgentStream[Output]):
@@ -58,6 +60,7 @@ class PydanticAIStream[Output](AgentStream[Output]):
         )
         self._result: RunResult[Output] | DeferredRunResult | None = None
         self._error: OvidCoreError | None = None
+        self._partial: PartialRunResult | None = None
         self._expect_request = True
         self._request_index = 0
         self._sequence = 1
@@ -72,6 +75,19 @@ class PydanticAIStream[Output](AgentStream[Output]):
     @property
     def complete(self) -> bool:
         return self._result is not None
+
+    def partial(self) -> PartialRunResult | None:
+        return self._partial
+
+    def record_failure(self, captured: Sequence[ModelMessage], error: BaseException, usage: Usage) -> None:
+        self._partial = partial_from_pydantic(
+            captured,
+            error=error,
+            run_id=self._run_id,
+            conversation_id=self._conversation_id,
+            usage=usage,
+            interrupted=self._interrupted,
+        )
 
     def __aiter__(self) -> PydanticAIStream[Output]:
         return self

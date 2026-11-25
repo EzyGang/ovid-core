@@ -10,8 +10,15 @@ from ovid_core.persistence import ConversationStore
 from ovid_core.runtime.events import AgentEvent, RunCompletedEvent, RunDeferredEvent, RunFailedEvent
 from ovid_core.runtime.identifiers import ConversationId, RunId
 from ovid_core.server.active_runs import _ActiveRun, _ActiveRuns, _ConnectionOwner
-from ovid_core.server.contracts import AgentRegistration, AuthorizationCallback, LifecycleCallback, RequestContext
-from ovid_core.server.conversations import _persist_result, _response_from_result, _stored_resume
+from ovid_core.server.contracts import AgentRegistration, AuthorizationCallback, RequestContext
+from ovid_core.server.conversations import (
+    _persist_result,
+    _response_from_result,
+    _start_commit,
+    _stopped_partial,
+    _stored_resume,
+    _wait_for_commit,
+)
 from ovid_core.server.errors import _AuthorizationDeniedError, _server_error_from_exception, _UnknownAgentError
 from ovid_core.server.models import AgentRunRequest, AgentRunResponse, ServerConfig, ServerErrorResponse
 from ovid_core.server.registry import AgentRegistry
@@ -23,6 +30,7 @@ class _AgentServerSession:
     deps: Any
     messages: tuple[AgentMessage, ...]
     conversation_id: ConversationId
+    deadline: asyncio.Timeout
 
 
 class _AgentServerRuntime:
@@ -67,8 +75,9 @@ class _AgentServerRuntime:
                 async for event in stream:
                     if isinstance(event, RunCompletedEvent | RunDeferredEvent):
                         completion = event
-                    else:
-                        last_event = event
+                        continue
+                    last_event = event
+                    if not isinstance(event, RunFailedEvent):
                         await send(event)
 
                 result = _response_from_result(stream.result)
@@ -95,7 +104,9 @@ class _AgentServerRuntime:
     ) -> None:
         operation.terminal = True
         failure = _server_error_from_exception(error)
-        if last_event is not None and not isinstance(last_event, RunFailedEvent):
+        if isinstance(last_event, RunFailedEvent):
+            await send(last_event.model_copy(update={'persisted': operation.persisted}))
+        elif last_event is not None:
             await send(
                 RunFailedEvent(
                     run_id=last_event.run_id,
@@ -103,6 +114,7 @@ class _AgentServerRuntime:
                     sequence=last_event.sequence + 1,
                     error_type='CancelledError' if failure.code == 'run_cancelled' else type(error).__name__,
                     message=failure.message,
+                    persisted=operation.persisted,
                 )
             )
         await send(failure)
@@ -120,15 +132,24 @@ class _AgentServerRuntime:
         async with lifetime as active:
             async with self.session(agent_id, request.conversation_id, context, operation=active) as session:
                 resume = await _stored_resume(self._store, session.conversation_id, session.messages, request.answers)
-                async with session.agent.stream(
-                    request.prompt,
-                    resume=resume,
-                    deps=session.deps,
-                    messages=session.messages,
-                    conversation_id=session.conversation_id,
-                    run_id=active.run_id,
-                ) as stream:
-                    yield stream
+                stream: AgentStream[Any] | None = None
+                try:
+                    async with session.agent.stream(
+                        request.prompt,
+                        resume=resume,
+                        deps=session.deps,
+                        messages=session.messages,
+                        conversation_id=session.conversation_id,
+                        run_id=active.run_id,
+                    ) as stream:
+                        yield stream
+                except (Exception, asyncio.CancelledError) as error:
+                    partial = _stopped_partial(
+                        stream.partial() if stream is not None else None, error, session.deadline
+                    )
+                    active.commit = _start_commit(self._store, partial)
+                    active.persisted = await _wait_for_commit(active.commit, self._config.shutdown_grace_seconds)
+                    raise
 
                 await _persist_result(self._store, stream.result)
                 active.terminal = True
@@ -149,7 +170,7 @@ class _AgentServerRuntime:
             )
 
         async with self._global_limit, self._agent_limits[agent_id]:
-            async with asyncio.timeout(self._timeout(registration)):
+            async with asyncio.timeout(self._timeout(registration)) as deadline:
                 authorization = await self._authorize(context, registration.id)
                 if not authorization.allowed:
                     raise _AuthorizationDeniedError
@@ -165,6 +186,7 @@ class _AgentServerRuntime:
                     deps=deps,
                     messages=messages,
                     conversation_id=conversation_id,
+                    deadline=deadline,
                 )
 
     async def cancel(self, agent_id: str, run_id: RunId, context: RequestContext) -> None:
@@ -207,26 +229,3 @@ def _agent_concurrency(registration: AgentRegistration[Any, Any], server_limit: 
     agent_limit = registration.agent.diagnostics.policy.max_concurrency
 
     return min(agent_limit, server_limit) if agent_limit is not None else server_limit
-
-
-@asynccontextmanager
-async def _server_lifespan(
-    *,
-    startup: LifecycleCallback | None,
-    shutdown: LifecycleCallback | None,
-    shutdown_grace_seconds: int,
-    close: LifecycleCallback | None = None,
-) -> AsyncGenerator[None]:
-    if startup is not None:
-        await startup()
-
-    try:
-        yield
-    finally:
-        async with asyncio.timeout(shutdown_grace_seconds):
-            try:
-                if close is not None:
-                    await close()
-            finally:
-                if shutdown is not None:
-                    await shutdown()

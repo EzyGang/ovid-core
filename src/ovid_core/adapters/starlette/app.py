@@ -23,6 +23,7 @@ from ovid_core.server.contracts import (
     ReadinessCallback,
     RequestContext,
 )
+from ovid_core.server.lifespan import _server_lifespan
 from ovid_core.server.models import (
     AgentRunRequest,
     AgentRunResponse,
@@ -32,7 +33,7 @@ from ovid_core.server.models import (
     ServerErrorResponse,
     ServerErrorSSEEvent,
 )
-from ovid_core.server.runtime import _AgentServerRuntime, _server_lifespan
+from ovid_core.server.runtime import _AgentServerRuntime
 
 
 def create_starlette_app(

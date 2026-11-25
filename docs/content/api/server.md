@@ -95,6 +95,44 @@ A second run on a conversation with an active run returns `conversation_busy`.
 This rule applies to a new prompt and to a resume.
 Runs on different conversations run at the same time.
 
+### Persistence on failure
+
+The native HTTP, stdio, and AG-UI servers commit the partial transcript of a run that does not complete.
+This applies to these terminal paths:
+
+- A provider, tool, or run error.
+- A usage limit or a full context window.
+- A timeout.
+- A cancellation request.
+- A client disconnect, or stdin EOF for the stdio server.
+
+The server commits [`PartialRunResult`](runtime.md#partialrunresult) with the same store call as a completed run, then it sends the failure.
+The commit does not save or clear the record of pending deferred tool calls.
+The native HTTP and stdio servers keep the conversation admitted until the commit ends, even when the run already ended.
+Thus a following run on the same conversation gets `conversation_busy` or loads the committed transcript.
+
+The commit has these limits:
+
+- A cancellation that arrives during the commit does not stop it.
+- The server waits at most `shutdown_grace_seconds` for the commit before it sends the failure.
+- The server never cancels the commit. A commit that is still running after the wait keeps the conversation admitted until it ends.
+- A commit error never replaces the run error.
+
+`run_failed` carries `persisted=true` when the commit finished before the server sent the event.
+It carries `persisted=false` when the commit failed or did not finish in time, when there is no store, or when the run added no message.
+On the next run, Pydantic AI closes each tool call of the partial that has no result, and the model sees the boundary text.
+
+The stored outcome agrees with the error that the server sends for each stop that the server starts:
+
+| Stop | Error code | Boundary text |
+| --- | --- | --- |
+| `request_timeout_seconds` | `timeout` | `[Run ended: timeout: Request timed out]` |
+| Shutdown or stdin EOF | `run_cancelled` | `[Run ended: cancelled: Run cancelled]` |
+| Client cancellation request | `run_cancelled` | `[Run ended: cancelled: Run cancelled]` |
+| HTTP client disconnect | `run_cancelled`, not delivered | `[Run ended: cancelled: Run cancelled]` |
+
+For a request timeout, the partial also has `error_type='TimeoutError'`, the same value as the `run_failed` event.
+
 ## Registration and callbacks
 
 Import from `ovid_core.server.contracts`.
@@ -277,8 +315,10 @@ The server also returns HTTP 204 for these targets without changing another run:
 The runtime emits `run_completed` or `run_deferred` only after persistence succeeds.
 The runtime emits `run_result` after `run_completed` or `run_deferred`.
 Cancellation or failure before durable completion produces at most one `run_failed` event before `server_error`.
+The runtime sends this `run_failed` event after the partial commit ends.
 The runtime does not emit `run_completed` or `run_deferred` for cancellation or failure before durable completion.
 The runtime emits only `server_error` for failures before streaming starts.
+A client disconnect cancels the run, and the server commits the partial transcript before it releases the conversation.
 
 ## AG-UI
 
@@ -309,6 +349,11 @@ A run that pauses for a tool call ends with a `RUN_ERROR` event.
 Its message is `The AG-UI bridge does not support deferred tool calls`.
 The bridge also rejects a client `resume` value.
 Use the native HTTP server or the stdio server for tools that need approval, or set `AgentDefinition.tool_approval`.
+
+The AG-UI app commits the partial transcript of a failed or cancelled run before it sends `RUN_ERROR`.
+AG-UI has no `persisted` flag.
+A client disconnect commits the partial only when the cancellation reaches the run while it waits for the model or a tool.
+When the cancellation reaches the response while it writes an event, the stream closes without a commit.
 
 ## Stdio server
 
@@ -383,5 +428,9 @@ The stdio server starts cleanup when any of these conditions occurs:
 Cleanup follows this sequence:
 
 1. The stdio server cancels active runs.
-2. The stdio server waits for the run tasks.
-3. The stdio server invokes the shutdown callback.
+2. Each cancelled run starts its partial commit, waits for it for at most `shutdown_grace_seconds`, and writes its `run_failed` and error frames.
+3. The stdio server waits for the run tasks for at most `shutdown_grace_seconds`.
+4. The stdio server invokes the shutdown callback, which has its own `shutdown_grace_seconds` limit.
+
+The wait in step 3 also bounds the commit waits of step 2, so the server adds no other wait for the commits.
+A commit that does not finish in that time is not cancelled, and the process can exit before it ends.

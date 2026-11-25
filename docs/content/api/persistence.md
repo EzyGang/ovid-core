@@ -39,6 +39,24 @@ Servers use `commit` when the store supports this protocol. Other stores continu
 
 Applications can keep an append-only transcript from `messages` while replacing a separate active context projection with `history`.
 
+## Partial transcripts
+
+A server also writes the [`PartialRunResult`](runtime.md#partialrunresult) of a run that does not complete.
+It uses the same call as for a completed run:
+
+- A `ConversationHistoryStore` receives `commit(conversation_id, partial.messages, partial.history)`.
+- Any other store receives `append(conversation_id, partial.messages)`.
+
+`partial.messages` contains the prompt request, every response and tool result of the run, the interrupted response or request, and the boundary response.
+The boundary response is the last message, with `finish_reason='error'` and `state='interrupted'`.
+
+A partial commit never saves or clears the record of pending deferred tool calls.
+After a partial commit, the stored messages end with the boundary response, so they show no pending call.
+Thus the server rejects a resume, and a new prompt clears the record when it completes.
+
+On the next run, Pydantic AI can add a synthesized `interrupted` result to the interrupted request.
+A `ConversationHistoryStore` then receives that result in `history`.
+
 ## `DeferredToolRequestStore`
 
 `DeferredToolRequestStore` extends `ConversationStore`.
@@ -101,6 +119,9 @@ These values appear only in records from a release with typed multimodal content
 - The `content_file_digests` field, which each `tool_return` part contains
 
 Upgrade each reader of a shared store before a writer.
+
+A record from a release with message state can contain a `state` field.
+A record without `state` decodes as `complete`.
 
 A record can contain inline file bytes as Base64 text, which makes the record large.
 An opaque part and a tool return with files contain data in the serialized form of Pydantic AI.

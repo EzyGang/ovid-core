@@ -1,3 +1,4 @@
+import asyncio
 from collections.abc import AsyncIterator, Sequence
 from functools import partial
 from typing import Any
@@ -17,7 +18,7 @@ from ovid_core.adapters.starlette.http import (
 )
 from ovid_core.persistence import ConversationStore
 from ovid_core.server.contracts import AgentRegistration, AuthorizationCallback, RequestContext
-from ovid_core.server.conversations import _persist_result
+from ovid_core.server.conversations import _persist_result, _start_commit, _stopped_partial, _wait_for_commit
 from ovid_core.server.models import ServerConfig
 from ovid_core.server.runtime import _AgentServerRuntime
 
@@ -75,6 +76,8 @@ async def _run(
         integration=integration,
         agent_id=agent_id,
         context=request_context(request),
+        store=store,
+        config=config,
     )
 
     return integration.streaming_response(
@@ -88,11 +91,18 @@ async def _native_events[Deps, Output](
     integration: PydanticAIAGUIRun[Deps, Output],
     agent_id: str,
     context: RequestContext,
+    store: ConversationStore | None,
+    config: ServerConfig,
 ) -> AsyncIterator[AGUINativeEvent]:
     async with runtime.session(agent_id, integration.conversation_id, context) as session:
-        async for event in integration.native_stream(
-            deps=session.deps,
-            messages=session.messages,
-            conversation_id=session.conversation_id,
-        ):
-            yield event
+        try:
+            async for event in integration.native_stream(
+                deps=session.deps,
+                messages=session.messages,
+                conversation_id=session.conversation_id,
+            ):
+                yield event
+        except (Exception, asyncio.CancelledError) as error:
+            partial = _stopped_partial(integration.partial(), error, session.deadline)
+            await _wait_for_commit(_start_commit(store, partial), config.shutdown_grace_seconds)
+            raise

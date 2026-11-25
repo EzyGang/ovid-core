@@ -177,6 +177,7 @@ class AgentMessage(BaseModel):
     provider_response_id: str | None = None
     provider_details: dict[str, JsonValue] | None = None
     finish_reason: Literal['stop', 'length', 'content_filter', 'tool_call', 'error'] | None = None
+    state: Literal['complete', 'interrupted', 'incomplete', 'suspended'] = 'complete'
 
     @model_validator(mode='after')
     def validate_role_fields(self) -> Self:
@@ -188,6 +189,8 @@ class AgentMessage(BaseModel):
             raise ValueError('request_usage is only valid on response messages')
         if self.role == 'response' and self.request_usage is None:
             raise ValueError('response messages require request_usage')
+        if self.role == 'request' and self.state not in ('complete', 'interrupted'):
+            raise ValueError('request messages can only be complete or interrupted')
 
         return self
 
