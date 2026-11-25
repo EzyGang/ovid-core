@@ -11,11 +11,14 @@ Pydantic AI refuses an earlier call and tells the model to load the capability.
 
 After the load, `AstCapability` contributes three tools:
 
-| Tool | Access | Purpose |
-| --- | --- | --- |
-| `ast_grep` | Read | Search syntax trees and return typed matches, captures, counts, and issues |
-| `ast_edit_preview` | Read | Compute exact changes and store an expiring proposal without writing files |
-| `ast_edit_apply` | Approval required | Apply one stored proposal after content-hash validation |
+| Tool | Access | Effect | Purpose |
+| --- | --- | --- | --- |
+| `ast_grep` | Read | `read`, `safe` | Search syntax trees and return typed matches, captures, counts, and issues |
+| `ast_edit_preview` | Read | `read`, `safe` | Compute exact changes and store an expiring proposal without writing files |
+| `ast_edit_apply` | Approval required | `workspace_write`, `unsafe` | Apply one stored proposal after content-hash validation |
+
+The Effect column shows the `ToolEffect` of each tool.
+[Declaring tool effects](../api/extensions.md#declaring-tool-effects) explains the values.
 
 `ast_edit_apply` accepts only a proposal ID. Pattern, replacement, and path selection stay fixed after preview.
 

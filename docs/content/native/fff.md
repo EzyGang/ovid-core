@@ -44,11 +44,14 @@ Pydantic AI refuses an earlier call and tells the model to load the capability.
 
 After the load, `FffCapability` contributes these essential-read tools:
 
-| Tool | Default timeout | Purpose |
-| --- | --- | --- |
-| `find_files` | 10 seconds | Rank indexed files or directories by approximate path |
-| `grep` | 10 seconds | Search indexed content with plain, regex, fuzzy, or automatic matching |
-| `multi_grep` | 10 seconds | Search several literal naming variants with OR semantics |
+| Tool | Default timeout | Effect | Purpose |
+| --- | --- | --- | --- |
+| `find_files` | 10 seconds | `read`, `safe` | Rank indexed files or directories by approximate path |
+| `grep` | 10 seconds | `read`, `safe` | Search indexed content with plain, regex, fuzzy, or automatic matching |
+| `multi_grep` | 10 seconds | `read`, `safe` | Search several literal naming variants with OR semantics |
+
+The Effect column shows the `ToolEffect` of each tool.
+[Declaring tool effects](../api/extensions.md#declaring-tool-effects) explains the values.
 
 Omitting `FffCapability` contributes no FFF tools. Call `await workspace.close()` when the agent lifetime ends.
 Applications using the direct provider API can construct and own an engine separately:
@@ -221,6 +224,7 @@ capability = FffCapability(include_glob=True)
 The resulting tool set contains `glob`, `find_files`, `grep`, and `multi_grep`.
 This `glob` tool belongs to the deferred capability.
 Thus the model must load `native_fff` before it can see or call `glob`.
+The `glob` tool declares `ToolEffect(kind='read', replay='safe')`.
 Do not add a separate `SearchCapability` while FFF `grep` remains enabled.
 Both capabilities use the `grep` wire name.
 To keep native grep, combine `FffCapability(include_grep=False)` with `SearchCapability()`.
