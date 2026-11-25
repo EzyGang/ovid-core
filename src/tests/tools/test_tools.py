@@ -104,7 +104,8 @@ async def test_toolset_adapter_propagates_identity_usage_approval_hooks_and_life
     assert definitions['add'].tool_def.kind == 'unapproved'
     assert definitions['add'].tool_def.defer_loading is True
     assert definitions['add'].tool_def.metadata == {
-        'ovid_approval': {'required': True, 'reason': 'Writes a total', 'metadata': {'risk': 'low'}}
+        'ovid_approval': {'required': True, 'reason': 'Writes a total', 'metadata': {'risk': 'low'}},
+        'ovid_effect': {'kind': 'external', 'replay': 'unsafe'},
     }
     assert tool.context is not None
     assert tool.context.approved is True
@@ -143,7 +144,10 @@ async def test_toolset_adapter_applies_tool_approval_override(
     effective_approval = tool.approval if tool_approval is None else tool_approval
 
     assert definition.kind == expected_kind
-    assert definition.metadata == {'ovid_approval': effective_approval.model_dump(mode='json')}
+    assert definition.metadata == {
+        'ovid_approval': effective_approval.model_dump(mode='json'),
+        'ovid_effect': {'kind': 'external', 'replay': 'unsafe'},
+    }
 
 
 async def test_raise_mode_adapter_raises_typed_errors_and_host_faults_abort_in_return_mode() -> None:

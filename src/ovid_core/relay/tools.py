@@ -4,7 +4,7 @@ from ovid_core.models import BaseModel
 from ovid_core.relay.contracts import RelayConnection
 from ovid_core.relay.models import RelayAddress, RelayContact, RelayMessage, RelayMessageId, RelayReceipt
 from ovid_core.tools.base import BaseTool, ToolExecutionContext
-from ovid_core.tools.models import ToolResult
+from ovid_core.tools.models import ToolEffect, ToolResult
 
 
 _SEND_DESCRIPTION = (
@@ -69,6 +69,7 @@ class RelaySendTool[Deps](BaseTool[Deps, RelaySendArguments, RelaySendResult]):
     description = _SEND_DESCRIPTION
     args_type = RelaySendArguments
     result_type = RelaySendResult
+    effect = ToolEffect(kind='external', replay='unsafe')
 
     def __init__(self, connection: RelayConnection, *, description: str = _SEND_DESCRIPTION) -> None:
         self._connection = connection
@@ -94,6 +95,7 @@ class RelayWaitTool[Deps](BaseTool[Deps, RelayWaitArguments, RelayWaitResult]):
     description = _WAIT_DESCRIPTION
     args_type = RelayWaitArguments
     result_type = RelayWaitResult
+    effect = ToolEffect(kind='external', replay='unsafe')
 
     def __init__(self, connection: RelayConnection, *, description: str = _WAIT_DESCRIPTION) -> None:
         self._connection = connection
@@ -120,6 +122,7 @@ class RelayPendingTool[Deps](BaseTool[Deps, RelayPendingArguments, RelayPendingR
     description = _PENDING_DESCRIPTION
     args_type = RelayPendingArguments
     result_type = RelayPendingResult
+    effect = ToolEffect(kind='external', replay='unsafe')
 
     def __init__(self, connection: RelayConnection, *, description: str = _PENDING_DESCRIPTION) -> None:
         self._connection = connection
@@ -142,6 +145,7 @@ class RelayContactsTool[Deps](BaseTool[Deps, RelayContactsArguments, RelayContac
     description = _CONTACTS_DESCRIPTION
     args_type = RelayContactsArguments
     result_type = RelayContactsResult
+    effect = ToolEffect(kind='read', replay='safe')
 
     def __init__(self, connection: RelayConnection, *, description: str = _CONTACTS_DESCRIPTION) -> None:
         self._connection = connection

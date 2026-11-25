@@ -15,4 +15,5 @@ from ovid_core.tools.deferred import ToolCallReturned as ToolCallReturned
 from ovid_core.tools.models import AgentToolDescriptor as AgentToolDescriptor
 from ovid_core.tools.models import AgentToolsetDescriptor as AgentToolsetDescriptor
 from ovid_core.tools.models import ToolApproval as ToolApproval
+from ovid_core.tools.models import ToolEffect as ToolEffect
 from ovid_core.tools.models import ToolResult as ToolResult

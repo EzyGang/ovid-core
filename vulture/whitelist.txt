@@ -177,3 +177,5 @@ TodoCapability
 InMemoryTodoStore
 tool_id
 _.__cause__
+replay
+_.idempotency_key

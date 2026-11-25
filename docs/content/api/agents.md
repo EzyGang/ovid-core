@@ -372,6 +372,7 @@ Tool descriptors include these fields:
 - Description
 - Argument JSON Schema
 - Approval policy
+- Effect (`ToolEffect`)
 - Timeout
 - Input format
 - Deferred-loading state

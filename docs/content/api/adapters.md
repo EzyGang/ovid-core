@@ -106,6 +106,11 @@ Import from `ovid_core.adapters.pydantic_ai.tools`:
 - `PydanticAICapabilityAdapter(source)` adapts the instructions and model settings of an Ovid capability.
   `adapt_agent_extensions` adapts the tools, toolsets, and hooks of the capability.
 
+Each Ovid tool definition has `metadata['ovid_approval']` and `metadata['ovid_effect']` as JSON.
+Import `resolve_effect(tool_def)` from `ovid_core.adapters.pydantic_ai.effects` or `ovid_core.adapters.pydantic_ai`.
+It returns the `ToolEffect` of an Ovid tool, an MCP tool, or another Pydantic AI tool.
+[Declaring tool effects](extensions.md#declaring-tool-effects) gives the rules.
+
 `retries` supplies the tool retry budget, the tool failure mode, and the maximum failure text length to each adapted Ovid tool.
 `DefaultAgentCompiler` passes `AgentDefinition.policy.retries`.
 The adapter passes a Pydantic AI `ApprovalRequired` or `CallDeferred` exception from a tool to Pydantic AI unchanged in both failure modes.

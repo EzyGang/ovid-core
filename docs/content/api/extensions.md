@@ -23,6 +23,15 @@ The normal workspace and tool checks still apply.
 
 The override does not change tools from a Pydantic AI capability passthrough.
 
+### `ToolEffect`
+
+- `kind: Literal['read', 'workspace_write', 'external'] = 'external'`
+- `replay: Literal['safe', 'unsafe'] = 'unsafe'`
+
+The effect value tells which changes a tool can make and whether a second run of the same call is safe.
+The default is the most conservative value.
+[Declaring tool effects](#declaring-tool-effects) explains how to set it.
+
 ### `ToolResult`
 
 - `content: JsonValue` contains the required result content.
@@ -107,9 +116,12 @@ class MyTool(BaseTool[Deps, ArgsModel, ResultModel]):
     args_type: type[ArgsModel]
     result_type: type[ResultModel]
     approval: ToolApproval = ToolApproval()
+    effect: ToolEffect = ToolEffect()
     timeout_seconds: float | None = None
     defer_loading: bool = False
     presentation: ToolPresentation = ToolPresentation()
+
+    def idempotency_key(self, arguments: ArgsModel) -> str | None: ...
 
     async def execute(
         self,
@@ -127,8 +139,67 @@ JSON schema input remains the fallback when the provider or supported Pydantic A
 
 `descriptor(source=..., approval=...)` returns the effective `AgentToolDescriptor` used during agent preparation.
 The descriptor applies the effective wire name and optional agent-wide approval override.
+It also copies `effect`.
 
 The adapter validates tool input and output. It also applies approval policy, timeouts, hooks, and tool failure results.
+
+### Declaring tool effects
+
+Each tool declares its effect so that recovery, replay, and checkpoint features can make safe decisions.
+These features must know if a tool changes the workspace or the world outside the workspace.
+They must also know if the same call can run again after an interruption.
+The effect value only describes the tool.
+It does not change approval, execution, or persistence.
+
+Use these `kind` values:
+
+- `read`: the tool reads data and changes nothing.
+- `workspace_write`: the tool changes files or state that the application owns, such as the workspace or the todo list.
+- `external`: the tool can change something outside the application, for example a process, a network service, or a message queue.
+
+Use these `replay` values:
+
+- `safe`: a second run of the same call with the same arguments gives the same result, or fails without a change.
+- `unsafe`: a second run can repeat or change an effect.
+
+Declare the effect as a class attribute, the same way as `approval`:
+
+```python
+from ovid_core.tools import BaseTool, ToolEffect
+
+
+class ReadNoteTool(BaseTool[AppDeps, ReadNoteArgs, ReadNoteResult]):
+    id = 'read_note'
+    description = 'Read one note.'
+    args_type = ReadNoteArgs
+    result_type = ReadNoteResult
+    effect = ToolEffect(kind='read', replay='safe')
+```
+
+A tool that does not declare an effect gets `ToolEffect()`, which is `external` and `unsafe`.
+This default prevents a replay of a tool that nobody labelled.
+
+`idempotency_key(arguments)` returns `None` by default.
+Override it to return a stable key when the tool can detect a call that it already completed.
+
+The adapter writes the effect to `ToolDefinition.metadata['ovid_effect']` as JSON, next to `ovid_approval`.
+Pydantic AI capabilities, for example in `before_tool_execute`, can read this value.
+
+`resolve_effect(tool_def)` from `ovid_core.adapters.pydantic_ai` returns the `ToolEffect` of any Pydantic AI `ToolDefinition`.
+The function takes a Pydantic AI type, so it is part of the adapter.
+It uses these rules in this order:
+
+1. A valid `ovid_effect` value gives that effect.
+2. MCP annotations in `metadata['annotations']` with `readOnlyHint=True` give `kind='read'`.
+3. MCP annotations with `readOnlyHint=True` and `idempotentHint=True` give `kind='read'` and `replay='safe'`.
+4. All other tools get the default `external` and `unsafe` effect.
+
+An invalid, partial, or wrongly typed value gives the default and does not raise an error.
+
+**Warning:** A wrong label can mark a tool as safe to run again.
+Then a replay can repeat a write or an external action.
+Use `replay='safe'` only when a second run cannot cause a new change.
+MCP annotations come from the MCP server, so a wrong hint from the server has the same risk.
 
 ### Tool failure results
 
@@ -419,12 +490,12 @@ Relay operations use narrow errors:
 
 `RelayCapability[Deps](connection=connection)` has the fixed capability ID `relay` and contributes:
 
-| Tool | Arguments | Result |
-| --- | --- | --- |
-| `relay_send` | `to`, `message`, optional `reply_to` | accepted `receipt` |
-| `relay_wait` | optional `sender`, `reply_to`, `timeout_seconds` | one consumed `message` or `None` |
-| `relay_pending` | `retain=False` | FIFO `messages`, consumed unless retained |
-| `relay_contacts` | none | registered `contacts` other than self |
+| Tool | Arguments | Result | Effect |
+| --- | --- | --- | --- |
+| `relay_send` | `to`, `message`, optional `reply_to` | accepted `receipt` | `external`, `unsafe` |
+| `relay_wait` | optional `sender`, `reply_to`, `timeout_seconds` | one consumed `message` or `None` | `external`, `unsafe` |
+| `relay_pending` | `retain=False` | FIFO `messages`, consumed unless retained | `external`, `unsafe` |
+| `relay_contacts` | none | registered `contacts` other than self | `read`, `safe` |
 
 When supplied, `reply_to` requires an exact match.
 A wait timeout returns `None`.
@@ -465,6 +536,9 @@ Processed history becomes `RunResult.history` and can be committed through `Conv
 The application injects a `TodoService`; capability construction does not create storage or acquire resources. Results contain the
 complete committed state, counts, and active task. See [Todo state and capability](todo.md) for the operation, service, and store
 contracts, or [Track phased work with Todo](../guides/use-todos.md) for setup.
+
+The `todo` tool declares `ToolEffect(kind='workspace_write', replay='safe')`.
+Each save checks the expected state revision, so a replayed call fails without a change when the state moved on.
 
 
 ## Provider capabilities

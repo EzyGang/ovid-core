@@ -41,6 +41,7 @@ async def test_effective_wire_name_and_text_fallback_are_advertised() -> None:
     assert definitions['edit'].tool_def.parameters_json_schema == tool.args_type.model_json_schema()
     assert definitions['edit'].tool_def.metadata == {
         'ovid_approval': {'required': True, 'reason': 'Writes a total', 'metadata': {'risk': 'low'}},
+        'ovid_effect': {'kind': 'external', 'replay': 'unsafe'},
         'ovid_input_format': 'text',
         'ovid_grammar': {'syntax': 'lark', 'definition': 'start: /.+/'},
     }
