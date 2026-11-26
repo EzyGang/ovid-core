@@ -58,8 +58,11 @@ An approved call runs once, with `ToolExecutionContext.approved=True`.
 Path policy, observation checks, validation, timeouts, and cancellation always apply.
 
 All built-in and custom modes use the wire name `edit`.
-Hashline and apply-patch advertise text grammars when the model supports them.
+Hashline and apply-patch take their patch as text input.
 They always accept the JSON `{ "input": "..." }` form.
+The `edit` tool description states the Hashline or patch syntax.
+No grammar goes to the model.
+The Hashline grammar is kept only in `ToolDefinition.metadata['ovid_grammar']`, and no provider adapter reads it.
 Each model step captures the schema, grammar, description, and source rendering.
 
 ## Read and observe source
@@ -254,6 +257,7 @@ It rejects unseen, changed, shifted, missing, duplicate, overlapping, or ambiguo
 It does not relocate a locator.
 A concurrent change can coexist when it occurs outside every referenced line.
 The referenced line numbers and retained full digests must still match.
+A parse error gives the line, the column, the expected tokens, and the first 120 characters of that input line.
 
 Remove and move also bind the file identity during the check.
 They stage the exact source in its directory.
