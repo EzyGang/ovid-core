@@ -13,6 +13,12 @@ class AgentRetryPolicy(BaseModel):
     error_max_chars: PositiveInt = 2000
 
 
+class ProviderRetryPolicy(BaseModel):
+    max_attempts: PositiveInt = 4
+    initial_delay_seconds: float = Field(default=1.0, ge=0)
+    max_delay_seconds: float = Field(default=60.0, ge=0)
+
+
 class AgentUsageLimits(BaseModel):
     requests: PositiveInt | None = 50
     tool_calls: PositiveInt | None = None
@@ -25,6 +31,7 @@ class AgentUsageLimits(BaseModel):
 
 class AgentRunPolicy(BaseModel):
     retries: AgentRetryPolicy = AgentRetryPolicy()
+    provider_retry: ProviderRetryPolicy = ProviderRetryPolicy()
     limits: AgentUsageLimits = AgentUsageLimits()
     timeout_seconds: float | None = Field(default=None, gt=0)
     tool_timeout_seconds: float | None = Field(default=30.0, gt=0)

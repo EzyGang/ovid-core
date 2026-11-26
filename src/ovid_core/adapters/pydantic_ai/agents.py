@@ -1,12 +1,13 @@
 from pydantic_ai import Agent, InstrumentationSettings
 from pydantic_ai.agent import AgentRetries
-from pydantic_ai.capabilities import SelectModel
+from pydantic_ai.capabilities import RetryOnModelErrors, SelectModel
 from pydantic_ai.models import Model, ModelSelectionContext
 
 from ovid_core.adapters.pydantic_ai._agent_runtime import PydanticAIAgentRuntime
 from ovid_core.adapters.pydantic_ai._instruction_sources import pydantic_instructions
 from ovid_core.adapters.pydantic_ai.extensions import adapt_agent_extensions
 from ovid_core.adapters.pydantic_ai.models import _resolve_model
+from ovid_core.adapters.pydantic_ai.routing import _Route, _route_primary, _RouteFallback
 from ovid_core.agents import AgentDefinition, AgentRuntime
 from ovid_core.errors import AgentConstructionError, OvidCoreError
 from ovid_core.routing.models import ResolvedModel
@@ -31,15 +32,24 @@ class DefaultAgentCompiler:
                 tool_approval=definition.tool_approval,
                 retries=policy.retries,
             )
-            capabilities = extensions.capabilities
+            provider_retry = policy.provider_retry
+            capabilities = (
+                *extensions.capabilities,
+                RetryOnModelErrors[Deps](
+                    max_attempts=provider_retry.max_attempts,
+                    initial_delay=provider_retry.initial_delay_seconds,
+                    max_delay=provider_retry.max_delay_seconds,
+                ),
+                *((_RouteFallback[Deps](resolved.handle, runtime),) if isinstance(runtime, _Route) else ()),
+            )
             if resolved.handle.resolve is not None:
 
                 async def select_model(_ctx: ModelSelectionContext[Deps]) -> Model:
-                    return await _resolve_model(resolved.handle)
+                    return _route_primary(await _resolve_model(resolved.handle))
 
                 capabilities = (SelectModel(select_model), *capabilities)
             agent = Agent[Deps, Output](
-                runtime,
+                _route_primary(runtime),
                 output_type=definition.output_type,
                 instructions=pydantic_instructions(definition.instructions),
                 deps_type=definition.deps_type,

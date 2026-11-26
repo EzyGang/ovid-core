@@ -18,6 +18,7 @@ from ovid_core.server.contracts import RequestContext as RequestContext
 from ovid_core.server.models import AgentRunRequest as AgentRunRequest
 from ovid_core.server.models import AgentRunResponse as AgentRunResponse
 from ovid_core.server.models import HealthResponse as HealthResponse
+from ovid_core.server.models import ProviderErrorDetails as ProviderErrorDetails
 from ovid_core.server.models import RunResultSSEEvent as RunResultSSEEvent
 from ovid_core.server.models import ServerConfig as ServerConfig
 from ovid_core.server.models import ServerErrorResponse as ServerErrorResponse

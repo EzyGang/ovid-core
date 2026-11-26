@@ -64,6 +64,16 @@ Thus a client that never pauses a run receives the same completed result as befo
 `ServerErrorResponse` has non-empty `code` and `message`. `ServerErrorSSEEvent` adds `kind='server_error'`.
 The errors `conversation_busy` and `duplicate_request` also have `run_id`. Other errors do not have this key.
 
+A `ProviderError` uses the code `provider_error` and the HTTP status 502.
+Its response also has a `provider` object, a `ProviderErrorDetails` value with these fields:
+
+- `failure_kind`: the `ProviderFailureKind` value.
+- `status_code`: the provider HTTP status, or `null`.
+- `provider_code`: the error code that the provider sent, or `null`.
+- `retry_after_seconds`: the wait that the provider asked for, or `null`.
+
+Other error responses have no `provider` key.
+
 ### Deferred tool calls
 
 A paused run ends with `tool_deferred` events, the final `usage_update`, `run_deferred`, and a result with `requests`.
