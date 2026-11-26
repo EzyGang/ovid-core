@@ -90,6 +90,11 @@ OvidCoreError
 | `TransportError` | Normalized transport and server-runtime failure. |
 | `ServerConstructionError` | Missing optional dependencies, incompatible agent runtime, or invalid server registration. |
 
+The server reports two request conflicts with error codes and no public exception class:
+
+- `conversation_busy`: the conversation has an active run. The error contains the `run_id` of that run.
+- `duplicate_request`: an earlier run of the conversation used the same `client_request_id`. The error contains the `run_id` of that run. [Client request IDs](server.md#client-request-ids) describes the check.
+
 ## Tool errors and the agent run
 
 By default, a tool error does not come out of `OvidAgent.run` or `OvidAgent.stream`.
