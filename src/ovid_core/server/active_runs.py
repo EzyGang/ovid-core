@@ -32,7 +32,7 @@ class _ActiveRun:
 class _ActiveRuns:
     def __init__(self) -> None:
         self._runs: dict[RunId, _ActiveRun] = {}
-        self._conversations: set[ConversationId] = set()
+        self._conversations: dict[ConversationId, RunId] = {}
         self._commits: set[asyncio.Future[None]] = set()
 
     def start(
@@ -79,10 +79,11 @@ class _ActiveRuns:
         return active
 
     def admit(self, active: _ActiveRun, conversation_id: ConversationId) -> None:
-        if conversation_id in self._conversations:
-            raise _ConversationBusyError
+        active_run_id = self._conversations.get(conversation_id)
+        if active_run_id is not None:
+            raise _ConversationBusyError(active_run_id)
 
-        self._conversations.add(conversation_id)
+        self._conversations[conversation_id] = active.run_id
         active.conversation_id = conversation_id
 
     def _finish(self, active: _ActiveRun) -> None:
@@ -96,7 +97,7 @@ class _ActiveRuns:
     def _release(self, conversation_id: ConversationId, commit: asyncio.Future[None] | None) -> None:
         """Release the conversation, or keep it admitted until a partial commit that outlived its run ends."""
         if commit is None or commit.done():
-            self._conversations.remove(conversation_id)
+            del self._conversations[conversation_id]
             return
 
         self._commits.add(commit)
@@ -104,7 +105,7 @@ class _ActiveRuns:
 
     def _release_committed(self, conversation_id: ConversationId, commit: asyncio.Future[None]) -> None:
         self._commits.discard(commit)
-        self._conversations.remove(conversation_id)
+        del self._conversations[conversation_id]
 
     def cancel(self, run_id: RunId, agent_id: str, principal: str) -> None:
         active = self._runs.get(run_id)

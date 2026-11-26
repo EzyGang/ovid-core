@@ -82,7 +82,12 @@ async def test_native_http_partial_commit_finishes_before_next_run_on_conversati
         following = await _post(client, AgentRunRequest(prompt='Again.', conversation_id=conversation_id))
 
     assert busy == [
-        {'kind': 'server_error', 'code': 'conversation_busy', 'message': 'Conversation already has an active run'}
+        {
+            'kind': 'server_error',
+            'code': 'conversation_busy',
+            'message': 'Conversation already has an active run',
+            'run_id': failed[-2]['run_id'],
+        }
     ]
     assert [event['kind'] for event in failed][-2:] == ['run_failed', 'server_error']
     assert failed[-2]['persisted'] is True

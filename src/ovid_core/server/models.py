@@ -26,6 +26,7 @@ class AgentRunRequest(BaseModel):
     answers: Annotated[dict[str, DeferredToolAnswer], Field(min_length=1)] | None = None
     conversation_id: ConversationId | None = None
     resume: bool = False
+    client_request_id: str | None = Field(default=None, min_length=1, max_length=128)
 
     @field_validator('prompt')
     @classmethod
@@ -72,6 +73,7 @@ class HealthResponse(BaseModel):
 class ServerErrorResponse(BaseModel):
     code: str = Field(min_length=1)
     message: str = Field(min_length=1)
+    run_id: RunId | None = Field(default=None, exclude_if=lambda run_id: run_id is None)
 
 
 class ServerErrorSSEEvent(ServerErrorResponse):

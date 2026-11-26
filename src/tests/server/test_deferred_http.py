@@ -93,6 +93,7 @@ async def test_conversation_admits_one_active_run() -> None:
         'kind': 'server_error',
         'code': 'conversation_busy',
         'message': busy_prompt[-1]['message'],
+        'run_id': completed[-1]['run_id'],
     }
     assert busy_resume[-1]['code'] == 'conversation_busy'
     assert other[-1]['kind'] == 'run_result'
