@@ -7,7 +7,6 @@ from typing import Literal
 import httpx2
 import pytest
 from pydantic import JsonValue
-from pydantic_ai.exceptions import ModelAPIError
 from pydantic_ai.messages import ModelMessage
 from pydantic_ai.models.function import AgentInfo
 
@@ -44,7 +43,7 @@ class CountingModel:
         self.started.set()
         await self.gate.wait()
         if self.calls <= self.failures:
-            raise ModelAPIError('scripted', 'provider down')
+            raise RuntimeError('model down')
         yield 'done'
 
 
