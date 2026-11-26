@@ -101,6 +101,7 @@ _.wrap_run
 _.handle_deferred_tool_calls
 _.before_run
 _.wrap_tool_execute
+_.prepare_model_request
 started_at
 ended_at
 ConversationStore

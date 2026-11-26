@@ -160,7 +160,7 @@ A deferred call has no outcome because the model receives no result for it yet.
 
 A journaled run writes its messages while it runs:
 
-1. Before each model request, the run commits the request and each earlier message that no step holds yet.
+1. Before each model request, the run commits the request and each earlier message that no step holds yet. Pydantic AI has then recorded the instruction baseline or changes, model settings changes, and tool changes on the request, so the step holds the request that the model receives.
 2. After each step of the run graph, the run commits the new messages, for example the model response.
 3. Before each tool call, the run appends a `ToolIntentEntry` and waits until the store returns.
 4. After each tool call, the run appends a `ToolSettledEntry`.
@@ -169,8 +169,19 @@ The first entry of a run is `RunStartedEntry`, in the same append as the first s
 A run that adds no message writes no entry.
 The request that closes pending calls on a new prompt starts the first step.
 
-The run finds its new messages by content, from the end of the history.
+The run finds its new messages from the end of the history.
+It stops at a message object that a step committed, or at a copy with the content of the last committed message.
 Thus a history processor that replaces messages with copies, or removes older messages, does not cause a second commit of a message.
+
+In these cases, Pydantic AI changes a request after its step commit:
+
+- An attempt at another model than the step model, for example after `RetryModelRequest`, records the instructions and settings of that model again. Ovid route fallback runs inside one attempt, so it does not cause this.
+- A `prepare_model_request` hook of an inner capability edits the persistent history in place.
+- A step that ends without a response replaces the trailing requests with copies without their request-scoped system prompts.
+
+The step then holds the earlier version of the request.
+The `history` of the end-of-run commit holds the version that Pydantic AI recorded, and it is the authoritative history.
+The end-of-run `messages` compare by content, so they can hold the recorded version again, and an append-only transcript can hold both versions.
 
 At the end of the run, the server writes only the messages of the result that the step commits do not hold, compared by content:
 
