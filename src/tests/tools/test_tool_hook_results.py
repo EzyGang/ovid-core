@@ -10,10 +10,10 @@ from pydantic_ai.toolsets import FunctionToolset
 from ovid_core import AgentRetryPolicy, AgentRunPolicy, ToolExecutionError, ToolTimeoutError
 from ovid_core.adapters.pydantic_ai import pydantic_ai_capability
 from ovid_core.capabilities import BaseCapability, CapabilityContributions
-from ovid_core.messages import ImageUrl
 from ovid_core.messages import BinaryContent as OvidBinaryContent
+from ovid_core.messages import ImageUrl
 from ovid_core.tools import ToolExecutionContext, ToolResult
-from tests.support.agent_consumer import AgentDependencies, ConsumerToolset
+from tests.support.agent_consumer import AgentDependencies
 from tests.support.deferred_consumer import RecordingTool, ScriptedModel, ValueArguments, deferred_agent, tool_returns
 from tests.support.hook_consumer import DecisionHook, RecoveryHook, ResultHook, lookup_capability
 
