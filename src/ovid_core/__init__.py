@@ -27,10 +27,12 @@ from ovid_core.errors import CredentialError as CredentialError
 from ovid_core.errors import DeferredToolAnswerError as DeferredToolAnswerError
 from ovid_core.errors import ExtensionCollisionError as ExtensionCollisionError
 from ovid_core.errors import ModelResolutionError as ModelResolutionError
+from ovid_core.errors import NothingToResumeError as NothingToResumeError
 from ovid_core.errors import OvidCoreError as OvidCoreError
 from ovid_core.errors import PersistenceError as PersistenceError
 from ovid_core.errors import PluginError as PluginError
 from ovid_core.errors import ProviderError as ProviderError
+from ovid_core.errors import ResumeLimitError as ResumeLimitError
 from ovid_core.errors import ServerConstructionError as ServerConstructionError
 from ovid_core.errors import ToolApprovalRequired as ToolApprovalRequired
 from ovid_core.errors import ToolDeferred as ToolDeferred

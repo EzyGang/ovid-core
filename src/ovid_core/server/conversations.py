@@ -1,11 +1,10 @@
 import asyncio
-from collections.abc import Mapping
 from typing import Any, cast
 
 from pydantic import JsonValue, TypeAdapter
 from pydantic_core import to_jsonable_python
 
-from ovid_core.errors import DeferredToolAnswerError
+from ovid_core.errors import DeferredToolAnswerError, NothingToResumeError, ResumeLimitError
 from ovid_core.messages.models import AgentMessage, pending_tool_calls
 from ovid_core.persistence import (
     ConversationHistoryStore,
@@ -14,12 +13,12 @@ from ovid_core.persistence import (
     DeferredToolRequestStore,
     RunJournal,
 )
-from ovid_core.recovery import close_orphaned_tool_calls
+from ovid_core.recovery import close_orphaned_tool_calls, restart_count
 from ovid_core.runtime.identifiers import ConversationId
 from ovid_core.runtime.results import DeferredRunResult, PartialRunResult, RunResult, _with_ending
 from ovid_core.server.errors import _DeferredToolsUnavailableError, _server_error_from_exception
-from ovid_core.server.models import AgentRunResponse
-from ovid_core.tools.deferred import DeferredToolAnswer, DeferredToolRequests, DeferredToolResume
+from ovid_core.server.models import AgentRunRequest, AgentRunResponse
+from ovid_core.tools.deferred import DeferredToolRequests, DeferredToolResume, InterruptedRunResume
 
 
 _JSON_VALUE_ADAPTER = TypeAdapter(JsonValue)
@@ -29,10 +28,15 @@ async def _stored_resume(
     store: ConversationStore | None,
     conversation_id: ConversationId,
     messages: tuple[AgentMessage, ...],
-    answers: Mapping[str, DeferredToolAnswer] | None,
-) -> DeferredToolResume | None:
-    """Build resume input from the stored pending calls. Client answers never supply call kinds or metadata."""
-    if answers is None:
+    request: AgentRunRequest,
+) -> DeferredToolResume | InterruptedRunResume | None:
+    """Build resume input from the request and the stored pending calls.
+
+    Client answers never supply call kinds or metadata.
+    """
+    if request.resume:
+        return InterruptedRunResume()
+    if request.answers is None:
         return None
     if not isinstance(store, DeferredToolRequestStore):
         raise _DeferredToolsUnavailableError
@@ -43,7 +47,7 @@ async def _stored_resume(
     if not calls or len(calls) != len(pending):
         raise DeferredToolAnswerError('The conversation has no stored pending tool calls to answer')
 
-    return DeferredToolRequests(calls=calls).resume(answers)
+    return DeferredToolRequests(calls=calls).resume(request.answers)
 
 
 async def _open_history(
@@ -51,28 +55,56 @@ async def _open_history(
     conversation_id: ConversationId,
     *,
     admitted: bool,
+    resume_limit: int | None,
 ) -> tuple[tuple[AgentMessage, ...], RunJournal | None]:
     """Load the history, and create the journal of an admitted run when the store has a journal.
 
     For an admitted run, the store first closes the runs that a stopped process left open.
     A run that is not admitted must not do this, because the open run of an active run is not lost.
+    A resume request gives its restart limit. Its checks run before the recovery, which then keeps safe calls open.
     """
     if store is None:
         return (), None
     if not (admitted and isinstance(store, ConversationJournalStore)):
-        return await store.load(conversation_id), None
+        messages = await store.load(conversation_id)
+        if resume_limit is not None:
+            await _check_resume(store, conversation_id, messages, restarts=0, limit=resume_limit)
+        return messages, None
 
     journal = RunJournal(store=store, conversation_id=conversation_id)
     loaded = await store.load_journal(conversation_id)
+    if resume_limit is not None:
+        await _check_resume(store, conversation_id, loaded.messages, restarts=restart_count(loaded), limit=resume_limit)
     if all(run.outcome is not None for run in loaded.runs):
         return loaded.messages, journal
 
     pending = (
         await store.load_deferred_requests(conversation_id) if isinstance(store, DeferredToolRequestStore) else None
     )
-    await store.append_entries(conversation_id, close_orphaned_tool_calls(loaded, pending))
+    entries = close_orphaned_tool_calls(loaded, pending, replay_safe=resume_limit is not None)
+    await store.append_entries(conversation_id, entries)
 
     return await store.load(conversation_id), journal
+
+
+async def _check_resume(
+    store: ConversationStore,
+    conversation_id: ConversationId,
+    messages: tuple[AgentMessage, ...],
+    *,
+    restarts: int,
+    limit: int,
+) -> None:
+    """Refuse a resume when its runs stopped too many times in a row, or when stored pending calls need answers."""
+    if restarts >= limit:
+        raise ResumeLimitError(restarts)
+
+    record = (
+        await store.load_deferred_requests(conversation_id) if isinstance(store, DeferredToolRequestStore) else None
+    )
+    pending = {call.tool_call_id for call in pending_tool_calls(messages)}
+    if record is not None and any(call.tool_call_id in pending for call in record.calls):
+        raise NothingToResumeError('The conversation has pending tool calls. Send answers for them.')
 
 
 async def _persist_result(

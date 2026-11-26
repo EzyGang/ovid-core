@@ -105,6 +105,16 @@ def _boundary(run_id: RunId, conversation_id: ConversationId, outcome: RunOutcom
     )
 
 
+def is_boundary(message: AgentMessage) -> bool:
+    """Identify the response that closes a partial transcript by the fields that `_boundary` writes."""
+    return (
+        message.role == 'response'
+        and message.provider_name == 'ovid'
+        and message.finish_reason == 'error'
+        and message.state == 'interrupted'
+    )
+
+
 def _with_ending(partial: PartialRunResult, *, outcome: RunOutcome, error_type: str, message: str) -> PartialRunResult:
     """Replace the ending of a partial transcript, including its boundary response."""
     boundary = _boundary(partial.run_id, partial.conversation_id, outcome, message)

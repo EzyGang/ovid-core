@@ -18,12 +18,14 @@ class ServerConfig(BaseModel):
     max_concurrency: PositiveInt = 32
     allowed_origins: tuple[str, ...] = ()
     shutdown_grace_seconds: PositiveInt = 10
+    resume_restart_limit: PositiveInt = 3
 
 
 class AgentRunRequest(BaseModel):
     prompt: Annotated[str, Field(min_length=1)] | Annotated[tuple[UserContent, ...], Field(min_length=1)] | None = None
     answers: Annotated[dict[str, DeferredToolAnswer], Field(min_length=1)] | None = None
     conversation_id: ConversationId | None = None
+    resume: bool = False
 
     @field_validator('prompt')
     @classmethod
@@ -40,10 +42,12 @@ class AgentRunRequest(BaseModel):
 
     @model_validator(mode='after')
     def require_run_input(self) -> Self:
-        if self.prompt is None and self.answers is None:
-            raise ValueError('a run request requires a prompt or tool answers')
-        if self.answers is not None and self.conversation_id is None:
-            raise ValueError('tool answers require a conversation ID')
+        if self.resume and (self.prompt is not None or self.answers is not None):
+            raise ValueError('a resume request cannot carry a prompt or tool answers')
+        if self.prompt is None and self.answers is None and not self.resume:
+            raise ValueError('a run request requires a prompt, tool answers, or resume')
+        if (self.answers is not None or self.resume) and self.conversation_id is None:
+            raise ValueError('tool answers and resume require a conversation ID')
 
         return self
 

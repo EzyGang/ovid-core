@@ -63,6 +63,17 @@ class DeferredToolAnswerError(AgentRunInputError):
     pass
 
 
+class NothingToResumeError(AgentRunInputError):
+    pass
+
+
+class ResumeLimitError(AgentRunInputError):
+    """Refuse to resume a conversation whose runs stopped too many times in a row."""
+
+    def __init__(self, count: int) -> None:
+        super().__init__(f'Run was interrupted {count} times. Send a new prompt.')
+
+
 class ToolError(OvidCoreError):
     pass
 

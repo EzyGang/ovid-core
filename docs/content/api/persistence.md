@@ -221,6 +221,8 @@ Import `close_orphaned_tool_calls` from `ovid_core.recovery`:
 def close_orphaned_tool_calls(
     journal: ConversationJournal,
     pending: DeferredToolRequests | None = None,
+    *,
+    replay_safe: bool = False,
 ) -> tuple[JournalEntry, ...]
 ```
 
@@ -235,7 +237,36 @@ A call in `pending` waits for a deferred answer and stays open.
 The exception is a call that an open run started to execute after an approval or an answer. Recovery closes that call.
 A run without a tool call to close gets only its `RunEndedEntry`.
 
+With `replay_safe=True`, recovery keeps a call open when all these conditions are true:
+
+- The call is in the last response and has no result.
+- Its intent has `status='started'`.
+- Its intent effect has `replay='safe'`.
+
+The run still gets `RunEndedEntry(outcome='lost')`.
+A server passes `replay_safe=True` only for a [resume](server.md#resume), which then runs the open call again.
+
+`unknown_effect_text(tool_name)` returns the UNKNOWN recovery text for a tool.
+
 [Recovery on load](server.md#recovery-on-load) describes when a server applies these entries.
+
+### Restart count
+
+Import `restart_count` from `ovid_core.recovery`:
+
+```python
+def restart_count(journal: ConversationJournal) -> int
+```
+
+The function counts the runs that stopped in a row after the last run that ended normally.
+A run with the outcome `completed` or `deferred` ends normally.
+These runs count:
+
+- A run with the outcome `lost`, `failed`, `usage_limit`, `context_overflow`, or `timeout`.
+- An open run, because the next admitted load closes it as `lost`.
+
+A `cancelled` run does not count and does not end the series, because a user stops it deliberately.
+The server compares the count with `ServerConfig.resume_restart_limit`, as [Resume](server.md#resume) describes.
 
 ## `MessageCodec`
 

@@ -134,7 +134,7 @@ def test_run_request_requires_prompt_or_answers_and_completed_response_is_unchan
     )
 
     assert AgentRunRequest(answers={'c1': ToolCallApproved()}, conversation_id=conversation_id).prompt is None
-    with pytest.raises(ValidationError, match='prompt or tool answers'):
+    with pytest.raises(ValidationError, match='requires a prompt, tool answers, or resume'):
         AgentRunRequest(conversation_id=conversation_id)
     with pytest.raises(ValidationError, match='conversation ID'):
         AgentRunRequest(answers={'c1': ToolCallApproved()})

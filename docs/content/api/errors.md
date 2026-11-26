@@ -22,7 +22,9 @@ OvidCoreError
 │   ├── AgentTimeoutError (also TimeoutError)
 │   ├── UsageLimitError
 │   └── AgentRunInputError
-│       └── DeferredToolAnswerError
+│       ├── DeferredToolAnswerError
+│       ├── NothingToResumeError
+│       └── ResumeLimitError
 ├── ToolError
 │   ├── ToolValidationError
 │   └── ToolExecutionError
@@ -61,8 +63,10 @@ OvidCoreError
 | `AgentRunError` | Normalized agent execution failures. |
 | `AgentTimeoutError` | Whole-run timeout. Catch this error as `AgentRunError` or built-in `TimeoutError`. |
 | `UsageLimitError` | Preflight or post-update aggregate usage limit violation. |
-| `AgentRunInputError` | A run with neither a prompt nor resume input. |
+| `AgentRunInputError` | A run with neither a prompt nor resume input, or a prompt together with `InterruptedRunResume`. |
 | `DeferredToolAnswerError` | Resume answers that miss a pending call, name a call that is not pending, or do not match the call kind. |
+| `NothingToResumeError` | An interrupted-run resume of a history without an interrupted run, or of a conversation with pending deferred calls. Server code `nothing_to_resume`. |
+| `ResumeLimitError` | A server resume after `resume_restart_limit` or more stopped runs in a row. Server code `resume_limit_exceeded`. |
 | `ToolError` | Base for Ovid tool failures. |
 | `ToolValidationError` | Tool argument validation failure when `AgentRetryPolicy.tool_failures` is `'raise'`. |
 | `ToolExecutionError` | Tool implementation or hook execution failure. A tool raises this error to report a failure that the model cannot correct with a new call. |

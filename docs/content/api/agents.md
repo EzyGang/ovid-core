@@ -195,7 +195,7 @@ class AgentCompiler(Protocol):
 async def run(
     prompt: str | Sequence[UserContent] | None,
     *,
-    resume: DeferredToolResume | None,
+    resume: DeferredToolResume | InterruptedRunResume | None,
     deps: Deps,
     messages: tuple[AgentMessage, ...],
     run_id: RunId | None,
@@ -206,7 +206,7 @@ async def run(
 def stream(
     prompt: str | Sequence[UserContent] | None,
     *,
-    resume: DeferredToolResume | None,
+    resume: DeferredToolResume | InterruptedRunResume | None,
     deps: Deps,
     messages: tuple[AgentMessage, ...],
     run_id: RunId | None,
@@ -246,6 +246,7 @@ The Ovid servers commit the partial for you, as [Persistence on failure](server.
 
 A custom `AgentRuntime` must accept both prompt types and the `resume` value.
 It must raise `AgentRunInputError` when `prompt` and `resume` are both `None`.
+It must also raise `AgentRunInputError` for a prompt together with `InterruptedRunResume`.
 A custom `AgentStream` that keeps no partial transcript returns `None` from `partial()`.
 
 `stream` also takes `journal`, a `RunJournal` from `ovid_core.persistence`.
@@ -313,6 +314,56 @@ The first message of `RunResult.messages` is a request with these results.
 Thus a store that receives only `messages` also keeps them.
 This rule applies when the history ends on the paused response and when it ends on a request with results of other calls.
 A resume does not close the pending calls.
+
+### Interrupted runs
+
+A run that failed, was cancelled, or stopped with its process has no pending calls to answer.
+To continue that run, pass `InterruptedRunResume` from `ovid_core.tools` with the stored history and no prompt:
+
+```python
+from ovid_core.tools import InterruptedRunResume
+
+result = await agent.run(resume=InterruptedRunResume(), deps=deps, messages=history)
+```
+
+The run adds no `UserPromptPart`.
+`PydanticAIAgentRuntime` prepares the history before the run:
+
+1. It removes one trailing boundary response of a partial transcript.
+   It identifies the boundary by its fields: role `response`, `provider_name='ovid'`, `finish_reason='error'`, and `state='interrupted'`.
+2. When the last response has calls without a result, the history ends at that response.
+   The run then executes the calls of that response again.
+3. When the last message is a request, the run sends that request to the model again.
+
+Pydantic AI treats a final text response as the run output.
+Thus the runtime removes the boundary, and the model does not receive the boundary text.
+A store that commits the result history no longer has the boundary, but the journal keeps the outcome of the earlier run.
+
+Each call of the last response gets one of these results:
+
+- A call with an answer in a later request never runs again. It gets the stored answer back, as the table below shows.
+- A call without an answer runs again when the `ToolEffect` of its current tool has `replay='safe'`.
+- Another call without an answer returns the recovery text with an UNKNOWN effect, and the tool does not run.
+
+| Stored answer | Answer in the resumed run |
+| --- | --- |
+| Success result without file content | The same content and metadata |
+| Retry, as a `RetryPromptPart` or a `retried` result with text content | The same retry text |
+| `failed` or `denied` result with text content and no metadata | The same outcome and text |
+| Another answer, for example an `interrupted` result | A success result with the UNKNOWN recovery text |
+
+Pydantic AI cannot give a call that does not run the outcome `interrupted`, file content, or metadata on a result that is not a success.
+Thus the runtime replaces such an answer with the UNKNOWN text.
+
+The runtime reads the current effect with `resolve_effect`, as [Declaring tool effects](extensions.md#declaring-tool-effects) describes.
+These rules apply only to the calls of the last response, not to new calls in the resumed run.
+
+The runtime raises `NothingToResumeError` before any model call in these conditions:
+
+- The history is empty.
+- After the boundary removal, the history ends with a response that has no call without a result.
+
+[Resume](server.md#resume) describes the server request, the journal checks, and the restart limit.
 
 ### Prompt types
 

@@ -21,8 +21,8 @@ from pydantic_ai.ui.ag_ui import AGUIAdapter
 from starlette.responses import StreamingResponse
 
 from ovid_core.adapters.pydantic_ai._agent_errors import normalize_run_error
-from ovid_core.adapters.pydantic_ai._agent_runtime import PydanticAIAgentRuntime, _raise_as, _usage_limits
-from ovid_core.adapters.pydantic_ai._usage_tracking import RunUsageRecorder, UsageTrackingCapability
+from ovid_core.adapters.pydantic_ai._agent_runtime import PydanticAIAgentRuntime, _raise_as
+from ovid_core.adapters.pydantic_ai._usage_tracking import RunUsageRecorder, UsageTrackingCapability, usage_limits
 from ovid_core.adapters.pydantic_ai.messages import message_from_pydantic, message_to_pydantic
 from ovid_core.adapters.pydantic_ai.results import partial_from_pydantic, result_from_pydantic
 from ovid_core.agent_runtime import OvidAgent
@@ -90,7 +90,7 @@ class PydanticAIAGUIRun[Deps, Output]:
             conversation_id=str(conversation_id),
             run_id=str(run_id),
             deps=deps,
-            usage_limits=_usage_limits(self._runtime.policy),
+            usage_limits=usage_limits(self._runtime.policy),
             capabilities=(capability,),
         )
 
