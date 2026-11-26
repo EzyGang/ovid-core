@@ -198,7 +198,7 @@ class PydanticAIAgentRuntime[Deps, Output](AgentRuntime[Deps, Output]):
         return _RunInput(
             prompt=prompt if prompt is None or isinstance(prompt, str) else user_content_to_pydantic(prompt),
             history=tuple(message_to_pydantic(message) for message in history),
-            results=deferred_results_to_pydantic(resume) if resume is not None else None,
+            results=deferred_results_to_pydantic(resume.answers) if resume is not None else None,
             run_id=run_identity,
             conversation_id=conversation_identity,
             recorder=recorder,
