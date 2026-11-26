@@ -12,6 +12,7 @@ from tests.support.agent_consumer import AgentDependencies
 from tests.support.deferred_consumer import SafeTool
 from tests.support.partial_consumer import registration, shape
 
+
 _FAILED = 'Provider request failed (unavailable)'
 
 
