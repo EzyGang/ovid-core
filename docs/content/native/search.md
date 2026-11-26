@@ -119,6 +119,22 @@ These lines can authorize an edit.
 Truncated lines and incomplete source claims cannot authorize an edit.
 `glob` returns only paths and creates no observation.
 
+In Hashline mode, the `grep` tool sends the model the rendered lines and then one notice line for each fact that the lines do not show.
+The notices come in this order, and each one appears only when it applies:
+
+- `PATH: SHOWN of TOTAL matches shown.` for a file whose matches were cut by `matches_per_file`, where `TOTAL` ends with `+` when the count is not exact.
+- `PATH: only the first SEARCHED of TOTAL bytes searched.` for a file that was searched only in part.
+- `No matching files at this file_offset (N in total).` when the page is empty but other files match.
+- `No matches (N files searched).` when no file matches.
+- `The pattern was searched as a literal string.` when auto mode fell back to a literal pattern.
+- `Skipped files: N binary, N not UTF-8, N too large.`, which lists only the counts that are not zero.
+- `Incomplete: the scan file limit was reached.` or `Incomplete: the search timed out.`
+- `More files may match: continue with file_offset=N.` when the result supplies `next_file_offset`.
+
+The tool result `metadata` still holds the full structured result under `result`, for user interfaces.
+Ovid Core never sends `metadata` to the model.
+In the plain presentation, the model receives the full structured result as JSON content, without notice lines.
+
 Pattern modes:
 
 - `regex` tries Rust regex first, then PCRE2 for features such as lookaround and backreferences. Invalid patterns raise `SearchPatternError`.

@@ -131,6 +131,19 @@ A stale revision or changed line produces no misleading tag.
 Fuzzy matches and auto-fallback approximate matches cannot authorize edits.
 `find_files` returns only paths.
 
+In Hashline mode, the FFF `grep` and `multi_grep` tools send the model the rendered lines and then one notice line for each fact that the lines do not show.
+The notices come in this order, and each one appears only when it applies:
+
+- `No matches (N files searched).` when no file matches.
+- `No MODE matches, so ACTUAL matching was used.` when auto mode fell back, for example `No plain matches, so fuzzy matching was used.`
+- `Incomplete: the search time budget was reached.` when `completion` is `time_budget_reached`.
+- `Incomplete: the file index is still building, so some files were not searched.` when `completion` is `index_incomplete`.
+- `More files may match: continue with file_offset=N.` when the result supplies `next_file_offset`.
+
+The tool result `metadata` still holds the full structured result under `result`, for user interfaces.
+Ovid Core never sends `metadata` to the model.
+In the plain presentation, the model receives the full structured result as JSON content, without notice lines.
+
 ## Search naming variants together
 
 ```python

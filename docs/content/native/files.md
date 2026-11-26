@@ -106,6 +106,10 @@ Reads reject these inputs:
 
 The model-facing `read` tool returns expected path, selector, and workspace read errors as diagnostic text in a successful result.
 Each requested target has its own diagnostic text, thus one bad target does not hide the other targets.
+A read of several targets ends with `[N of M targets failed]` when at least one target failed.
+A file that is too large to edit has the notice `[Not editable: N bytes exceeds the LIMIT-byte edit limit]` after its lines.
+The tool result `metadata` still holds the full structured result of each target, for user interfaces.
+Ovid Core never sends `metadata` to the model.
 By default, a different failure of a native tool does not stop the run.
 Ovid Core returns the failure to the model as a `failed` tool result that contains the exception type and text.
 Refer to [Tool failure results](../api/extensions.md#tool-failure-results) for the full rules.
@@ -267,6 +271,17 @@ Use `write` to create a file.
 
 Successful Hashline output contains bounded fresh line locators.
 These returned lines can authorize the next edit without another read.
+
+The output of every edit mode has these sections, in this order:
+
+1. The rendered source of each edited file that the result can show.
+2. One line that lists each change without rendered source, as `OPERATION: PATH` or `OPERATION: PATH -> DESTINATION`, separated by commas.
+3. `[Fuzzy match applied with confidence 0.97. Check the edited lines]` when a fuzzy replace applied the edit, with the confidence to two decimals.
+4. `[Commit incomplete: only the changes shown were written. Reread the files before you retry]` when the commit did not finish.
+
+The tool result `metadata` still holds the full structured edit result, for user interfaces.
+This includes each change, the generations, the matching strategy, and the source presentation.
+Ovid Core never sends `metadata` to the model.
 
 ## Change mode and policy live
 
