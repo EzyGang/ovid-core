@@ -12,7 +12,7 @@ from pydantic_ai.models.function import AgentInfo, FunctionModel
 
 from ovid_core import MessageCodec
 from ovid_core.agents import AgentDefinition
-from ovid_core.messages import ImageUrl, TextContent, UserPromptPart
+from ovid_core.messages import ImageUrl, TextContent, ToolReturnPart, UserPromptPart
 from ovid_core.routing import ModelRef
 from tests.support.agent_helpers import agent_factory
 from tests.support.helpers import CONVERSATION_ID, RUN_ID
@@ -156,3 +156,36 @@ async def test_records_stored_before_typed_multimodal_content_decode_and_continu
             )
         ),
     )
+
+
+async def test_tool_return_stored_with_the_old_content_and_metadata_envelope_decodes_and_continues_a_run() -> None:
+    requests: list[list[ModelMessage]] = []
+
+    def respond(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        del info
+        requests.append(messages)
+
+        return ModelResponse(parts=(PydanticTextPart('Continued.'),))
+
+    envelope: dict[str, JsonValue] = {'content': 'a\nb', 'metadata': {'k': 1}}
+    records = (
+        _record('response', [{'tool_name': 'report', 'arguments': {}, 'tool_call_id': 'call-1', 'kind': 'tool_call'}]),
+        _record(
+            'request',
+            [{'tool_name': 'report', 'content': envelope, 'tool_call_id': 'call-1', 'kind': 'tool_return'}],
+        ),
+        _record('response', [{'kind': 'text', 'content': 'Reported.'}]),
+    )
+    codec = MessageCodec()
+    definition = AgentDefinition[None, str](model=ModelRef(name='primary'), deps_type=type(None), output_type=str)
+    agent = await agent_factory({'primary': FunctionModel(respond)}).build(definition)
+
+    history = tuple(codec.decode(record) for record in records)
+    result = await agent.run('Continue.', deps=None, messages=history)
+
+    sent = requests[0][1].parts[0]
+    assert history[1].parts == (ToolReturnPart(tool_name='report', content=envelope, tool_call_id='call-1'),)
+    assert result.output == 'Continued.'
+    assert isinstance(sent, PydanticToolReturnPart)
+    assert sent.content == envelope
+    assert sent.metadata is None

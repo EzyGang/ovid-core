@@ -81,6 +81,19 @@ It then renders shared Hashline locators.
 These lines can authorize direct edits.
 Parse issues and path-only metadata cannot authorize edits.
 
+In Hashline mode, `ast_grep` sends the model the rendered lines and then one notice line for each fact that the lines do not show.
+The notices come in this order, and each one appears only when it applies:
+
+- `Matches FIRST-LAST of TOTAL shown: continue with offset=N.` when more matches follow this page.
+- `No matches at offset=N (TOTAL in total).` when the page is empty but other matches exist.
+- `No matches (N files searched).` when nothing matches.
+- `Skipped files with no supported language: N.` when some selected files have no supported language.
+- `Issue: PATH: MESSAGE.` for each issue, or `Issue: MESSAGE.` when the issue has no path.
+
+The tool result `metadata` still holds the full structured result under `result`, for user interfaces.
+Ovid Core never sends `metadata` to the model.
+In the plain presentation, the model receives the full structured result as JSON content, without notice lines.
+
 ## Select workspace files
 
 ```python

@@ -8,6 +8,7 @@ from pydantic_ai import AgentModelSettings
 from pydantic_ai import RunContext as PydanticRunContext
 from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.exceptions import UserError
+from pydantic_ai.messages import ToolReturn
 from pydantic_ai.models import ModelSettings
 from pydantic_ai.tools import ToolDefinition
 from pydantic_ai.toolsets import AbstractToolset, CombinedToolset
@@ -17,6 +18,7 @@ from pydantic_core import SchemaValidator, core_schema
 from ovid_core.adapters.pydantic_ai._instruction_sources import PydanticInstruction, pydantic_instructions
 from ovid_core.adapters.pydantic_ai._tool_context import run_context_from_pydantic
 from ovid_core.adapters.pydantic_ai._tool_execution import execute_tool
+from ovid_core.adapters.pydantic_ai._user_content import user_content_to_pydantic
 from ovid_core.capabilities.base import BaseCapability, CapabilityModelSettings
 from ovid_core.errors import ExtensionCollisionError, ToolExecutionError
 from ovid_core.hooks.base import BaseToolHook
@@ -93,11 +95,14 @@ class PydanticAIToolsetAdapter[Deps](AbstractToolset[Deps]):
         tool_args: dict[str, Any],
         ctx: PydanticRunContext[Deps],
         tool: ToolsetTool[Deps],
-    ) -> JsonValue:
+    ) -> ToolReturn[Any]:
         if not isinstance(tool, _BoundToolsetTool) or tool.toolset is not self:
             raise ToolExecutionError(f'Tool {name!r} is not available for this model step')
 
-        return await execute_tool(name, tool.source_tool, tool_args, ctx, self.hooks, self.retries)
+        result = await execute_tool(name, tool.source_tool, tool_args, ctx, self.hooks, self.retries)
+        content = [result.content, *user_content_to_pydantic(result.files)] if result.files else result.content
+
+        return ToolReturn(return_value=content, metadata=result.metadata or None)
 
     def idempotency_key(self, name: str, arguments: dict[str, Any]) -> str | None:
         """Return the idempotency key of a call to a tool of the latest listing.

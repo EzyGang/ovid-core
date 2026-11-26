@@ -151,7 +151,7 @@ During execution, the adapter:
 - applies approval policy
 - applies timeouts
 - applies hooks
-- maps `ToolResult` to JSON
+- maps `ToolResult` to a Pydantic AI `ToolReturn`: `content` and `files` go to the model, and `metadata` stays out of band
 - preserves cancellation
 
 Duplicate tool or extension IDs raise `ExtensionCollisionError`.
@@ -192,6 +192,7 @@ The conversion of these parts is exact, except for part timestamps:
 - `NativeToolCallPart`, `NativeToolReturnPart`, and `FilePart`
 - A `UserPromptPart` with a tuple of content items
 - The content of a `ToolReturnPart` that holds files
+- The `metadata` of a `ToolReturnPart` that holds a JSON value
 
 `message_to_pydantic` selects the Pydantic AI subclass for a provider-run tool part from `tool_kind`.
 For example, `tool_kind='tool-search'` restores a `NativeToolSearchCallPart`.

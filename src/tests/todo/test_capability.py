@@ -95,9 +95,7 @@ async def test_real_agent_runs_full_todo_flow_and_isolates_conversations() -> No
     def respond(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
         returns = [part for message in messages for part in message.parts if isinstance(part, ToolReturnPart)]
         if returns:
-            result = returns[-1].content
-            if isinstance(result, dict) and 'content' in result:
-                observed_contents.append(TodoToolContent.model_validate(result['content']))
+            observed_contents.append(TodoToolContent.model_validate(returns[-1].content))
 
         if len(returns) < len(operations):
             assert [tool.name for tool in info.function_tools] == ['todo']

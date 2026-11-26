@@ -4,7 +4,7 @@ from uuid import uuid4
 
 import pytest
 from pydantic_ai import RunContext as PydanticRunContext
-from pydantic_ai.messages import ModelMessage, ModelResponse, TextPart, ToolCallPart
+from pydantic_ai.messages import ModelMessage, ModelResponse, TextPart, ToolCallPart, ToolReturn
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 from pydantic_ai.models.test import TestModel
 from pydantic_ai.usage import RunUsage
@@ -100,7 +100,7 @@ async def test_toolset_adapter_propagates_identity_usage_approval_hooks_and_life
     result = await step_adapter.call_tool('add', {'left': 2, 'right': 3}, context, definitions['add'])
     await step_adapter.__aexit__(None, None, None)
 
-    assert result == {'content': 5, 'metadata': {'prefix': 'sum'}}
+    assert result == ToolReturn(return_value=5, metadata={'prefix': 'sum'})
     assert definitions['add'].tool_def.kind == 'unapproved'
     assert definitions['add'].tool_def.defer_loading is True
     assert definitions['add'].tool_def.metadata == {
@@ -319,8 +319,8 @@ async def test_dynamic_tool_collisions_and_empty_capabilities_are_stable() -> No
     old_copy = replace(old_definitions['calculate'], tool_def=new_definitions['calculate'].tool_def)
     old_result = await pinned.call_tool('calculate', {'left': 1, 'right': 2}, context, old_copy)
     new_result = await pinned.call_tool('calculate', {'left': 1, 'right': 2}, context, new_definitions['calculate'])
-    assert old_result['content'] == 'old'
-    assert new_result['content'] == 'new'
+    assert old_result.return_value == 'old'
+    assert new_result.return_value == 'new'
 
     text_adapter = PydanticAIToolsetAdapter(source=TrackingToolset((TextAddTool(),)))
     text_definitions = await text_adapter.get_tools(context)

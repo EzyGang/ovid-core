@@ -17,7 +17,7 @@ from pydantic_ai.run import AgentRunResult, AgentRunResultEvent
 
 from ovid_core.adapters.pydantic_ai._agent_errors import normalize_run_error
 from ovid_core.adapters.pydantic_ai._deferred_tools import InterruptedCalls
-from ovid_core.adapters.pydantic_ai._request_parts import tool_content_from_pydantic
+from ovid_core.adapters.pydantic_ai._request_parts import tool_content_from_pydantic, tool_metadata_from_pydantic
 from ovid_core.adapters.pydantic_ai.results import partial_from_pydantic, result_from_pydantic
 from ovid_core.agent_runtime import AgentStream
 from ovid_core.errors import AgentRunError, OvidCoreError
@@ -182,6 +182,7 @@ class PydanticAIStream[Output](AgentStream[Output]):
                 content=tool_content_from_pydantic(event.part)[0],
                 tool_call_id=event.part.tool_call_id,
                 outcome=event.part.outcome,
+                metadata=tool_metadata_from_pydantic(event.part),
             ),
         )
 

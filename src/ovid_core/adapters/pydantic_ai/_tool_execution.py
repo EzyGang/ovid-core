@@ -1,7 +1,7 @@
 import asyncio
 from typing import Any
 
-from pydantic import JsonValue, ValidationError
+from pydantic import ValidationError
 from pydantic_ai import RunContext as PydanticRunContext
 from pydantic_ai.exceptions import ApprovalRequired, CallDeferred, ModelRetry, ToolFailed
 
@@ -18,6 +18,7 @@ from ovid_core.hooks.base import BaseToolHook
 from ovid_core.models import BaseModel
 from ovid_core.policy import AgentRetryPolicy
 from ovid_core.tools.base import BaseTool
+from ovid_core.tools.models import ToolResult
 
 
 async def execute_tool[Deps](
@@ -27,7 +28,7 @@ async def execute_tool[Deps](
     ctx: PydanticRunContext[Deps],
     hooks: tuple[BaseToolHook[Deps], ...],
     retries: AgentRetryPolicy,
-) -> dict[str, JsonValue]:
+) -> ToolResult:
     context = tool_context_from_pydantic(ctx)
     arguments = _validated_arguments(name, tool, raw_arguments, retries)
     returning = retries.tool_failures == 'return'
@@ -52,7 +53,7 @@ async def execute_tool[Deps](
             raise
         failure, reply = _classified_failure(name, tool, error, deadline.expired(), validating_result, retries)
     else:
-        return result.model_dump(mode='json')
+        return result
 
     for hook in hooks:
         await hook.on_tool_error(context, tool.id, failure)

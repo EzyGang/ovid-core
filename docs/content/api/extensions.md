@@ -34,8 +34,53 @@ The default is the most conservative value.
 
 ### `ToolResult`
 
-- `content: JsonValue` contains the required result content.
-- `metadata: dict[str, JsonValue] = {}` contains non-secret result metadata.
+- `content: JsonValue` contains the result that the model receives.
+- `metadata: dict[str, JsonValue] = {}` contains non-secret result data for the application.
+- `files: tuple[ToolFile, ...] = ()` contains files that the model receives in the tool result.
+
+The model receives only `content`.
+A string arrives as the same text, without JSON quotes or escapes.
+Other JSON values arrive as JSON.
+
+Metadata never reaches the model.
+Ovid Core stores it in `ToolReturnPart.metadata` and streams it in `ToolResultEvent.metadata`.
+Empty metadata is stored as `None`.
+
+Earlier releases sent the model a JSON object with `content` and `metadata`.
+To migrate a tool, put each fact that the model needs in `content`, for example a truncation notice or a count of failed targets.
+A user interface that read the metadata from that object must read `ToolResultEvent.metadata` or `ToolReturnPart.metadata`.
+Stored history from earlier releases stays valid, and its tool return `content` keeps the old object.
+
+`ToolFile` is the discriminated union of `ImageUrl`, `AudioUrl`, `VideoUrl`, `DocumentUrl`, and `BinaryContent`.
+Import it from `ovid_core.messages`.
+`BinaryContent.data` takes text in the standard Base64 alphabet, with `+` and `/`.
+
+```python
+import base64
+
+from ovid_core.messages import BinaryContent
+from ovid_core.tools import ToolResult
+
+
+def screenshot_result(raw: bytes) -> ToolResult:
+    image = BinaryContent(data=base64.b64encode(raw), media_type='image/png')
+
+    return ToolResult(content='ui.png, 1280x720', files=(image,))
+```
+
+Pydantic AI sends the files in the tool result, after `content`.
+When the model profile says that the model cannot read a file, Pydantic AI sends a note in its place, for example `File 9b002b (image/png, 12 bytes) was not sent: this model cannot read images.`
+The note changes only that request, and the run continues.
+The stored history keeps the file.
+
+A result with files has a different stored shape.
+`ToolReturnPart.content` and `ToolResultEvent.content` are a JSON array with `content` first and one file object for each file.
+The file objects use the serialized form of Pydantic AI, with a `kind` such as `image-url` and `data` in the URL-safe Base64 alphabet.
+[Tool return content with files](runtime.md#tool-return-content-with-files) gives this form.
+A client that reads files from `ToolResultEvent.content` must use this form.
+
+Ovid Core does not resize, convert, or limit files.
+The tool must keep each file small, because the stored history and each `ToolResultEvent` contain the Base64 text of the file.
 
 ## Deferred tool values
 

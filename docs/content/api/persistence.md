@@ -263,6 +263,11 @@ These values appear only in records from a release with typed multimodal content
 - A `user_prompt` part whose `content` is an array of content items
 - The `content_file_digests` field, which each `tool_return` part contains
 
+A record from a release with out-of-band tool metadata contains a `metadata` field in each `tool_return` part.
+A record without this field decodes with `metadata=None`.
+A `tool_return` part from an earlier release can hold a JSON object with `content` and `metadata` as its `content`.
+That part stays valid, and the model receives that object again in a later run.
+
 Upgrade each reader of a shared store before a writer.
 
 A record from a release with message state can contain a `state` field.

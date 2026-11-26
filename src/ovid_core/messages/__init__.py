@@ -3,6 +3,7 @@ from ovid_core.messages.content import BinaryContent as BinaryContent
 from ovid_core.messages.content import DocumentUrl as DocumentUrl
 from ovid_core.messages.content import ImageUrl as ImageUrl
 from ovid_core.messages.content import TextContent as TextContent
+from ovid_core.messages.content import ToolFile as ToolFile
 from ovid_core.messages.content import UserContent as UserContent
 from ovid_core.messages.content import VideoUrl as VideoUrl
 from ovid_core.messages.models import AgentMessage as AgentMessage

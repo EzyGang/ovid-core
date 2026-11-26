@@ -13,8 +13,8 @@ Import from `ovid_core.messages`. `MessagePart` is a Pydantic discriminated unio
 | `CompactionPart` | optional `content`, ID, provider name, and opaque JSON provider details | request or response |
 | `ToolCallPart` | non-empty `tool_name`, `arguments`, non-empty `tool_call_id` | response |
 | `NativeToolCallPart` | the `ToolCallPart` fields, and optional `tool_kind`, `id`, `provider_name`, and JSON `provider_details` | response |
-| `ToolReturnPart` | non-empty `tool_name`, JSON `content`, non-empty `tool_call_id`, `outcome='success'`, optional `content_file_digests` | request |
-| `NativeToolReturnPart` | the `ToolReturnPart` fields, and optional `tool_kind`, JSON `metadata`, `provider_name`, and JSON `provider_details` | response |
+| `ToolReturnPart` | non-empty `tool_name`, JSON `content`, non-empty `tool_call_id`, `outcome='success'`, JSON `metadata=None`, optional `content_file_digests` | request |
+| `NativeToolReturnPart` | the `ToolReturnPart` fields, and optional `tool_kind`, `provider_name`, and JSON `provider_details` | response |
 | `FilePart` | `content: BinaryContent`, and optional `id`, `provider_name`, and JSON `provider_details` | response |
 | `CapabilityLoadCallPart` | non-empty `capability_id`, non-empty `tool_call_id` | response |
 | `CapabilityLoadReturnPart` | `message: str | None`, `instructions: str | None`, non-empty `tool_call_id`, `outcome='success'` | request |
@@ -26,6 +26,19 @@ Import from `ovid_core.messages`. `MessagePart` is a Pydantic discriminated unio
 Tool and capability outcomes are one of `success`, `failed`, `denied`, `interrupted`, or `retried`.
 The `retried` outcome tells the model to make the tool call again.
 The content of a `retried` return is the feedback for the model.
+
+`metadata` holds the data that a tool returns for the application and not for the model.
+The adapter never sends it to the model.
+An Ovid tool writes its `ToolResult.metadata` there, or `None` when that value is empty.
+Pydantic AI writes other values, for example these:
+
+- `{'pydantic_ai_synthesized_tool_return': True}` on a return that it adds for a tool call without a result
+- `{'mcp_app': {...}}` on the return of an MCP tool that names a user interface resource
+- any value in the `ToolReturn.metadata` of a Pydantic AI function tool or a deferred call result
+
+The adapter keeps each JSON value exactly, including a value that is not a JSON object.
+It stores a value that is not JSON in its JSON form, for example a `datetime` as ISO 8601 text and `bytes` as URL-safe Base64 text.
+It stores a value that has no JSON form as `None`.
 
 A provider writes a response `CompactionPart`.
 An application or a capability writes a request `CompactionPart`, which contains only `content`.
@@ -123,7 +136,8 @@ The value is a tuple when Pydantic AI serialized the content, and the adapter th
 Do not change `content` or `content_file_digests` in stored history.
 
 A `ToolResultEvent` contains the same JSON content.
-An Ovid `BaseTool` returns a `ToolResult`, which cannot hold a file.
+An Ovid `BaseTool` returns files in `ToolResult.files`, and its tool return takes this form.
+[`ToolResult`](extensions.md#toolresult) shows an example.
 
 ### `OpaqueRequestPart` and `OpaqueResponsePart`
 
@@ -167,7 +181,7 @@ The adapter sets a new timestamp when it restores a part.
 | --- | --- |
 | `TextPart` | `id`, `provider_name`, `provider_details`, `citations` |
 | `ToolCallPart` | `tool_kind`, `id`, `provider_name`, `provider_details` |
-| `ToolReturnPart` | `tool_kind`, `metadata`, `retry` |
+| `ToolReturnPart` | `tool_kind`, `retry` |
 | `CapabilityLoadCallPart` | `id`, `provider_name`, `provider_details` |
 | `CapabilityLoadReturnPart` | `metadata`, `retry` |
 | `CompactionPart` in a response | `metadata` |
@@ -237,7 +251,7 @@ Import from `ovid_core.runtime.events`. Every event extends `EventIdentity` and 
 | `ModelRequestStartedEvent` | `model_request_started` | non-negative `request_index` |
 | `TextDeltaEvent` | `text_delta` | `content` |
 | `ToolCallEvent` | `tool_call` | `tool_name`, `arguments`, `tool_call_id` |
-| `ToolResultEvent` | `tool_result` | `tool_name`, JSON `content`, `tool_call_id`, `outcome` |
+| `ToolResultEvent` | `tool_result` | `tool_name`, JSON `content`, `tool_call_id`, `outcome`, JSON `metadata=None` |
 | `ToolDeferredEvent` | `tool_deferred` | `tool_call_id`, `tool_name`, JSON object `arguments`, `deferral_kind`, optional `reason`, optional JSON object `metadata` |
 | `UsageUpdateEvent` | `usage_update` | aggregate `usage`, optional latest `request_usage`, `is_final=False` |
 | `RunCompletedEvent` | `run_completed` | final `usage` |
@@ -253,6 +267,9 @@ A stream that runs without a server always emits `persisted=False`.
 A `ToolResultEvent` has the same `outcome` values as a `ToolReturnPart`.
 A stream emits a `ToolResultEvent` with `outcome='retried'` for each retried tool call.
 A stream emits no tool event for a tool call with an empty `tool_name` or an empty `tool_call_id`, and the run continues.
+`ToolResultEvent.metadata` is the `metadata` of the `ToolReturnPart`.
+The model does not receive it.
+An event from an earlier release has no `metadata` key and decodes with `metadata=None`.
 
 A paused run ends with these events:
 

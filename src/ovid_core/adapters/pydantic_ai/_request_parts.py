@@ -10,6 +10,7 @@ from pydantic_ai.messages import RetryInfo as PydanticRetryInfo
 from pydantic_ai.messages import SystemPromptPart as PydanticSystemPromptPart
 from pydantic_ai.messages import ToolReturnPart as PydanticToolReturnPart
 from pydantic_ai.messages import UserPromptPart as PydanticUserPromptPart
+from pydantic_core import to_jsonable_python
 
 from ovid_core.adapters.pydantic_ai._user_content import user_content_from_pydantic, user_content_to_pydantic
 from ovid_core.messages.models import (
@@ -56,6 +57,7 @@ def request_part_from_pydantic(value: ModelRequestPart) -> MessagePart:
             tool_call_id=value.tool_call_id,
             outcome=value.outcome,
             content_file_digests=content_file_digests,
+            metadata=tool_metadata_from_pydantic(value),
         )
 
     return opaque_request_part(value)
@@ -69,6 +71,11 @@ def tool_content_from_pydantic(value: PydanticToolReturnPart) -> tuple[JsonValue
         payload = _REQUEST_PART_ADAPTER.dump_python(value, mode='json')
 
     return payload['content'], tuple(payload.get('content_file_digests', ()))
+
+
+def tool_metadata_from_pydantic(value: PydanticToolReturnPart) -> JsonValue:
+    """Return the metadata as JSON. A value that has no JSON form becomes `None`."""
+    return to_jsonable_python(value.metadata, bytes_mode='base64', fallback=lambda _: None)
 
 
 def request_part_to_pydantic(value: MessagePart) -> ModelRequestPart:
@@ -125,7 +132,13 @@ def opaque_request_part(value: ModelRequestPart) -> OpaqueRequestPart:
 
 def _tool_return_part_to_pydantic(value: ToolReturnPart) -> ModelRequestPart:
     if value.content_file_digests is None:
-        return PydanticToolReturnPart(value.tool_name, value.content, value.tool_call_id, outcome=value.outcome)
+        return PydanticToolReturnPart(
+            value.tool_name,
+            value.content,
+            value.tool_call_id,
+            metadata=value.metadata,
+            outcome=value.outcome,
+        )
 
     return _REQUEST_PART_ADAPTER.validate_python(
         {
@@ -134,6 +147,7 @@ def _tool_return_part_to_pydantic(value: ToolReturnPart) -> ModelRequestPart:
             'content': value.content,
             'tool_call_id': value.tool_call_id,
             'outcome': value.outcome,
+            'metadata': value.metadata,
             'content_file_digests': list(value.content_file_digests),
         }
     )
