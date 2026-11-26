@@ -33,6 +33,7 @@ class AgentToolsetDescriptor(BaseModel):
     id: str = Field(min_length=1)
     description: str | None = None
     dynamic: bool
+    approval: ToolApproval | None = None
     source: str = Field(min_length=1)
 
 

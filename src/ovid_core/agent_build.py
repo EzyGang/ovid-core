@@ -73,10 +73,10 @@ def build_agent_context[Deps](
         for tool in capability.contributions.tools
     )
     toolsets = tuple(
-        toolset.descriptor(source=capability.id)
+        toolset.descriptor(source=capability.id, approval=tool_approval)
         for capability, _ in capabilities
         for toolset in capability.contributions.toolsets
-    ) + tuple(toolset.descriptor(source='caller') for toolset in direct_toolsets)
+    ) + tuple(toolset.descriptor(source='caller', approval=tool_approval) for toolset in direct_toolsets)
 
     return AgentBuildContext(
         provider=resolved.provider,

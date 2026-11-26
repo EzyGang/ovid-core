@@ -73,13 +73,20 @@ class BaseTool[Deps, Args: BaseModel, Result: ToolResult](ABC):
 class BaseToolset[Deps](ABC):
     id: str
     description: str | None = None
+    approval: ToolApproval | None = None
 
-    def descriptor(self, *, source: str) -> AgentToolsetDescriptor:
+    def descriptor(
+        self,
+        *,
+        source: str,
+        approval: ToolApproval | None = None,
+    ) -> AgentToolsetDescriptor:
         return AgentToolsetDescriptor(
             id=self.id,
             description=self.description,
             dynamic=True,
             source=source,
+            approval=approval if approval is not None else self.approval,
         )
 
     async def for_run(self, context: RunContext[Deps]) -> Self:
