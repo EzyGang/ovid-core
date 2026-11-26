@@ -636,6 +636,46 @@ async def deny_all(
 capability = DeferredToolAnswerCapability(id='headless', answerer=deny_all)
 ```
 
+## Request budget
+
+`RequestBudgetCapability[Deps]` warns the model near the request limit and makes the last allowed request a wrap-up.
+Import it and `REQUEST_BUDGET_WRAP_UP_PROMPT` from `ovid_core.capabilities`.
+The capability has the fixed ID `request_budget` and adds no tools and no instructions.
+It has these fields:
+
+- `requests: int` is the request limit of the run. It must be positive.
+- `warning_threshold: float = 0.9` is the fraction of `requests` at which the warning starts. It must be greater than 0 and at most 1.
+- `wrap_up_prompt: str = REQUEST_BUDGET_WRAP_UP_PROMPT` is the instruction for the last allowed request. It must not be blank.
+
+The default prompt tells the model not to call tools and to report what is done, what remains, and the next step.
+
+The capability does not set the request limit of the run.
+`AgentRunPolicy.limits.requests` sets the limit that stops the run.
+Set `requests` to the same value.
+
+The Pydantic AI adapter maps the capability to two `pydantic-ai-harness` capabilities:
+
+- `WarnNearLimits` gets `requests` as `max_iterations` and `warning_threshold`. Before each model request, it compares the number of completed requests to `requests`. At the threshold, it adds a warning to that request only.
+- `WrapUpAtLimits` gets `wrap_up_prompt`. It reads the request limit of the run. When only one request remains, it adds the prompt to that request and sets `tool_choice='none'`. The tool definitions stay in the request.
+
+A model that obeys `tool_choice='none'` returns a final answer on the last request, so the run does not raise `UsageLimitError`.
+
+```python
+from ovid_core import AgentDefinition, AgentRunPolicy, AgentUsageLimits
+from ovid_core.capabilities import RequestBudgetCapability
+from ovid_core.routing import ModelRef
+
+REQUEST_LIMIT = 40
+
+definition = AgentDefinition[None, str](
+    model=ModelRef(name='primary'),
+    deps_type=type(None),
+    output_type=str,
+    capabilities=(RequestBudgetCapability[None](requests=REQUEST_LIMIT),),
+    policy=AgentRunPolicy(limits=AgentUsageLimits(requests=REQUEST_LIMIT)),
+)
+```
+
 ## Todo
 
 `TodoCapability[Deps](service=service)` has the fixed capability ID `todo` and contributes one instruction and one `todo` tool.
