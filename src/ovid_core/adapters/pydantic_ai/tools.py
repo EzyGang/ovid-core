@@ -4,6 +4,7 @@ from types import TracebackType
 from typing import Any, cast
 
 from pydantic import JsonValue, ValidationError
+from pydantic_ai import AgentModelSettings
 from pydantic_ai import RunContext as PydanticRunContext
 from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.exceptions import UserError
@@ -13,9 +14,10 @@ from pydantic_ai.toolsets import AbstractToolset, CombinedToolset
 from pydantic_ai.toolsets.abstract import ToolsetTool
 from pydantic_core import SchemaValidator, core_schema
 
+from ovid_core.adapters.pydantic_ai._instruction_sources import PydanticInstruction, pydantic_instructions
 from ovid_core.adapters.pydantic_ai._tool_context import run_context_from_pydantic
 from ovid_core.adapters.pydantic_ai._tool_execution import execute_tool
-from ovid_core.capabilities.base import BaseCapability
+from ovid_core.capabilities.base import BaseCapability, CapabilityModelSettings
 from ovid_core.errors import ExtensionCollisionError, ToolExecutionError
 from ovid_core.hooks.base import BaseToolHook
 from ovid_core.policy import AgentRetryPolicy
@@ -134,14 +136,22 @@ class PydanticAICapabilityAdapter[Deps](AbstractCapability[Deps]):
         self.id = source.id
         self.description = source.description
         self.defer_loading = source.defer_loading
-        self._instructions = source.contributions.instructions
-        self._model_settings = source.contributions.model_settings.values
+        self._instructions = pydantic_instructions(source.contributions.instructions)
+        self._model_settings = source.contributions.model_settings
 
-    def get_instructions(self) -> list[str] | None:
+    def get_instructions(self) -> list[PydanticInstruction[Deps]] | None:
         return list(self._instructions) if self._instructions else None
 
-    def get_model_settings(self) -> ModelSettings | None:
-        return cast(ModelSettings, dict(self._model_settings)) if self._model_settings else None
+    def get_model_settings(self) -> AgentModelSettings[Deps] | None:
+        source = self._model_settings
+        if isinstance(source, CapabilityModelSettings):
+            return cast(ModelSettings, dict(source.values)) if source.values else None
+
+        def model_settings(ctx: PydanticRunContext[Deps]) -> ModelSettings:
+            settings = source(run_context_from_pydantic(ctx))
+            return cast(ModelSettings, dict(settings.values) if settings is not None else {})
+
+        return model_settings
 
 
 def _unique_tools[Deps](tools: Sequence[BaseTool[Deps, Any, Any]]) -> dict[str, BaseTool[Deps, Any, Any]]:

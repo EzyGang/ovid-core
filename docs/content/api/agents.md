@@ -121,7 +121,7 @@ class AgentDefinition[Deps, Output]:
     model: AgentModelSelector
     deps_type: type[Deps]
     output_type: type[Output]
-    instructions: tuple[str, ...] = ()
+    instructions: tuple[InstructionSource[Deps], ...] = ()
     capabilities: tuple[BaseCapability[Deps], ...] = ()
     toolsets: tuple[BaseToolset[Deps], ...] = ()
     tool_approval: ToolApproval | None = None
@@ -132,6 +132,9 @@ class AgentDefinition[Deps, Output]:
 ```
 
 The definition contains all immutable construction input.
+
+`instructions` accepts static strings and dynamic `InstructionSource` callables, as [Capability contracts](extensions.md#capability-contracts) describes.
+The adapter evaluates each callable source before each model request.
 
 Capabilities can add these values:
 
@@ -403,7 +406,7 @@ Each bound component produces its own descriptor:
 - `BaseTool`
 - `BaseToolset`
 
-`with_instructions` replaces only the prepared definition instructions.
+`with_instructions(instructions: tuple[InstructionSource[Deps], ...])` replaces only the prepared definition instructions.
 `build_prepared` compiles the prepared definition.
 It does not repeat these actions:
 

@@ -50,6 +50,7 @@ def run_context_from_pydantic[Deps](ctx: PydanticRunContext[Deps]) -> RunContext
             run_id=RunId.model_validate(ctx.run_id),
             conversation_id=ConversationId.model_validate(ctx.conversation_id),
             usage=usage,
+            run_step=ctx.run_step,
         )
     except ValidationError as error:
         raise ToolExecutionError('Pydantic AI supplied invalid tool execution context') from error

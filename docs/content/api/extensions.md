@@ -348,20 +348,44 @@ Import from `ovid_core.capabilities.base`.
 
 `CapabilityModelSettings(values={})` carries model-setting contributions.
 
+A capability can supply instructions and model settings as dynamic sources:
+
+```python
+type InstructionSource[Deps] = str | Callable[[RunContext[Deps]], str | None | Awaitable[str | None]]
+type ModelSettingsSource[Deps] = CapabilityModelSettings | Callable[[RunContext[Deps]], CapabilityModelSettings | None]
+```
+
 `CapabilityContributions[Deps]` is a frozen dataclass containing:
 
-- `instructions: tuple[str, ...] = ()`
+- `instructions: tuple[InstructionSource[Deps], ...] = ()`
 - `tools: tuple[BaseTool[Deps, Any, Any], ...] = ()`
 - `toolsets: tuple[BaseToolset[Deps], ...] = ()`
 - `hooks: tuple[BaseToolHook[Deps], ...] = ()`
-- `model_settings: CapabilityModelSettings = CapabilityModelSettings()`
+- `model_settings: ModelSettingsSource[Deps] = CapabilityModelSettings()`
+
+The adapter calls each callable source before each model request, with the Ovid `RunContext` of that request.
+`RunContext.run_step` is `1` for the first model request of a run and increases by one for each next request.
+The adapter awaits an instruction source that returns an awaitable.
+An instruction source that returns `None` or an empty string adds no text to that request.
+A model-settings source that returns `None` adds no settings to that request.
+A model-settings source must be synchronous.
+The adapter calls a synchronous source on the event loop, so keep it fast and free of blocking I/O.
+
+A source that raises an exception stops the run.
+The run fails with the normalized `AgentRunError('Agent run failed')`, and a server commits the partial transcript.
+The adapter never drops the instruction silently.
+
+Each stored request message keeps the instruction text that the model received in `AgentMessage.instructions`.
+A later run evaluates each source again and does not use the stored text.
 
 `BaseCapability[Deps]` is an immutable, keyword-only dataclass. It contains `id`, optional `description`,
 `defer_loading`, `contributions`, and inspectable `AgentServiceRequirement` values. Its default `bind(services)`
 validates requirements and returns itself. Stateful capabilities return a frozen bound value whose contributions use
 the resolved service providers.
 
-`descriptor(source=...)` returns the `AgentCapabilityDescriptor` with the capability instructions and deferred-loading state.
+`descriptor(source=...)` returns the `AgentCapabilityDescriptor` with the deferred-loading state and the instructions.
+Its `instructions` field contains only the static strings.
+Its `dynamic_instructions` field counts the callable instruction sources, and it defaults to `0`.
 
 A capability with `defer_loading=True` owns every tool that it contributes, directly or through a toolset.
 The model cannot see or call these tools before it loads the capability with the `load_capability` tool.

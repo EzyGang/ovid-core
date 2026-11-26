@@ -222,7 +222,10 @@ Construct them from UUID values or parse them with Pydantic.
 Use `RunId.new()` or `ConversationId.new()` to generate random UUIDs.
 `str(value)` returns the canonical UUID string.
 
-Import `RunContext[Deps]` from `ovid_core.runtime.context`. It is a frozen dataclass with `deps`, `run_id`, `conversation_id`, and `usage`, which defaults to zero `Usage()`.
+Import `RunContext[Deps]` from `ovid_core.runtime.context`. It is a frozen dataclass with `deps`, `run_id`, `conversation_id`, `usage` and `run_step`.
+`usage` defaults to zero `Usage()`.
+`run_step: int = 0` is the number of the current model request in the run, from Pydantic AI `RunContext.run_step`.
+The first model request of a run has step `1`, and each run starts again at step `1`.
 
 ## Events
 

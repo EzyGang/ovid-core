@@ -146,6 +146,7 @@ PluginRegistrar.select_service_factories
 PluginRegistrar.select_capability_factories
 parameters_json_schema
 dynamic
+dynamic_instructions
 _.with_instructions
 _.with_policy
 _.extend_prepared

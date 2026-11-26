@@ -129,6 +129,62 @@ AgentDefinition[AppDeps, Answer](
 
 A capability is an explicit composition unit. It does not discover plugins or mutate a global registry. Diagnostics record its ID and the tools, hooks, and instructions it contributes.
 
+## Add dynamic instructions and model settings
+
+An instruction can be a callable source instead of a string.
+The adapter calls each source before each model request, with the Ovid `RunContext` of that request.
+Use a source for facts that the application knows only at run time, such as the current date and working directory:
+
+```python
+from datetime import date
+
+from ovid_core.capabilities import BaseCapability, CapabilityContributions, CapabilityModelSettings
+from ovid_core.runtime.context import RunContext
+
+
+def environment(context: RunContext[AppDeps]) -> str:
+    return f'Today is {date.today().isoformat()}. The working directory is {context.deps.workspace}.'
+
+
+def later_steps(context: RunContext[AppDeps]) -> CapabilityModelSettings | None:
+    if context.run_step < 5:
+        return None
+
+    return CapabilityModelSettings(values={'temperature': 0.2})
+
+
+runtime_context = BaseCapability[AppDeps](
+    id='runtime-context',
+    contributions=CapabilityContributions(
+        instructions=('Use these runtime facts.', environment),
+        model_settings=later_steps,
+    ),
+)
+```
+
+These rules apply:
+
+- An instruction source can be synchronous or asynchronous.
+- An instruction source that returns `None` adds no text to that request.
+- A model-settings source is synchronous and applies only to the requests where it returns settings.
+- `RunContext.run_step` is `1` for the first model request of each run.
+- A source that raises an exception stops the run with `AgentRunError`.
+- `AgentDefinition.instructions` and `PreparedAgentDefinition.with_instructions` accept the same sources.
+
+Build instruction text only from values that the application controls.
+Do not put secret values in the text, because stored messages keep the instructions that the model received.
+
+### Keep the prompt cache
+
+Providers cache the start of the prompt.
+A changed instruction changes the system prompt, and the provider cannot use the cache from that point.
+Follow these rules:
+
+- Put volatile text last. Put the capability with dynamic sources after stable capabilities, and put each source after the static strings of its capability.
+- Prefer values that stay the same during a run, such as the date or the working directory, over values that change on each step.
+- For text that changes during a run, use a Pydantic AI passthrough capability whose instruction function returns `InstructionPart(name=..., on_change='append')`. Pydantic AI then adds the change after the cached prompt and does not rewrite it.
+- Add `pydantic_ai_capability(WarnOnCacheBusts())` from `pydantic_ai_harness.warn_on_cache_busts` to get a warning when the cached prefix becomes shorter between requests.
+
 ## Add explicit Relay messaging
 For complete setup, automatic delivery, delegation, custom descriptions, and alternative connections, see
 [Use Relay between agents](use-relay.md).

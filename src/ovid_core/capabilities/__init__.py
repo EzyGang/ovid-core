@@ -2,6 +2,8 @@ from ovid_core.capabilities.base import AgentCapabilityDescriptor as AgentCapabi
 from ovid_core.capabilities.base import BaseCapability as BaseCapability
 from ovid_core.capabilities.base import CapabilityContributions as CapabilityContributions
 from ovid_core.capabilities.base import CapabilityModelSettings as CapabilityModelSettings
+from ovid_core.capabilities.base import InstructionSource as InstructionSource
+from ovid_core.capabilities.base import ModelSettingsSource as ModelSettingsSource
 from ovid_core.capabilities.budget import REQUEST_BUDGET_WRAP_UP_PROMPT as REQUEST_BUDGET_WRAP_UP_PROMPT
 from ovid_core.capabilities.budget import RequestBudgetCapability as RequestBudgetCapability
 from ovid_core.capabilities.deferred import DeferredToolAnswerCapability as DeferredToolAnswerCapability
