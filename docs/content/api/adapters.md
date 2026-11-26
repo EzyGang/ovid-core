@@ -104,6 +104,7 @@ Import from `ovid_core.adapters.pydantic_ai.tools`:
 - `PydanticAIToolsetAdapter(source=..., hooks=(), tool_approval=None, deferred_capability_id=None, retries=AgentRetryPolicy())` adapts a `BaseToolset` to Pydantic AI lifecycle and execution.
   `deferred_capability_id` names the deferred capability that owns the tools.
 - `PydanticAICapabilityAdapter(source)` adapts the instructions and model settings of an Ovid capability.
+  It keeps static instruction strings and wraps each dynamic source in a Pydantic AI instruction function or model-settings callable that receives the Ovid `RunContext`.
   `adapt_agent_extensions` adapts the tools, toolsets, and hooks of the capability.
 
 Each Ovid tool definition has `metadata['ovid_approval']` and `metadata['ovid_effect']` as JSON.

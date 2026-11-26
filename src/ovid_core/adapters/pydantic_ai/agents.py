@@ -4,6 +4,7 @@ from pydantic_ai.capabilities import SelectModel
 from pydantic_ai.models import Model, ModelSelectionContext
 
 from ovid_core.adapters.pydantic_ai._agent_runtime import PydanticAIAgentRuntime
+from ovid_core.adapters.pydantic_ai._instruction_sources import pydantic_instructions
 from ovid_core.adapters.pydantic_ai.extensions import adapt_agent_extensions
 from ovid_core.adapters.pydantic_ai.models import _resolve_model
 from ovid_core.agents import AgentDefinition, AgentRuntime
@@ -40,7 +41,7 @@ class DefaultAgentCompiler:
             agent = Agent[Deps, Output](
                 runtime,
                 output_type=definition.output_type,
-                instructions=definition.instructions,
+                instructions=pydantic_instructions(definition.instructions),
                 deps_type=definition.deps_type,
                 retries=AgentRetries(tools=policy.retries.tools, output=policy.retries.output),
                 toolsets=extensions.toolsets,

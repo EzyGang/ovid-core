@@ -10,3 +10,4 @@ class RunContext[Deps]:
     run_id: RunId
     conversation_id: ConversationId
     usage: Usage = Usage()
+    run_step: int = 0

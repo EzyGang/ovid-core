@@ -1,10 +1,12 @@
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any, Literal, Self
 
-from pydantic import Field, JsonValue
+from pydantic import Field, JsonValue, NonNegativeInt
 
 from ovid_core.hooks.base import BaseToolHook
 from ovid_core.models import BaseModel
+from ovid_core.runtime.context import RunContext
 from ovid_core.services import AgentServiceRequirement, AgentServices
 from ovid_core.tools.base import BaseTool, BaseToolset
 
@@ -17,6 +19,7 @@ class AgentCapabilityDescriptor(BaseModel):
     description: str | None = None
     defer_loading: bool
     instructions: tuple[str, ...]
+    dynamic_instructions: NonNegativeInt = 0
     source: AgentExtensionSource
 
 
@@ -24,13 +27,17 @@ class CapabilityModelSettings(BaseModel):
     values: dict[str, JsonValue] = Field(default_factory=dict)
 
 
+type InstructionSource[Deps] = str | Callable[[RunContext[Deps]], str | None | Awaitable[str | None]]
+type ModelSettingsSource[Deps] = CapabilityModelSettings | Callable[[RunContext[Deps]], CapabilityModelSettings | None]
+
+
 @dataclass(frozen=True, slots=True)
 class CapabilityContributions[Deps]:
-    instructions: tuple[str, ...] = ()
+    instructions: tuple[InstructionSource[Deps], ...] = ()
     tools: tuple[BaseTool[Deps, Any, Any], ...] = ()
     toolsets: tuple[BaseToolset[Deps], ...] = ()
     hooks: tuple[BaseToolHook[Deps], ...] = ()
-    model_settings: CapabilityModelSettings = CapabilityModelSettings()
+    model_settings: ModelSettingsSource[Deps] = CapabilityModelSettings()
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -42,11 +49,15 @@ class BaseCapability[Deps]:
     requirements: tuple[AgentServiceRequirement, ...] = ()
 
     def descriptor(self, *, source: AgentExtensionSource) -> AgentCapabilityDescriptor:
+        instructions = self.contributions.instructions
+        static = tuple(instruction for instruction in instructions if isinstance(instruction, str))
+
         return AgentCapabilityDescriptor(
             id=self.id,
             description=self.description,
             defer_loading=self.defer_loading,
-            instructions=self.contributions.instructions,
+            instructions=static,
+            dynamic_instructions=len(instructions) - len(static),
             source=source,
         )
 

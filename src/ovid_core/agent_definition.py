@@ -2,7 +2,7 @@ from dataclasses import dataclass, replace
 from typing import Self
 
 from ovid_core.agent_build import AgentBuildContext
-from ovid_core.capabilities.base import BaseCapability
+from ovid_core.capabilities.base import BaseCapability, InstructionSource
 from ovid_core.hooks.base import BaseToolHook
 from ovid_core.observability import ObservabilityConfig
 from ovid_core.policy import AgentRunPolicy
@@ -20,7 +20,7 @@ class AgentDefinition[Deps, Output]:
     model: AgentModelSelector
     deps_type: type[Deps]
     output_type: type[Output]
-    instructions: tuple[str, ...] = ()
+    instructions: tuple[InstructionSource[Deps], ...] = ()
     capabilities: tuple[BaseCapability[Deps], ...] = ()
     toolsets: tuple[BaseToolset[Deps], ...] = ()
     tool_approval: ToolApproval | None = None
@@ -36,7 +36,7 @@ class PreparedAgentDefinition[Deps, Output]:
     context: AgentBuildContext
     _resolved: ResolvedModel
 
-    def with_instructions(self, instructions: tuple[str, ...]) -> Self:
+    def with_instructions(self, instructions: tuple[InstructionSource[Deps], ...]) -> Self:
         return replace(self, definition=replace(self.definition, instructions=instructions))
 
     def with_policy(self, policy: AgentRunPolicy) -> Self:
