@@ -40,6 +40,7 @@ class TranscriptJournalCapability[Deps](AbstractCapability[Deps]):
         self._run_id = run_id
         self._closing = () if closing is None else (closing,)
         self._start: RunStartedEntry | None = None
+        self._held: dict[int, ModelMessage] = {}
 
     def get_ordering(self) -> CapabilityOrdering:
         return CapabilityOrdering(position='outermost', wrapped_by=(UsageTrackingCapability,))
@@ -48,11 +49,12 @@ class TranscriptJournalCapability[Deps](AbstractCapability[Deps]):
         del ctx
         self._start = RunStartedEntry(run_id=self._run_id, at=datetime.now(UTC))
 
-    async def before_model_request(
+    async def prepare_model_request(
         self,
         ctx: RunContext[Deps],
         request_context: ModelRequestContext,
     ) -> ModelRequestContext:
+        """Commit the request after Pydantic AI recorded its instruction and tool state, before the model call."""
         await self._commit(ctx.messages)
 
         return request_context
@@ -105,20 +107,26 @@ class TranscriptJournalCapability[Deps](AbstractCapability[Deps]):
     async def _commit(self, messages: Sequence[ModelMessage]) -> None:
         """Commit the messages of this run after the last committed one. The first step starts with the closing.
 
-        The search compares content from the end, because a history processor can replace the messages with copies
-        and remove older ones.
+        The search runs from the end and stops at a committed message object, or at a copy with the content of the
+        last committed message, because a history processor can replace the messages with copies and remove older
+        ones.
         """
         last = self._journal.messages[-1] if self._journal.messages else None
-        pending: list[AgentMessage] = []
+        pending: list[tuple[ModelMessage, AgentMessage]] = []
         for upstream in reversed([message for message in messages if message.run_id == str(self._run_id)]):
+            if id(upstream) in self._held:
+                break
             message = message_from_pydantic(upstream)
             if message == last:
                 break
-            pending.append(message)
+            pending.append((upstream, message))
         if not pending:
             return
 
-        await self._append(StepCommittedEntry(run_id=self._run_id, messages=(*self._closing, *reversed(pending))))
+        pending.reverse()
+        step = (*self._closing, *(message for _, message in pending))
+        await self._append(StepCommittedEntry(run_id=self._run_id, messages=step))
+        self._held.update((id(upstream), upstream) for upstream, _ in pending)
         self._closing = ()
 
     async def _append(self, entry: JournalEntry) -> None:

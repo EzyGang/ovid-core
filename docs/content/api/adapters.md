@@ -260,7 +260,7 @@ The capability uses these Pydantic AI hooks:
 | Hook | Journal write |
 | --- | --- |
 | `before_run` | Keeps the `RunStartedEntry` for the first append of the run. |
-| `before_model_request` | `StepCommittedEntry` with the request and each run message that no step holds yet. |
+| `prepare_model_request` | `StepCommittedEntry` with the request and each run message that no step holds yet. Pydantic AI runs this hook after it records the instruction baseline or changes, model settings changes, tool changes, and capability loads on the request, and before the model call. |
 | `after_node_run` | `StepCommittedEntry` with the new run messages, for example the model response. |
 | `wrap_tool_execute` | `ToolIntentEntry` before the handler, and `ToolSettledEntry` after it. |
 
