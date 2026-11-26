@@ -46,3 +46,8 @@ UserContent = Annotated[
     TextContent | ImageUrl | AudioUrl | VideoUrl | DocumentUrl | BinaryContent,
     Field(discriminator='kind'),
 ]
+
+ToolFile = Annotated[
+    ImageUrl | AudioUrl | VideoUrl | DocumentUrl | BinaryContent,
+    Field(discriminator='kind'),
+]

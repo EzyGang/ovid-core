@@ -65,6 +65,7 @@ class ToolReturnData(BaseModel):
     content: JsonValue
     tool_call_id: str = Field(min_length=1)
     outcome: Literal['success', 'failed', 'denied', 'interrupted', 'retried'] = 'success'
+    metadata: JsonValue = None
 
 
 class ToolReturnPart(ToolReturnData):
@@ -76,7 +77,6 @@ class NativeToolReturnPart(ToolReturnData):
     kind: Literal['native_tool_return'] = 'native_tool_return'
     content_file_digests: tuple[str, ...] | None = None
     tool_kind: str | None = None
-    metadata: JsonValue = None
     provider_name: str | None = None
     provider_details: dict[str, JsonValue] | None = None
 

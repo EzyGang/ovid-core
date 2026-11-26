@@ -80,7 +80,7 @@ async def test_approve_runs_tool_once_and_deny_returns_message() -> None:
 
     assert isinstance(approved, RunResult)
     assert approved.output == 'done'
-    assert tool_returns(approved.messages) == [('c1', 'success', {'content': 'danger 1', 'metadata': {}})]
+    assert tool_returns(approved.messages) == [('c1', 'success', 'danger 1')]
     assert approved.usage.tool_calls == 1
     assert isinstance(denied, RunResult)
     assert denied.output == 'done'
@@ -153,7 +153,7 @@ async def test_tool_approval_required_reruns_tool_as_approved_with_coherent_hook
     assert paused.requests.calls[0].approval is None
     assert paused.requests.calls[0].metadata == {'limit': 10}
     assert isinstance(result, RunResult)
-    assert tool_returns(result.messages) == [('k1', 'success', {'content': 'check 5', 'metadata': {}})]
+    assert tool_returns(result.messages) == [('k1', 'success', 'check 5')]
     assert check.calls == [(5, False), (5, True)]
     assert hook.events == ['before:check:False', 'before:check:True', 'after:check:True']
 

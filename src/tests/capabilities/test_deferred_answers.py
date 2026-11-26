@@ -77,7 +77,7 @@ async def test_answers_for_every_call_complete_the_run() -> None:
     assert danger.calls == [(1, True)]
     assert check.calls == [(2, False)]
     assert sorted(tool_returns(result.messages)) == [
-        ('c1', 'success', {'content': 'danger 1', 'metadata': {}}),
+        ('c1', 'success', 'danger 1'),
         ('c2', 'denied', 'no'),
     ]
     [(requests, conversation_id, run_id)] = answerer.seen
@@ -120,7 +120,7 @@ async def test_partial_answers_defer_only_unanswered_calls_until_stdio_resume() 
     assert completed['output'] == 'done'
     assert danger.calls == [(1, True)]
     assert tool_returns(await store.load(_CONVERSATION_ID)) == [
-        ('c1', 'success', {'content': 'danger 1', 'metadata': {}}),
+        ('c1', 'success', 'danger 1'),
         ('e1', 'success', 5),
     ]
     assert await store.load_deferred_requests(_CONVERSATION_ID) is None

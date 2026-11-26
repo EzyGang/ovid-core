@@ -94,7 +94,7 @@ async def test_pending_deferred_call_is_not_closed_as_orphan_and_resumes() -> No
     assert danger.calls == [(1, True)]
     stored = await disk.load(_CONVERSATION_ID)
     assert recovery_returns(stored) == []
-    assert tool_returns(stored) == [('c1', 'success', {'content': 'danger 1', 'metadata': {}})]
+    assert tool_returns(stored) == [('c1', 'success', 'danger 1')]
     assert [run.outcome for run in (await disk.load_journal(_CONVERSATION_ID)).runs] == ['lost', 'completed']
 
 
