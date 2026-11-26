@@ -246,6 +246,33 @@ Pydantic AI marks the message that the run stopped in:
 The adapter normalizes the error first, and the boundary response uses only the normalized message.
 A context-window error from a provider normalizes to `ContextWindowError` in a stream, as in `run`.
 
+### Transcript journal
+
+`PydanticAIAgentRuntime.stream` adds an internal per-run capability when the call has a `RunJournal`.
+The capability uses the run ID of the run and the request that closes pending calls on a new prompt, when there is one.
+It has the ID `ovid_core.transcript_journal`.
+
+The capability takes the `outermost` position, inside the per-run usage tracking capability.
+Thus the usage check runs before the journal records a tool call, and the journal wraps every other capability.
+
+The capability uses these Pydantic AI hooks:
+
+| Hook | Journal write |
+| --- | --- |
+| `before_run` | Keeps the `RunStartedEntry` for the first append of the run. |
+| `before_model_request` | `StepCommittedEntry` with the request and each run message that no step holds yet. |
+| `after_node_run` | `StepCommittedEntry` with the new run messages, for example the model response. |
+| `wrap_tool_execute` | `ToolIntentEntry` before the handler, and `ToolSettledEntry` after it. |
+
+The intent append completes before the tool runs.
+The settle entry comes from `wrap_tool_execute` because Pydantic AI does not call `after_tool_execute` or `on_tool_execute_error` for `ToolFailed`, `ModelRetry`, `SkipToolExecution`, `ApprovalRequired`, or `CallDeferred`.
+The capability hooks into Pydantic AI tool execution, so it records Ovid tools, passthrough Pydantic AI tools, and MCP tools.
+The run messages are the messages with the run ID of the run, converted with `message_from_pydantic`.
+[Step commits](persistence.md#step-commits) describes the entries and the end-of-run writes.
+
+`PydanticAIToolsetAdapter.idempotency_key(name, arguments)` returns the idempotency key of a call to an Ovid tool of the latest tool listing.
+It returns `None` for a tool that the listing does not contain and for arguments that are not valid.
+
 ## Usage conversion
 
 Import from `ovid_core.adapters.pydantic_ai.usage`.

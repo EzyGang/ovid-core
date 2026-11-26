@@ -45,6 +45,7 @@ from ovid_core.models import BaseModel as BaseModel
 from ovid_core.models import BaseRootModel as BaseRootModel
 from ovid_core.observability import ObservabilityConfig as ObservabilityConfig
 from ovid_core.persistence import ConversationHistoryStore as ConversationHistoryStore
+from ovid_core.persistence import ConversationJournalStore as ConversationJournalStore
 from ovid_core.persistence import ConversationStore as ConversationStore
 from ovid_core.persistence import DeferredToolRequestStore as DeferredToolRequestStore
 from ovid_core.persistence import InMemoryConversationStore as InMemoryConversationStore

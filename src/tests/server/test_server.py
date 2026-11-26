@@ -11,6 +11,7 @@ from starlette.applications import Starlette
 from ovid_core import AgentRunError, AgentRunPolicy, InMemoryConversationStore
 from ovid_core.agents import AgentStream
 from ovid_core.messages import AgentMessage, UserContent
+from ovid_core.persistence import RunJournal
 from ovid_core.runtime import AgentEvent, ConversationId, RunCompletedEvent, RunId
 from ovid_core.server import AgentRunRequest, AuthorizationResult, RequestContext, ServerConfig, create_agent_app
 from ovid_core.server.errors import _AuthorizationDeniedError, _UnknownAgentError
@@ -241,6 +242,7 @@ async def test_server_delivers_persisted_result_without_optional_completion_even
         messages: tuple[AgentMessage, ...],
         conversation_id: ConversationId,
         run_id: RunId,
+        journal: RunJournal | None,
     ) -> AsyncIterator[AgentStream[str]]:
         async with original_stream(
             prompt,
@@ -249,6 +251,7 @@ async def test_server_delivers_persisted_result_without_optional_completion_even
             messages=messages,
             conversation_id=conversation_id,
             run_id=run_id,
+            journal=journal,
         ) as stream:
 
             async def events() -> AsyncIterator[AgentEvent]:

@@ -6,12 +6,13 @@ from typing import Any
 
 from ovid_core.agent_runtime import AgentStream, OvidAgent
 from ovid_core.messages.models import AgentMessage
-from ovid_core.persistence import ConversationStore
+from ovid_core.persistence import ConversationStore, RunJournal
 from ovid_core.runtime.events import AgentEvent, RunCompletedEvent, RunDeferredEvent, RunFailedEvent
 from ovid_core.runtime.identifiers import ConversationId, RunId
 from ovid_core.server.active_runs import _ActiveRun, _ActiveRuns, _ConnectionOwner
 from ovid_core.server.contracts import AgentRegistration, AuthorizationCallback, RequestContext
 from ovid_core.server.conversations import (
+    _open_history,
     _persist_result,
     _response_from_result,
     _start_commit,
@@ -31,6 +32,7 @@ class _AgentServerSession:
     messages: tuple[AgentMessage, ...]
     conversation_id: ConversationId
     deadline: asyncio.Timeout
+    journal: RunJournal | None
 
 
 class _AgentServerRuntime:
@@ -141,17 +143,18 @@ class _AgentServerRuntime:
                         messages=session.messages,
                         conversation_id=session.conversation_id,
                         run_id=active.run_id,
+                        journal=session.journal,
                     ) as stream:
                         yield stream
                 except (Exception, asyncio.CancelledError) as error:
                     partial = _stopped_partial(
                         stream.partial() if stream is not None else None, error, session.deadline
                     )
-                    active.commit = _start_commit(self._store, partial)
+                    active.commit = _start_commit(self._store, partial, journal=session.journal)
                     active.persisted = await _wait_for_commit(active.commit, self._config.shutdown_grace_seconds)
                     raise
 
-                await _persist_result(self._store, stream.result)
+                await _persist_result(self._store, stream.result, journal=session.journal)
                 active.terminal = True
 
     @asynccontextmanager
@@ -178,7 +181,7 @@ class _AgentServerRuntime:
                 if operation is not None:
                     operation.authorization = authorization
                     self._active_runs.admit(operation, conversation_id)
-                messages = await self._store.load(conversation_id) if self._store is not None else ()
+                messages, journal = await _open_history(self._store, conversation_id, admitted=operation is not None)
                 deps = await registration.dependencies(context, authorization)
 
                 yield _AgentServerSession(
@@ -187,6 +190,7 @@ class _AgentServerRuntime:
                     messages=messages,
                     conversation_id=conversation_id,
                     deadline=deadline,
+                    journal=journal,
                 )
 
     async def cancel(self, agent_id: str, run_id: RunId, context: RequestContext) -> None:

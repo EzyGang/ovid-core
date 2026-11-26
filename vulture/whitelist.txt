@@ -99,6 +99,10 @@ _.after_node_run
 _.before_tool_execute
 _.wrap_run
 _.handle_deferred_tool_calls
+_.before_run
+_.wrap_tool_execute
+started_at
+ended_at
 ConversationStore
 InMemoryConversationStore
 MessageCodec

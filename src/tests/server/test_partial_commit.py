@@ -43,7 +43,8 @@ async def test_stdio_commit_failure_keeps_run_error_and_reports_not_persisted(mo
 
     assert failure(frames, 'r1') == ([False], 'agent_run_failed')
     assert 'private' not in str(frames)
-    assert await store.load(_CONVERSATION_ID) == ()
+    assert shape(await store.load(_CONVERSATION_ID)) == [('request', 'complete', ('user_prompt:Write.',))]
+    assert [run.outcome for run in (await store.load_journal(_CONVERSATION_ID)).runs] == [None]
 
 
 @pytest.mark.parametrize(('cause', 'run_failed'), [('suspended-history', [False]), ('upstream-start', [])])

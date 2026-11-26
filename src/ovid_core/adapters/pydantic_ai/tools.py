@@ -1,9 +1,9 @@
 from collections.abc import Sequence
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from types import TracebackType
 from typing import Any, cast
 
-from pydantic import JsonValue
+from pydantic import JsonValue, ValidationError
 from pydantic_ai import RunContext as PydanticRunContext
 from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.exceptions import UserError
@@ -39,6 +39,7 @@ class PydanticAIToolsetAdapter[Deps](AbstractToolset[Deps]):
     tool_approval: ToolApproval | None = None
     deferred_capability_id: str | None = None
     retries: AgentRetryPolicy = AgentRetryPolicy()
+    _listed: dict[str, BaseTool[Deps, Any, Any]] = field(default_factory=dict, init=False, repr=False, compare=False)
 
     @property
     def id(self) -> str:
@@ -67,7 +68,7 @@ class PydanticAIToolsetAdapter[Deps](AbstractToolset[Deps]):
         )
 
     async def get_tools(self, ctx: PydanticRunContext[Deps]) -> dict[str, ToolsetTool[Deps]]:
-        discovered = await self.source.get_tools(run_context_from_pydantic(ctx))
+        self._listed = _unique_tools(await self.source.get_tools(run_context_from_pydantic(ctx)))
 
         return {
             name: _BoundToolsetTool[Deps](
@@ -81,7 +82,7 @@ class PydanticAIToolsetAdapter[Deps](AbstractToolset[Deps]):
                 args_validator=_ANY_VALIDATOR,
                 source_tool=source_tool,
             )
-            for name, source_tool in _unique_tools(discovered).items()
+            for name, source_tool in self._listed.items()
         }
 
     async def call_tool(
@@ -95,6 +96,19 @@ class PydanticAIToolsetAdapter[Deps](AbstractToolset[Deps]):
             raise ToolExecutionError(f'Tool {name!r} is not available for this model step')
 
         return await execute_tool(name, tool.source_tool, tool_args, ctx, self.hooks, self.retries)
+
+    def idempotency_key(self, name: str, arguments: dict[str, Any]) -> str | None:
+        """Return the idempotency key of a call to a tool of the latest listing.
+
+        Returns `None` for a tool that the listing does not contain and for arguments that are not valid.
+        """
+        tool = self._listed.get(name)
+        if tool is None:
+            return None
+        try:
+            return tool.idempotency_key(tool.args_type.model_validate(arguments))
+        except ValidationError:
+            return None
 
 
 class _StaticToolset[Deps](BaseToolset[Deps]):
