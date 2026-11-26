@@ -36,7 +36,7 @@ _PYDANTIC_URL_TYPES = {
 
 def user_content_from_pydantic(content: Sequence[PydanticUserContent]) -> tuple[UserContent, ...] | None:
     """Return typed items only when they convert back to items equal to the source."""
-    items = tuple(item for item in map(_item_from_pydantic, content) if item is not None)
+    items = tuple(item for item in map(user_content_item_from_pydantic, content) if item is not None)
     if not items or user_content_to_pydantic(items) != list(content):
         return None
 
@@ -68,7 +68,7 @@ def binary_content_to_pydantic(value: BinaryContent) -> PydanticBinaryContent:
     )
 
 
-def _item_from_pydantic(value: PydanticUserContent) -> UserContent | None:
+def user_content_item_from_pydantic(value: PydanticUserContent) -> UserContent | None:
     if isinstance(value, str):
         return TextContent(content=value)
     if isinstance(value, PydanticBinaryContent):

@@ -5,6 +5,7 @@ from pydantic_ai.models import Model, ModelSelectionContext
 
 from ovid_core.adapters.pydantic_ai._agent_runtime import PydanticAIAgentRuntime
 from ovid_core.adapters.pydantic_ai._instruction_sources import pydantic_instructions
+from ovid_core.adapters.pydantic_ai._tool_hooks import OvidToolHooksCapability
 from ovid_core.adapters.pydantic_ai.extensions import adapt_agent_extensions
 from ovid_core.adapters.pydantic_ai.models import _resolve_model
 from ovid_core.agents import AgentDefinition, AgentRuntime
@@ -27,11 +28,13 @@ class DefaultAgentCompiler:
             extensions = adapt_agent_extensions(
                 definition.capabilities,
                 definition.toolsets,
-                definition.hooks,
                 tool_approval=definition.tool_approval,
                 retries=policy.retries,
             )
-            capabilities = extensions.capabilities
+            tool_hooks = OvidToolHooksCapability[Deps](
+                hooks=definition.hooks, capabilities=definition.capabilities, retries=policy.retries
+            )
+            capabilities = (*extensions.capabilities, tool_hooks)
             if resolved.handle.resolve is not None:
 
                 async def select_model(_ctx: ModelSelectionContext[Deps]) -> Model:

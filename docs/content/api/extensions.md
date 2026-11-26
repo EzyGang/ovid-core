@@ -198,7 +198,8 @@ JSON schema input remains the fallback when the provider or supported Pydantic A
 The descriptor applies the effective wire name and optional agent-wide approval override.
 It also copies `effect`.
 
-The adapter validates tool input and output. It also applies approval policy, timeouts, hooks, and tool failure results.
+The adapter validates tool input and output. It also applies approval policy, timeouts, and tool failure results.
+[Tool hooks](#tool-hooks) run around every tool of the agent.
 
 ### Declaring tool effects
 
@@ -272,7 +273,8 @@ The model can then correct the call or continue with a different step.
 | The tool raises `ToolExecutionError`. | `failed` | The error text | No |
 | The tool does not complete in `timeout_seconds`. | `failed` | `Tool '<name>' timed out after <seconds>s` | No |
 | The tool returns a value that does not match `result_type`. | `failed` | `Tool '<name>' returned an invalid result` | No |
-| The tool or a tool hook raises a different exception. | `failed` | `Tool '<name>' failed: <exception type>: <exception text>` | No |
+| The tool raises a different exception. | `failed` | `Tool '<name>' failed: <exception type>: <exception text>` | No |
+| An `after_tool` or `on_tool_error` hook raises an exception. | `failed` | `Tool call failed: hook <hook class> failed.` | No |
 
 `<name>` is the tool name that the model called.
 This name is `ToolPresentation.wire_name` when the tool sets it, and the tool `id` otherwise.
@@ -326,7 +328,7 @@ Pydantic AI owns the failure behavior of MCP tools and of tools from a Pydantic 
 ### Ask for approval or defer a call
 
 A tool can pause the run at run time.
-Raise one of these exceptions from `ovid_core.errors` in `execute` or in a tool hook:
+Raise one of these exceptions from `ovid_core.errors` in `execute`:
 
 - `ToolApprovalRequired(metadata=None)` asks the application to approve the call.
 - `ToolDeferred(metadata=None, kind='external')` gives the call to the application, which supplies the result.
@@ -356,9 +358,11 @@ The adapter also passes the Pydantic AI exceptions `ApprovalRequired` and `CallD
 
 The tool hooks run in this order:
 
-- `before_tool` runs each time the tool starts. This includes the start that raises the exception and the approved start.
+- `before_tool` runs before each start of the tool. This includes the start that raises the exception and the approved start.
 - `after_tool` runs only when the tool returns a valid result.
-- No hook runs for a call that waits because the tool requires approval. That call starts only after approval.
+- No hook runs for a call that waits because the tool definition requires approval. That call starts only after approval.
+
+A hook can also ask for approval. It returns `RequireApproval`, as [Tool hooks](#tool-hooks) describes.
 
 ### `BaseToolset[Deps]`
 
@@ -378,22 +382,168 @@ The descriptor approval is a declaration only. Each member tool still controls i
 
 ## Tool hooks
 
-Import `BaseToolHook[Deps]` from `ovid_core.hooks.base`. Override any async method:
+Import `BaseToolHook[Deps]` from `ovid_core.hooks.base`.
+Import `ToolCall`, `Proceed`, `Deny`, `RequireApproval`, and `ToolDecision` from `ovid_core.hooks.models` or `ovid_core.hooks`.
+Override any async method:
 
 ```python
-await before_tool(context, tool_id, arguments)
-await after_tool(context, tool_id, result)
-await on_tool_error(context, tool_id, error)
+async def before_tool(self, context, call) -> ToolDecision | None: ...
+async def after_tool(self, context, call, result) -> ToolResult | None: ...
+async def on_tool_error(self, context, call, error) -> ToolResult | None: ...
 ```
 
-Defaults do nothing. `arguments` is a validated `BaseModel`, `result` is a `ToolResult`, and `error` is `ToolExecutionError`.
+Each default returns `None` and changes nothing.
+`ToolDecision` is `Proceed | Deny | RequireApproval`.
 
-The adapter calls `on_tool_error` one time for each failed tool execution, before it returns or raises the failure.
-This behavior is the same for each `AgentRetryPolicy.tool_failures` value.
-A timeout supplies `ToolTimeoutError`.
-An unexpected exception or an invalid result supplies `ToolExecutionError("Tool '<id>' failed")` with the original exception as `__cause__`.
-The hook receives the tool `id` in `tool_id` and in these messages, not the wire name.
-The adapter does not call `on_tool_error` for invalid arguments, because the tool did not start.
+The hooks run for every tool of the agent:
+
+- Ovid tools.
+- MCP tools.
+- Tools from a [Pydantic AI capability passthrough](#pydantic-ai-capability-passthrough), for example Pydantic AI Harness tools.
+
+The Pydantic AI adapter runs the hooks in one Pydantic AI capability.
+The capability wraps the execution of each tool with `wrap_tool_execute`.
+
+### Hook context and tool call
+
+`context` is the `ToolExecutionContext` of the call.
+The adapter builds it for every tool source.
+`context.approved` is `True` when the application approved the call.
+
+`call` is a `ToolCall` with these fields:
+
+| Field | Value |
+| --- | --- |
+| `tool_name` | The tool name that the model called. |
+| `tool_call_id` | The ID of the call. |
+| `arguments` | The validated arguments as a JSON object. |
+| `tool_id` | The Ovid tool `id` for an Ovid tool. `None` for other tools. |
+| `capability_id` | The ID of the capability that owns the tool, or `None`. |
+| `source` | `'ovid'`, `'mcp'`, or `'external'`. |
+
+The adapter sets `source` with these rules:
+
+- `'ovid'`: the Ovid toolset adapter supplies the tool.
+- `'mcp'`: the tool definition metadata has the `annotations` and `meta` keys. `MCPToolset` writes these keys for each MCP tool.
+- `'external'`: all other tools, for example passthrough, Pydantic AI Harness, and third-party plugin tools.
+
+`call.typed(args_type)` validates `arguments` with an Ovid `BaseModel` and returns the model.
+It raises `ValidationError` when the arguments do not match.
+
+```python
+from ovid_core.hooks import BaseToolHook, RequireApproval, ToolCall, ToolDecision
+
+
+class TransferLimitHook(BaseToolHook[AppDeps]):
+    async def before_tool(self, context, call: ToolCall) -> ToolDecision | None:
+        if call.tool_id != 'transfer':
+            return None
+
+        arguments = call.typed(TransferArgs)
+        if arguments.amount <= 100:
+            return None
+
+        return RequireApproval(reason='Large transfer', metadata={'amount': arguments.amount})
+```
+
+### Hook scope and order
+
+- Hooks in `AgentDefinition.hooks` apply to every tool.
+- Hooks in `CapabilityContributions.hooks` apply only to the tools of that capability.
+- A tool without a capability gets only the agent hooks.
+
+The adapter finds the capability of a tool with these rules:
+
+1. An Ovid tool from a capability has the capability ID in `ToolDefinition.metadata['ovid_capability_id']`.
+2. For other tools, the adapter uses `ToolDefinition.capability_id`. Pydantic AI writes this value for each tool of a passthrough or MCP capability.
+3. A tool from `AgentDefinition.toolsets` has no capability.
+
+A passthrough or MCP capability does not contribute Ovid hooks.
+Thus only the agent hooks run for its tools, and `call.capability_id` names the capability.
+
+The agent hooks run first, and then the capability hooks.
+Each group runs in registration order, so the order of the hooks is deterministic.
+
+### Decisions of `before_tool`
+
+`before_tool` runs before each start of the tool.
+The adapter stops the chain at the first `Deny` or `RequireApproval`.
+
+| Return value | Result |
+| --- | --- |
+| `None` | The call continues with the current arguments. |
+| `Proceed(arguments={...})` | The new arguments go to the next hooks and to the tool. |
+| `Deny(message='The tool call was denied.')` | The tool does not run. The model receives `message` as a tool result with the outcome `denied`. The run continues. |
+| `RequireApproval(reason=None, metadata={})` | The tool does not run. The run stops with a `DeferredRunResult` that contains one `approval` request. |
+
+The adapter validates the arguments of `Proceed` again with the argument schema of the tool.
+For an Ovid tool, the adapter also validates them with `args_type`.
+A validation failure denies the call.
+The denial message is `Invalid arguments for tool '<name>':` and one `<field>: <message>` line for each error.
+
+The request of a `RequireApproval` decision has these values:
+
+- `kind` is `'approval'`.
+- `approval` is `ToolApproval(required=True, reason=reason, metadata=metadata)`.
+- `metadata` is the decision metadata, or `None` when the metadata is empty.
+
+The `tool_deferred` event carries `reason` and `metadata`.
+When the application approves the call on `resume`, `context.approved` is `True`.
+The adapter then ignores each `RequireApproval`, and the tool runs one time.
+
+### Rewrite a result
+
+`after_tool` runs after each start of the tool that returns a result.
+`result` is the current `ToolResult`.
+Return a new `ToolResult` to replace the result, or return `None` to keep it.
+The next hooks receive the new result.
+A rewrite replaces the complete result.
+
+The adapter maps the result of each tool source to a `ToolResult`:
+
+- `content` gets the return value. Each file in the return value goes to `files`.
+- `metadata` gets the Pydantic AI `ToolReturn.metadata`.
+
+After a rewrite, the model receives `content` and `files`.
+`metadata` stays out of the model request, as it does for an Ovid tool result.
+
+### Recover from a failure
+
+`on_tool_error` runs when the tool fails.
+The first hook that returns a `ToolResult` recovers the call.
+The model then receives that result with the outcome `success`.
+When no hook recovers the call, the failure continues as [Tool failure results](#tool-failure-results) describes.
+
+`error` is a `ToolExecutionError`:
+
+- An Ovid `ToolExecutionError` gives that error. For example, a timeout gives `ToolTimeoutError`, and a `ToolRetryError` gives that `ToolRetryError`.
+- Another exception or an invalid result of an Ovid tool gives `ToolExecutionError("Tool '<id>' failed")`.
+- A failure of another tool gives `ToolExecutionError("Tool '<name>' failed")`.
+
+In the last two cases, the original exception is `__cause__`.
+
+`on_tool_error` does not run for these conditions:
+
+- The arguments are not valid. The tool did not start.
+- A Pydantic AI `ModelRetry` or `ValidationError` asks the model to correct the call.
+- A tool defers the call. A deferral is not a failure.
+- The run is cancelled.
+
+### Hook failures
+
+The adapter fails closed:
+
+- An exception in `before_tool` denies the call. The message is `Tool call denied: hook <hook class> failed.`
+- An exception in `after_tool` or `on_tool_error` fails the call. The message is `Tool call failed: hook <hook class> failed.`
+- The adapter does not catch `asyncio.CancelledError`.
+
+The messages do not contain the exception text.
+After a failed `after_tool`, the original result does not go to the model.
+In the `'raise'` failure mode, a failed `after_tool` or `on_tool_error` raises `ToolExecutionError` with the message.
+
+For `InterruptedRunResume`, the replay check runs outside the hooks.
+A stored answer and an UNKNOWN answer come back without a hook call.
+An open call that the replay runs again goes through the hooks like a new call.
 
 ## Capability contracts
 
@@ -475,10 +625,11 @@ An always-available capability without an explicit ID receives a stable snake-ca
 Deferred capabilities require an explicit upstream ID because message history must refer to a stable value. Explicit IDs
 must be non-empty and trimmed. Ovid rejects collisions between passthrough and Ovid capability IDs.
 
-Passthrough does not convert upstream tools into Ovid `BaseTool` values. Ovid approval metadata, `BaseToolHook` hooks,
+Passthrough does not convert upstream tools into Ovid `BaseTool` values. Ovid approval metadata,
 tool-result validation, service requirements, and Ovid tool timeout policy do not apply to those upstream tools. The
 source capability keeps its own Pydantic AI behavior. Applications must install its optional dependencies and own any
 resources it opens.
+Ovid [tool hooks](#tool-hooks) apply to those upstream tools.
 
 Capabilities that replace model selection, add message or event values outside Ovid's normalized unions, or impose
 durable-execution rules may conflict with Ovid routing, diagnostics, persistence, streaming, or per-run usage tracking.

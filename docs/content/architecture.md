@@ -231,7 +231,8 @@ A capability can contribute:
 
 The compiler checks all extension IDs. It reports a collision if two effective IDs are equal.
 
-The adapter then converts provider, Agent Skills, and MCP capabilities. It also combines the toolsets and connects the hooks.
+The adapter then converts provider, Agent Skills, and MCP capabilities. It also combines the toolsets.
+The compiler adds one capability that runs the hooks around every tool, including MCP and passthrough tools.
 
 A deferred capability and its tools stay outside the initial tool list.
 The model can load the capability when it needs the capability.

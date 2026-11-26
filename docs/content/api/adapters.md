@@ -89,7 +89,7 @@ Invalid runtime values or construction failures raise `AgentConstructionError`.
 Import from `ovid_core.adapters.pydantic_ai.extensions`.
 
 - `PydanticAIExtensions[Deps]` is a frozen dataclass containing adapted `capabilities` and `toolsets`.
-- `adapt_agent_extensions(capabilities, toolsets, hooks, tool_approval=None, retries=AgentRetryPolicy())` returns the adapter bundle.
+- `adapt_agent_extensions(capabilities, toolsets, tool_approval=None, retries=AgentRetryPolicy())` returns the adapter bundle.
 
 `adapt_agent_extensions`:
 
@@ -101,13 +101,16 @@ Import from `ovid_core.adapters.pydantic_ai.extensions`.
 
 Import from `ovid_core.adapters.pydantic_ai.tools`:
 
-- `PydanticAIToolsetAdapter(source=..., hooks=(), tool_approval=None, deferred_capability_id=None, retries=AgentRetryPolicy())` adapts a `BaseToolset` to Pydantic AI lifecycle and execution.
+- `PydanticAIToolsetAdapter(source=..., tool_approval=None, capability_id=None, deferred_capability_id=None, retries=AgentRetryPolicy())` adapts a `BaseToolset` to Pydantic AI lifecycle and execution.
+  `capability_id` names the capability that owns the tools.
   `deferred_capability_id` names the deferred capability that owns the tools.
+  `listed_tool(name)` returns the Ovid tool of the latest listing with that wire name, or `None`.
 - `PydanticAICapabilityAdapter(source)` adapts the instructions and model settings of an Ovid capability.
   It keeps static instruction strings and wraps each dynamic source in a Pydantic AI instruction function or model-settings callable that receives the Ovid `RunContext`.
-  `adapt_agent_extensions` adapts the tools, toolsets, and hooks of the capability.
+  `adapt_agent_extensions` adapts the tools and toolsets of the capability.
 
 Each Ovid tool definition has `metadata['ovid_approval']` and `metadata['ovid_effect']` as JSON.
+An Ovid tool from a capability also has the capability ID in `metadata['ovid_capability_id']`.
 Import `resolve_effect(tool_def)` from `ovid_core.adapters.pydantic_ai.effects` or `ovid_core.adapters.pydantic_ai`.
 It returns the `ToolEffect` of an Ovid tool, an MCP tool, or another Pydantic AI tool.
 [Declaring tool effects](extensions.md#declaring-tool-effects) gives the rules.
@@ -142,6 +145,8 @@ The capability gives back a success result as `SkipToolExecution(ToolReturn(...)
 It raises `ModelRetry` for a retry, and `ToolFailed` for a failed result.
 It gives back a denied result as `SkipToolExecution(ToolDenied(...))`.
 An open call that must not run raises `SkipToolExecution` with the UNKNOWN recovery text.
+The capability returns `CapabilityOrdering(wraps=(OvidToolHooksCapability,))` from `get_ordering`.
+Thus Pydantic AI places it outside the tool hooks capability, and only a call that runs reaches the hooks.
 [Interrupted runs](agents.md#interrupted-runs) describes the rules.
 
 Import `adapt_integration_capability` from `ovid_core.adapters.pydantic_ai.integrations`.
@@ -159,11 +164,35 @@ During execution, the adapter:
 - validates argument and result models
 - applies approval policy
 - applies timeouts
-- applies hooks
 - maps `ToolResult` to a Pydantic AI `ToolReturn`: `content` and `files` go to the model, and `metadata` stays out of band
 - preserves cancellation
 
 Duplicate tool or extension IDs raise `ExtensionCollisionError`.
+
+## Tool hooks capability
+
+`DefaultAgentCompiler` adds one agent capability that runs the Ovid tool hooks.
+It receives `AgentDefinition.hooks` and the `hooks` that each capability contributes.
+The capability implements `wrap_tool_execute`, so it runs for Ovid tools, MCP tools, and passthrough tools.
+It is the only place that runs tool hooks.
+[Tool hooks](extensions.md#tool-hooks) gives the hook contract.
+
+The capability maps the hook decisions to Pydantic AI values:
+
+| Hook value | Pydantic AI value |
+| --- | --- |
+| `Deny(message)` | `SkipToolExecution(ToolDenied(message))`, which records a tool result with the outcome `denied` |
+| `RequireApproval(reason, metadata)` | `ApprovalRequired` when `ctx.tool_call_approved` is `False` |
+| `Proceed(arguments)` | The arguments that the tool validator returns for the new JSON arguments |
+| A `ToolResult` from `after_tool` or `on_tool_error` | A `ToolReturn` with `content` and `files` as the return value and `metadata` out of band |
+
+The `ApprovalRequired` metadata carries the `ToolApproval` of the decision under the key `ovid_hook_approval`.
+The result conversion reads this key and gives the request its `approval` and the decision `metadata`.
+
+The capability catches each failure of the tool handler except `SkipToolExecution`, `CallDeferred`, and `ApprovalRequired`.
+It reads the Ovid `ToolExecutionError` from the `__cause__` chain.
+A Pydantic AI `ToolRetryError`, `ModelRetry`, or `ValidationError` without an Ovid error in its chain is a retry, not a failure.
+Pydantic AI does not call `on_tool_execute_error` for `ToolFailed` or `ModelRetry`, so the capability uses `wrap_tool_execute`.
 
 ## Message conversion
 

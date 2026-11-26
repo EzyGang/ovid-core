@@ -1,11 +1,12 @@
 from collections.abc import Awaitable, Callable
 
 from pydantic_ai import RunContext, ToolReturn
-from pydantic_ai.capabilities import AbstractCapability, ValidatedToolArgs
+from pydantic_ai.capabilities import AbstractCapability, CapabilityOrdering, ValidatedToolArgs
 from pydantic_ai.exceptions import ModelRetry, SkipToolExecution, ToolFailed
 from pydantic_ai.messages import ToolCallPart as PydanticToolCallPart
 from pydantic_ai.tools import ToolDefinition, ToolDenied
 
+from ovid_core.adapters.pydantic_ai._tool_hooks import OvidToolHooksCapability
 from ovid_core.adapters.pydantic_ai.effects import resolve_effect
 from ovid_core.errors import NothingToResumeError
 from ovid_core.messages.models import AgentMessage, RetryPromptPart, ToolReturnPart, pending_tool_calls
@@ -20,7 +21,7 @@ class InterruptedRunReplay[Deps](AbstractCapability[Deps]):
     When the last response has open calls, the history ends at that response, so the run executes all its calls again.
     A call with a stored answer never runs again. It gives back that answer with its kind when Pydantic AI can
     reproduce it, and the UNKNOWN result otherwise. An open call runs only when its current tool is safe to replay.
-    Another open call returns the UNKNOWN result.
+    Another open call returns the UNKNOWN result. The replay wraps the tool hooks, so only a call that runs meets them.
     """
 
     def __init__(self, messages: tuple[AgentMessage, ...]) -> None:
@@ -44,6 +45,9 @@ class InterruptedRunReplay[Deps](AbstractCapability[Deps]):
             for part in message.parts
             if isinstance(part, ToolReturnPart | RetryPromptPart)
         }
+
+    def get_ordering(self) -> CapabilityOrdering:
+        return CapabilityOrdering(wraps=(OvidToolHooksCapability,))
 
     async def wrap_tool_execute[Result](
         self,
