@@ -45,6 +45,8 @@ The capability contributes:
 The Effect column shows the `ToolEffect` of each tool.
 The four built-in `edit` tools (`native_files_replace`, `native_files_patch`, `native_files_apply_patch`, and `native_files_hashline`) all declare `workspace_write` and `unsafe`.
 [Declaring tool effects](../api/extensions.md#declaring-tool-effects) explains the values.
+The `edit` tool comes from the dynamic toolset `native_files_edit_mode`.
+Its `AgentToolsetDescriptor.approval` declares the same approval as the `edit` tools, so an application can show it before the run starts.
 
 Approval is an application tool-call policy.
 The example overrides the tool defaults.

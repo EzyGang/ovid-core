@@ -110,7 +110,11 @@ async def test_factory_exposes_extension_context_before_compilation() -> None:
 
     assert capability == bound_capability.descriptor(source='caller')
     assert tool == source_tool.descriptor(source='arithmetic', approval=prepared.definition.tool_approval)
-    assert prepared.context.toolsets[0] == prepared.definition.toolsets[0].descriptor(source='caller')
+    toolset = prepared.context.toolsets[0]
+    assert toolset == prepared.definition.toolsets[0].descriptor(
+        source='caller',
+        approval=prepared.definition.tool_approval,
+    )
 
     assert prepared.context.model == 'primary'
     assert (capability.id, capability.source, capability.instructions) == (
@@ -123,10 +127,11 @@ async def test_factory_exposes_extension_context_before_compilation() -> None:
     assert tool.approval.reason == 'Application policy'
     assert tool.timeout_seconds == 4.0
     assert tool.defer_loading
-    assert prepared.context.toolsets[0].model_dump() == {
+    assert toolset.model_dump() == {
         'id': 'consumer',
         'description': None,
         'dynamic': True,
+        'approval': {'required': False, 'reason': 'Application policy', 'metadata': {}},
         'source': 'caller',
     }
 

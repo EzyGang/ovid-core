@@ -363,3 +363,15 @@ def test_consumer_module_has_no_pydantic_ai_dependency() -> None:
         if not name.startswith('_')
     )
     assert ToolApproval().model_dump() == {'required': False, 'reason': None, 'metadata': {}}
+
+
+def test_toolset_descriptor_carries_class_approval_and_override() -> None:
+    toolset = TrackingToolset(())
+    assert toolset.descriptor(source='caller').approval is None
+
+    declared = ToolApproval(required=True, reason='Approve arithmetic')
+    toolset.approval = declared
+    override = ToolApproval(required=False, reason='Application policy')
+
+    assert toolset.descriptor(source='caller').approval == declared
+    assert toolset.descriptor(source='caller', approval=override).approval == override

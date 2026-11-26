@@ -316,7 +316,12 @@ Define `id` and implement `async get_tools(context) -> Sequence[BaseTool[Deps, A
 - `__aenter__() -> Self`
 - `__aexit__(exception_type, exception, traceback) -> bool | None`
 
-`descriptor(source=...)` returns the dynamic `AgentToolsetDescriptor` used during agent preparation.
+`descriptor(source=..., approval=None)` returns the dynamic `AgentToolsetDescriptor` used during agent preparation.
+Set the class attribute `approval` to declare one `ToolApproval` for all members of the toolset.
+The default is `None`, which means that the toolset declares no approval.
+When you give the `approval` keyword, the descriptor uses it instead of the class attribute.
+The agent factory gives `AgentDefinition.tool_approval` as this keyword, as it does for each tool.
+The descriptor approval is a declaration only. Each member tool still controls its approval at run time.
 
 ## Tool hooks
 
