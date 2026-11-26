@@ -10,7 +10,6 @@ from pydantic_ai.messages import ModelMessage
 from pydantic_ai.messages import UserContent as PydanticUserContent
 from pydantic_ai.tools import DeferredToolRequests as PydanticDeferredToolRequests
 from pydantic_ai.tools import DeferredToolResults
-from pydantic_ai.usage import UsageLimits
 
 from ovid_core.adapters.pydantic_ai._agent_errors import normalize_run_error
 from ovid_core.adapters.pydantic_ai._agent_stream import PydanticAIStream
@@ -20,8 +19,9 @@ from ovid_core.adapters.pydantic_ai._deferred_tools import (
     deferred_results_to_pydantic,
     interrupted_calls,
 )
+from ovid_core.adapters.pydantic_ai._interrupted_replay import InterruptedRunReplay
 from ovid_core.adapters.pydantic_ai._journal import TranscriptJournalCapability
-from ovid_core.adapters.pydantic_ai._usage_tracking import RunUsageRecorder, UsageTrackingCapability
+from ovid_core.adapters.pydantic_ai._usage_tracking import RunUsageRecorder, UsageTrackingCapability, usage_limits
 from ovid_core.adapters.pydantic_ai._user_content import user_content_to_pydantic
 from ovid_core.adapters.pydantic_ai.messages import message_to_pydantic
 from ovid_core.adapters.pydantic_ai.results import result_from_pydantic
@@ -33,7 +33,7 @@ from ovid_core.persistence import RunJournal
 from ovid_core.policy import AgentRunPolicy
 from ovid_core.runtime.identifiers import ConversationId, RunId
 from ovid_core.runtime.results import DeferredRunResult, RunResult
-from ovid_core.tools.deferred import DeferredToolResume
+from ovid_core.tools.deferred import DeferredToolResume, InterruptedRunResume
 from ovid_core.usage.tracking import UsageTracker
 
 
@@ -67,7 +67,7 @@ class PydanticAIAgentRuntime[Deps, Output](AgentRuntime[Deps, Output]):
         self,
         prompt: str | Sequence[UserContent] | None,
         *,
-        resume: DeferredToolResume | None,
+        resume: DeferredToolResume | InterruptedRunResume | None,
         deps: Deps,
         messages: tuple[AgentMessage, ...],
         run_id: RunId | None,
@@ -85,7 +85,7 @@ class PydanticAIAgentRuntime[Deps, Output](AgentRuntime[Deps, Output]):
                     deferred_tool_results=run.results,
                     run_id=str(run.run_id),
                     conversation_id=str(run.conversation_id),
-                    usage_limits=_usage_limits(self._policy),
+                    usage_limits=usage_limits(self._policy),
                     capabilities=run.capabilities,
                 )
             normalized = result_from_pydantic(result, approvals=run.approvals.approvals, interrupted=run.interrupted)
@@ -99,7 +99,7 @@ class PydanticAIAgentRuntime[Deps, Output](AgentRuntime[Deps, Output]):
         self,
         prompt: str | Sequence[UserContent] | None,
         *,
-        resume: DeferredToolResume | None,
+        resume: DeferredToolResume | InterruptedRunResume | None,
         deps: Deps,
         messages: tuple[AgentMessage, ...],
         run_id: RunId | None,
@@ -123,7 +123,7 @@ class PydanticAIAgentRuntime[Deps, Output](AgentRuntime[Deps, Output]):
         self,
         prompt: str | Sequence[UserContent] | None,
         *,
-        resume: DeferredToolResume | None,
+        resume: DeferredToolResume | InterruptedRunResume | None,
         deps: Deps,
         messages: tuple[AgentMessage, ...],
         run_id: RunId | None,
@@ -145,7 +145,7 @@ class PydanticAIAgentRuntime[Deps, Output](AgentRuntime[Deps, Output]):
                         deferred_tool_results=run.results,
                         run_id=str(run.run_id),
                         conversation_id=str(run.conversation_id),
-                        usage_limits=_usage_limits(self._policy),
+                        usage_limits=usage_limits(self._policy),
                         capabilities=run.capabilities,
                     ) as events,
                 ):
@@ -171,7 +171,7 @@ class PydanticAIAgentRuntime[Deps, Output](AgentRuntime[Deps, Output]):
     def _run_input(
         self,
         prompt: str | Sequence[UserContent] | None,
-        resume: DeferredToolResume | None,
+        resume: DeferredToolResume | InterruptedRunResume | None,
         messages: tuple[AgentMessage, ...],
         run_id: RunId | None,
         conversation_id: ConversationId | None,
@@ -179,12 +179,14 @@ class PydanticAIAgentRuntime[Deps, Output](AgentRuntime[Deps, Output]):
         *,
         journal: RunJournal | None,
     ) -> _RunInput[Deps]:
-        if prompt is None and resume is None:
-            raise AgentRunInputError('Agent run requires a prompt or resume input')
+        if resume is None if prompt is None else isinstance(resume, InterruptedRunResume):
+            raise AgentRunInputError('Agent run requires a prompt or resume input, not both for an interrupted run')
 
         run_identity, conversation_identity = _identities(messages, run_id, conversation_id)
         interrupted = interrupted_calls(messages, conversation_identity) if resume is None else None
-        history = messages if interrupted is None else (*messages, interrupted.closing)
+        replay = InterruptedRunReplay[Deps](messages) if isinstance(resume, InterruptedRunResume) else None
+        base = messages if replay is None else replay.history
+        history = base if interrupted is None else (*base, interrupted.closing)
         recorder = RunUsageRecorder(tracker=usage_tracker)
         approvals = StaticApprovalRecorder[Deps]()
         usage = UsageTrackingCapability[Deps](tracker=usage_tracker, recorder=recorder)
@@ -198,12 +200,12 @@ class PydanticAIAgentRuntime[Deps, Output](AgentRuntime[Deps, Output]):
         return _RunInput(
             prompt=prompt if prompt is None or isinstance(prompt, str) else user_content_to_pydantic(prompt),
             history=tuple(message_to_pydantic(message) for message in history),
-            results=deferred_results_to_pydantic(resume.answers) if resume is not None else None,
+            results=deferred_results_to_pydantic(resume.answers) if isinstance(resume, DeferredToolResume) else None,
             run_id=run_identity,
             conversation_id=conversation_identity,
             recorder=recorder,
             approvals=approvals,
-            capabilities=(usage, approvals, *journaling),
+            capabilities=(usage, approvals, *journaling, *(() if replay is None else (replay,))),
             interrupted=interrupted,
         )
 
@@ -219,20 +221,6 @@ def _identities(
     )
 
     return run_id or RunId.new(), conversation_id or inherited_conversation_id or ConversationId.new()
-
-
-def _usage_limits(policy: AgentRunPolicy) -> UsageLimits:
-    limits = policy.limits
-
-    return UsageLimits(
-        request_limit=limits.requests,
-        tool_calls_limit=limits.tool_calls,
-        input_tokens_limit=limits.input_tokens,
-        output_tokens_limit=limits.output_tokens,
-        total_tokens_limit=limits.total_tokens,
-        per_request_input_tokens_limit=limits.per_request_input_tokens,
-        count_tokens_before_request=limits.count_tokens_before_request,
-    )
 
 
 def _raise_normalized(error: Exception) -> Never:

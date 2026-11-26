@@ -88,3 +88,9 @@ class DeferredToolResume(BaseModel):
         self.requests.check_answers(self.answers)
 
         return self
+
+
+class InterruptedRunResume(BaseModel):
+    """Continue the interrupted run of the given history without a new prompt."""
+
+    kind: Literal['interrupted'] = 'interrupted'

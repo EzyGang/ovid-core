@@ -13,7 +13,7 @@ from ovid_core.routing.models import ResolvedModel
 from ovid_core.runtime.events import AgentEvent
 from ovid_core.runtime.identifiers import ConversationId, RunId
 from ovid_core.runtime.results import DeferredRunResult, PartialRunResult, RunResult
-from ovid_core.tools.deferred import DeferredToolResume
+from ovid_core.tools.deferred import DeferredToolResume, InterruptedRunResume
 from ovid_core.usage.tracking import UsageTracker
 
 
@@ -32,7 +32,7 @@ class AgentRuntime[Deps, Output](Protocol):
         self,
         prompt: str | Sequence[UserContent] | None,
         *,
-        resume: DeferredToolResume | None,
+        resume: DeferredToolResume | InterruptedRunResume | None,
         deps: Deps,
         messages: tuple[AgentMessage, ...],
         run_id: RunId | None,
@@ -45,7 +45,7 @@ class AgentRuntime[Deps, Output](Protocol):
         self,
         prompt: str | Sequence[UserContent] | None,
         *,
-        resume: DeferredToolResume | None,
+        resume: DeferredToolResume | InterruptedRunResume | None,
         deps: Deps,
         messages: tuple[AgentMessage, ...],
         run_id: RunId | None,
@@ -80,7 +80,7 @@ class OvidAgent[Deps, Output]:
         self,
         prompt: str | Sequence[UserContent] | None = None,
         *,
-        resume: DeferredToolResume | None = None,
+        resume: DeferredToolResume | InterruptedRunResume | None = None,
         deps: Deps,
         messages: tuple[AgentMessage, ...] = (),
         run_id: RunId | None = None,
@@ -104,7 +104,7 @@ class OvidAgent[Deps, Output]:
         self,
         prompt: str | Sequence[UserContent] | None = None,
         *,
-        resume: DeferredToolResume | None = None,
+        resume: DeferredToolResume | InterruptedRunResume | None = None,
         deps: Deps,
         messages: tuple[AgentMessage, ...] = (),
         run_id: RunId | None = None,
@@ -130,7 +130,7 @@ class OvidAgent[Deps, Output]:
         self,
         prompt: str | Sequence[UserContent] | None,
         *,
-        resume: DeferredToolResume | None,
+        resume: DeferredToolResume | InterruptedRunResume | None,
         deps: Deps,
         messages: tuple[AgentMessage, ...],
         run_id: RunId | None,

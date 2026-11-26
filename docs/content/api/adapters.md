@@ -135,6 +135,15 @@ It adds one request with a tool result for each call, with the Pydantic AI text 
 The request has no run ID, because Pydantic AI rejects a history that contains the ID of the current run.
 The request is the first message of `result.messages`, and `result.history` is the input history followed by `result.messages`.
 
+For `InterruptedRunResume`, the runtime gives no `DeferredToolResults` and passes `user_prompt=None` to Pydantic AI.
+It also adds a capability whose `wrap_tool_execute` checks each call of the last response before the tool runs.
+A call with a stored answer never runs again.
+The capability gives back a success result as `SkipToolExecution(ToolReturn(...))` with its metadata.
+It raises `ModelRetry` for a retry, and `ToolFailed` for a failed result.
+It gives back a denied result as `SkipToolExecution(ToolDenied(...))`.
+An open call that must not run raises `SkipToolExecution` with the UNKNOWN recovery text.
+[Interrupted runs](agents.md#interrupted-runs) describes the rules.
+
 Import `adapt_integration_capability` from `ovid_core.adapters.pydantic_ai.integrations`.
 
 `adapt_integration_capability` adapts these capability types:

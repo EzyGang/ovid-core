@@ -6,7 +6,9 @@ from ovid_core.errors import (
     ContextWindowError,
     CredentialError,
     DeferredToolAnswerError,
+    NothingToResumeError,
     OvidCoreError,
+    ResumeLimitError,
     TransportError,
 )
 from ovid_core.server.models import ServerErrorResponse
@@ -81,6 +83,12 @@ def _ovid_error_response(error: OvidCoreError) -> ServerErrorResponse:
 
     if isinstance(error, DeferredToolAnswerError):
         return ServerErrorResponse(code='invalid_tool_answers', message=str(error))
+
+    if isinstance(error, NothingToResumeError):
+        return ServerErrorResponse(code='nothing_to_resume', message=str(error))
+
+    if isinstance(error, ResumeLimitError):
+        return ServerErrorResponse(code='resume_limit_exceeded', message=str(error))
 
     if isinstance(error, AgentRunError):
         return ServerErrorResponse(code='agent_run_failed', message=str(error))

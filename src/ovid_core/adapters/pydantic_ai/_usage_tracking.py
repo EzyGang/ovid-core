@@ -7,8 +7,10 @@ from pydantic_ai.messages import ToolCallPart
 from pydantic_ai.models import ModelRequestContext
 from pydantic_ai.run import AgentRunResult
 from pydantic_ai.tools import ToolDefinition
+from pydantic_ai.usage import UsageLimits
 
 from ovid_core.adapters.pydantic_ai.usage import aggregate_usage_from_pydantic
+from ovid_core.policy import AgentRunPolicy
 from ovid_core.usage.models import Usage
 from ovid_core.usage.tracking import UsageTracker
 
@@ -85,3 +87,17 @@ class UsageTrackingCapability[Deps](AbstractCapability[Deps]):
             return await handler()
         finally:
             await self._recorder.record(aggregate_usage_from_pydantic(ctx.usage))
+
+
+def usage_limits(policy: AgentRunPolicy) -> UsageLimits:
+    limits = policy.limits
+
+    return UsageLimits(
+        request_limit=limits.requests,
+        tool_calls_limit=limits.tool_calls,
+        input_tokens_limit=limits.input_tokens,
+        output_tokens_limit=limits.output_tokens,
+        total_tokens_limit=limits.total_tokens,
+        per_request_input_tokens_limit=limits.per_request_input_tokens,
+        count_tokens_before_request=limits.count_tokens_before_request,
+    )

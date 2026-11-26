@@ -137,6 +137,14 @@ It raises `DeferredToolAnswerError` in these conditions:
 - An answer names a call that is not pending.
 - An answer does not match the call kind. For example, a `ToolCallReturned` cannot answer an `approval` call.
 
+### `InterruptedRunResume`
+
+- `kind: Literal['interrupted'] = 'interrupted'`
+
+Pass this value as `resume` to continue a run that stopped without pending calls.
+The run has no prompt.
+[Interrupted runs](agents.md#interrupted-runs) describes the run.
+
 ## Tool contracts
 
 Import from `ovid_core.tools.base`.

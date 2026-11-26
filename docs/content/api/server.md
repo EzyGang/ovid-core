@@ -17,16 +17,20 @@ Import from `ovid_core.server.models`.
 | `max_concurrency` | `32` | positive |
 | `allowed_origins` | `()` | exact CORS origins |
 | `shutdown_grace_seconds` | `10` | positive |
+| `resume_restart_limit` | `3` | positive |
 
 `AgentRunRequest` contains these fields:
 
 - `prompt`: a non-empty string, a non-empty array of content items, or `null`.
 - `answers`: a non-empty object that maps a pending tool call ID to an answer, or `null`.
 - `conversation_id`: optional.
+- `resume`: `true` to continue an interrupted run. The default is `false`.
 
-A request needs a `prompt`, `answers`, or both.
-A request with `answers` needs a `conversation_id`.
+A request needs a `prompt`, `answers`, or both, unless it sets `resume`.
+A request with `resume` cannot contain a `prompt` or `answers`.
+A request with `answers` or `resume` needs a `conversation_id`.
 [Deferred tool calls](#deferred-tool-calls) describes the answers.
+[Resume](#resume) describes `resume`.
 [User content items](runtime.md#user-content-items) lists each item and its JSON fields.
 
 ```json
@@ -168,6 +172,37 @@ A run that is not admitted, such as an AG-UI run, does not recover, because an o
 
 Recovery does not answer a pending deferred call.
 A resume of that call works after recovery.
+
+### Resume
+
+A run that stopped without a result can continue without a new prompt.
+Send a request with `resume` and the same `conversation_id`:
+
+```json
+{"conversation_id": "7d2c9b0e-4f5a-4bd8-9a39-3b6f0c1e2d4a", "resume": true}
+```
+
+The server refuses the resume before recovery changes the conversation in these conditions:
+
+| Condition | Error code |
+| --- | --- |
+| The store holds pending deferred calls that have no result in the stored messages. These calls need answers. | `nothing_to_resume` |
+| The journal shows `resume_restart_limit` or more stopped runs in a row. | `resume_limit_exceeded` |
+
+[`restart_count`](persistence.md#restart-count) gives the number of stopped runs in a row.
+The `resume_limit_exceeded` message is `Run was interrupted <count> times. Send a new prompt.`
+A new prompt does not have this limit, and a completed run starts a new count.
+A store without `ConversationJournalStore` has no run outcomes, so the server does not apply the limit.
+
+Then the server recovers the conversation with `replay_safe=True`, as [Recovery](persistence.md#recovery) describes.
+Recovery keeps open each started call of the last response whose journal intent is safe to replay.
+The server starts the run with `InterruptedRunResume`, and [Interrupted runs](agents.md#interrupted-runs) describes the run.
+The run checks the effect of the current tool again before a call runs.
+Thus a call runs again only when its journal intent and its current tool both have `replay='safe'`.
+
+A conversation without an interrupted run returns `nothing_to_resume`.
+For example, an empty conversation or a conversation whose last run completed has no interrupted run.
+A resume that stops again gets its own partial commit and journal outcome.
 
 ## Registration and callbacks
 

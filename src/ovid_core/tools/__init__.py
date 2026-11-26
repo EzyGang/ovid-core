@@ -8,6 +8,7 @@ from ovid_core.tools.deferred import DeferredToolKind as DeferredToolKind
 from ovid_core.tools.deferred import DeferredToolRequest as DeferredToolRequest
 from ovid_core.tools.deferred import DeferredToolRequests as DeferredToolRequests
 from ovid_core.tools.deferred import DeferredToolResume as DeferredToolResume
+from ovid_core.tools.deferred import InterruptedRunResume as InterruptedRunResume
 from ovid_core.tools.deferred import ToolCallApproved as ToolCallApproved
 from ovid_core.tools.deferred import ToolCallDenied as ToolCallDenied
 from ovid_core.tools.deferred import ToolCallFailed as ToolCallFailed
