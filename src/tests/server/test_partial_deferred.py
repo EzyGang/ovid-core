@@ -55,11 +55,10 @@ async def test_deferred_run_storage_is_unchanged_and_partial_commit_keeps_pendin
     assert shape(stored[len(deferred_messages) :]) == [
         ('request', 'complete', ('return:c1:interrupted',)),
         ('request', 'complete', ('user_prompt:Next.',)),
-        ('response', 'interrupted', ()),
-        ('response', 'interrupted', ('text:[Run ended: failed: Agent run failed]',)),
+        ('response', 'interrupted', ('text:[Run ended: failed: Provider request failed (unavailable)]',)),
     ]
     errors = [frame['error'] for frame in failed if frame['type'] == 'error']
     assert [error['code'] for error in errors if isinstance(error, dict)] == [
-        'agent_run_failed',
+        'provider_error',
         'invalid_tool_answers',
     ]

@@ -55,7 +55,7 @@ OvidCoreError
 | `CredentialError` | Missing, unsupported, or failed credential resolution. |
 | `AuthenticationError` | Unknown providers, invalid authentication flows, inactive sessions, and failed generic provider authentication. |
 | `CodexAuthError` | Codex browser login, device login, token parsing, refresh, and credential-storage failures. |
-| `ProviderError` | Invalid or unsupported provider messages, usage, and results. |
+| `ProviderError` | Provider request failures after retries, and invalid or unsupported provider messages, usage, and results. Server code `provider_error`. |
 | `PersistenceError` | Invalid or unsupported persisted message records. |
 | `ModelResolutionError` | Unknown selectors, alias collisions, provider construction, Codex catalog, or incompatible model settings. |
 | `AgentConstructionError` | Agent or adapter extension compilation failures, and invalid Agent Skills libraries at run start. |
@@ -98,6 +98,23 @@ Refer to [Tool failure results](extensions.md#tool-failure-results) for the full
 
 A run raises `AgentRunError` when a tool has no retry budget left.
 A run raises a tool error only for a host fault or when `AgentRetryPolicy.tool_failures` is `'raise'`.
+
+## Provider errors
+
+A run raises `ProviderError` when a provider request fails after the retries of `AgentRunPolicy.provider_retry`.
+Authentication failures, unavailable credentials, timeouts, and context-window overflows keep their own error types.
+`ProviderError` has these attributes:
+
+| Attribute | Default | Meaning |
+| --- | --- | --- |
+| `failure_kind` | `ProviderFailureKind.UNKNOWN` | Classification of the failure. |
+| `status_code` | `None` | Provider HTTP status. |
+| `provider_code` | `None` | Error code that the provider sent. |
+| `retry_after_seconds` | `None` | Wait in seconds that the provider asked for. |
+
+The message states the failure kind, the status, and the requested wait.
+It never contains the provider error message.
+When a route has more than one candidate and all candidates fail, the run raises `AgentRunError`.
 
 ## Catching errors
 

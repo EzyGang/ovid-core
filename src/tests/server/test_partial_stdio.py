@@ -105,7 +105,6 @@ async def test_stdio_persists_partial_on_context_overflow() -> None:
         ('request', 'complete', ('user_prompt:Read.',)),
         ('response', 'complete', ('call:c1',)),
         ('request', 'complete', ('return:c1:success',)),
-        ('response', 'interrupted', ()),
         boundary('context_overflow: Model context window is full. Compact the conversation or start a new one'),
     ]
     assert failure(frames, 'r1') == ([True], 'context_window_exceeded')

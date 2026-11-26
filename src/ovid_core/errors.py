@@ -2,6 +2,8 @@ from typing import Literal
 
 from pydantic import JsonValue
 
+from ovid_core.policy import ProviderFailureKind
+
 
 class OvidCoreError(Exception):
     pass
@@ -24,7 +26,20 @@ class CodexAuthError(AuthenticationError):
 
 
 class ProviderError(OvidCoreError):
-    pass
+    def __init__(
+        self,
+        message: str = 'Provider request failed',
+        *,
+        failure_kind: ProviderFailureKind = ProviderFailureKind.UNKNOWN,
+        status_code: int | None = None,
+        provider_code: str | None = None,
+        retry_after_seconds: float | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.failure_kind = failure_kind
+        self.status_code = status_code
+        self.provider_code = provider_code
+        self.retry_after_seconds = retry_after_seconds
 
 
 class PersistenceError(OvidCoreError):

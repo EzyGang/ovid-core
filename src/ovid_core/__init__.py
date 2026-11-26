@@ -62,6 +62,7 @@ from ovid_core.policy import AgentRetryPolicy as AgentRetryPolicy
 from ovid_core.policy import AgentRunPolicy as AgentRunPolicy
 from ovid_core.policy import AgentUsageLimits as AgentUsageLimits
 from ovid_core.policy import ProviderFailureKind as ProviderFailureKind
+from ovid_core.policy import ProviderRetryPolicy as ProviderRetryPolicy
 from ovid_core.routing.options import ModelProviderOption as ModelProviderOption
 from ovid_core.routing.options import ModelSelectionOptions as ModelSelectionOptions
 from ovid_core.routing.options import SelectionOption as SelectionOption

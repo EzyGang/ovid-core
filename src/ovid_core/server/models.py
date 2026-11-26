@@ -5,6 +5,7 @@ from pydantic import Field, JsonValue, PositiveInt, field_validator, model_valid
 from ovid_core.messages.content import FileUrl, UserContent
 from ovid_core.messages.models import AgentMessage
 from ovid_core.models import BaseModel
+from ovid_core.policy import ProviderFailureKind
 from ovid_core.runtime.identifiers import ConversationId, RunId
 from ovid_core.tools.deferred import DeferredToolAnswer, DeferredToolRequests
 from ovid_core.usage.models import Usage
@@ -69,9 +70,17 @@ class HealthResponse(BaseModel):
     status: Literal['ok', 'not_ready']
 
 
+class ProviderErrorDetails(BaseModel):
+    failure_kind: ProviderFailureKind
+    status_code: int | None = Field(default=None, ge=100, le=599)
+    provider_code: str | None = None
+    retry_after_seconds: float | None = Field(default=None, ge=0)
+
+
 class ServerErrorResponse(BaseModel):
     code: str = Field(min_length=1)
     message: str = Field(min_length=1)
+    provider: ProviderErrorDetails | None = Field(default=None, exclude_if=lambda provider: provider is None)
 
 
 class ServerErrorSSEEvent(ServerErrorResponse):

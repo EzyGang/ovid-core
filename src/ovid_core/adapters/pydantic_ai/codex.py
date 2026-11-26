@@ -5,7 +5,7 @@ from types import TracebackType
 from typing import Any, cast
 
 import httpx2
-from openai import Omit
+from openai import AsyncOpenAI, Omit
 from openai.types.responses import EasyInputMessageParam, ResponseInputItemParam
 from pydantic import JsonValue
 from pydantic_ai import RunContext
@@ -102,9 +102,12 @@ class CodexSubscriptionModelFactory:
                 model_name=config.model,
             )
             provider = OpenAIProvider(
-                base_url=self._config.backend_url,
-                api_key='chatgpt-oauth',
-                http_client=http_client,
+                openai_client=AsyncOpenAI(
+                    base_url=self._config.backend_url,
+                    api_key='chatgpt-oauth',
+                    http_client=http_client,
+                    max_retries=0,
+                ),
             )
             runtime = _CodexResponsesModel(
                 config.model,

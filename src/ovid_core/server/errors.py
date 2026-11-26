@@ -8,10 +8,11 @@ from ovid_core.errors import (
     DeferredToolAnswerError,
     NothingToResumeError,
     OvidCoreError,
+    ProviderError,
     ResumeLimitError,
     TransportError,
 )
-from ovid_core.server.models import ServerErrorResponse
+from ovid_core.server.models import ProviderErrorDetails, ServerErrorResponse
 
 
 class _UnknownAgentError(TransportError):
@@ -89,6 +90,18 @@ def _ovid_error_response(error: OvidCoreError) -> ServerErrorResponse:
 
     if isinstance(error, ResumeLimitError):
         return ServerErrorResponse(code='resume_limit_exceeded', message=str(error))
+
+    if isinstance(error, ProviderError):
+        return ServerErrorResponse(
+            code='provider_error',
+            message=str(error),
+            provider=ProviderErrorDetails(
+                failure_kind=error.failure_kind,
+                status_code=error.status_code,
+                provider_code=error.provider_code,
+                retry_after_seconds=error.retry_after_seconds,
+            ),
+        )
 
     if isinstance(error, AgentRunError):
         return ServerErrorResponse(code='agent_run_failed', message=str(error))

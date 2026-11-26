@@ -98,7 +98,9 @@ async def test_store_without_journal_gets_one_write_per_run(case: str) -> None:
     assert append_only.writes == 1
     assert shape(append_only.messages) == shape(plain.messages)
     assert shape(plain.messages)[-1] == (
-        boundary('failed: Agent run failed') if case == 'partial' else ('response', 'complete', ('text:done',))
+        boundary('failed: Provider request failed (unavailable)')
+        if case == 'partial'
+        else ('response', 'complete', ('text:done',))
     )
 
 

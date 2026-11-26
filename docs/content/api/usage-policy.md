@@ -82,7 +82,8 @@ Import from `ovid_core.policy`.
 | `tool_failures` | `'return'` | `'return'` sends each tool failure to the model as a tool result. `'raise'` stops the run with the Ovid tool error. |
 | `error_max_chars` | `2000` | Positive maximum length of the failure text that the model receives. |
 
-Provider SDK retries remain provider-owned. `tools` and `output` configure agent tool and output validation retries.
+`tools` and `output` configure agent tool and output validation retries.
+[`ProviderRetryPolicy`](#providerretrypolicy) configures provider request retries.
 
 `AgentRetryPolicy(tools=0, output=0, tool_failures='raise')` stops the run on the first tool failure, unknown tool name, or invalid output.
 
@@ -100,11 +101,27 @@ Provider SDK retries remain provider-owned. `tools` and `output` configure agent
 
 Numeric limits are positive when present.
 
+### `ProviderRetryPolicy`
+
+| Field | Default | Meaning |
+| --- | --- | --- |
+| `max_attempts` | `4` | Positive number of attempts for one model request, the first attempt included. |
+| `initial_delay_seconds` | `1.0` | Non-negative wait before the first retry when the provider does not give a wait. Each subsequent wait is two times longer. |
+| `max_delay_seconds` | `60.0` | Non-negative maximum wait before a retry. |
+
+The Pydantic AI adapter retries rate limits, unavailable providers, server errors, and connection failures.
+It does not retry an exhausted quota, an invalid request, an authentication failure, or a context-window overflow.
+Before a retry, the adapter waits for the `retry-after-ms` or `Retry-After` time that the provider sends.
+Without such a header, it uses exponential backoff with random jitter, limited to `max_delay_seconds`.
+When the provider asks for a wait longer than `max_delay_seconds`, the run fails immediately with a `ProviderError`.
+The adapter also does not retry when the wait would end after the run timeout.
+
 ### `AgentRunPolicy`
 
 | Field | Default | Meaning |
 | --- | --- | --- |
 | `retries` | `AgentRetryPolicy()` | Agent-loop retry counts. |
+| `provider_retry` | `ProviderRetryPolicy()` | Provider request retries. |
 | `limits` | `AgentUsageLimits()` | Aggregate run and nested-run limits. |
 | `timeout_seconds` | `None` | Positive whole-run timeout when set. |
 | `tool_timeout_seconds` | `30.0` | Positive default tool timeout. `None` disables the timeout. |
