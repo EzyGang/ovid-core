@@ -90,6 +90,12 @@ A request that breaks the last two rules, or a request for a conversation withou
 A new `prompt` without `answers` closes the pending calls as `interrupted`, and the completed run clears the record.
 [DeferredToolRequestStore](persistence.md#deferredtoolrequeststore) describes the write order.
 
+An agent with a [`DeferredToolAnswerCapability`](extensions.md#inline-deferred-answers) answers some calls during the run.
+The server does not apply these rules to those answers, because the application supplies them in process.
+The stored messages contain the results of the answered calls.
+The `requests` of the result and the stored record contain only the calls that stay pending.
+The client answers only these calls when it continues the run.
+
 The server admits one active run for each conversation.
 A second run on a conversation with an active run returns `conversation_busy`.
 This rule applies to a new prompt and to a resume.

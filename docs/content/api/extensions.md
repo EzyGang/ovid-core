@@ -63,6 +63,10 @@ It is also `None` for a tool from a Pydantic AI capability passthrough.
 `resume(answers)` takes a mapping from call ID to answer and returns `DeferredToolResume`.
 Use this method to build the resume input.
 
+`check_answers(answers)` raises `DeferredToolAnswerError` when an answer names a call that is not pending or does not match the call kind.
+It accepts answers for only some of the calls.
+[Inline deferred answers](#inline-deferred-answers) uses it.
+
 ### Answers
 
 `DeferredToolAnswer` is the discriminated union of these models:
@@ -529,6 +533,103 @@ The processor receives normalized Ovid messages before each model request and re
 
 The adapter runs history processing after other request capabilities, so provider-native preprocessing remains authoritative.
 Processed history becomes `RunResult.history` and can be committed through `ConversationHistoryStore`.
+
+## Inline deferred answers
+
+`DeferredToolAnswerCapability[Deps]` answers deferred tool calls during the run.
+Import it and `DeferredToolAnswerer` from `ovid_core.capabilities`.
+The capability requires `id` and an asynchronous `answerer`.
+It adds no tools and no instructions.
+
+```python
+class DeferredToolAnswerer(Protocol):
+    async def __call__(
+        self,
+        requests: DeferredToolRequests,
+        *,
+        conversation_id: ConversationId,
+        run_id: RunId,
+    ) -> Mapping[str, DeferredToolAnswer]: ...
+```
+
+The run calls the answerer when a model response has deferred calls.
+`requests` contains these calls, with the same fields as a `DeferredRunResult`.
+The answerer returns a mapping from call ID to answer for the calls that it can answer.
+These rules apply:
+
+- An answer has the same effect as a resume answer. [Answers](#answers) gives the effect of each answer.
+- An empty mapping answers no call.
+- A call without an answer stays pending. The run ends with a `DeferredRunResult` that contains only the pending calls.
+- An answer for a call that is not in `requests` raises `DeferredToolAnswerError`.
+- An answer that does not match the call kind raises `DeferredToolAnswerError`.
+
+The Pydantic AI adapter maps the capability to the upstream `HandleDeferredToolCalls` capability.
+
+The first example approves the tools that the user allowed for the conversation.
+The application adds a tool name to `allowed` when the user selects an approval for the session.
+The other calls stay pending, and the application asks the user about them.
+
+```python
+from collections.abc import Mapping
+
+from ovid_core.capabilities import DeferredToolAnswerCapability
+from ovid_core.runtime import ConversationId, RunId
+from ovid_core.tools import DeferredToolAnswer, DeferredToolRequests, ToolCallApproved
+
+
+class SessionApprovals:
+    def __init__(self) -> None:
+        self.allowed: dict[ConversationId, set[str]] = {}
+
+    async def __call__(
+        self,
+        requests: DeferredToolRequests,
+        *,
+        conversation_id: ConversationId,
+        run_id: RunId,
+    ) -> Mapping[str, DeferredToolAnswer]:
+        allowed = self.allowed.get(conversation_id, set())
+
+        return {
+            call.tool_call_id: ToolCallApproved()
+            for call in requests.calls
+            if call.kind == 'approval' and call.tool_name in allowed
+        }
+
+
+session_approvals = SessionApprovals()
+capability = DeferredToolAnswerCapability(id='session_approvals', answerer=session_approvals)
+```
+
+The second example answers every call in a run that has no user.
+The run never ends with a `DeferredRunResult`.
+
+```python
+from collections.abc import Mapping
+
+from ovid_core.capabilities import DeferredToolAnswerCapability
+from ovid_core.runtime import ConversationId, RunId
+from ovid_core.tools import DeferredToolAnswer, DeferredToolRequests, ToolCallDenied, ToolCallFailed
+
+
+async def deny_all(
+    requests: DeferredToolRequests,
+    *,
+    conversation_id: ConversationId,
+    run_id: RunId,
+) -> Mapping[str, DeferredToolAnswer]:
+    del conversation_id, run_id
+
+    return {
+        call.tool_call_id: ToolCallDenied(message='No user can approve this call.')
+        if call.kind == 'approval'
+        else ToolCallFailed(message='No user can answer this call.')
+        for call in requests.calls
+    }
+
+
+capability = DeferredToolAnswerCapability(id='headless', answerer=deny_all)
+```
 
 ## Todo
 
