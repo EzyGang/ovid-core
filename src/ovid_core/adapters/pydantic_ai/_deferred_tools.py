@@ -3,18 +3,19 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from pydantic_ai import RunContext
-from pydantic_ai.capabilities import AbstractCapability
+from pydantic_ai.capabilities import AbstractCapability, HandleDeferredToolCalls
 from pydantic_ai.exceptions import ToolFailed
 from pydantic_ai.messages import INTERRUPTED_TOOL_RETURN_CONTENT
 from pydantic_ai.tools import DeferredToolRequests as PydanticDeferredToolRequests
 from pydantic_ai.tools import DeferredToolResults, ToolApproved, ToolDenied
 
+from ovid_core.capabilities.deferred import DeferredToolAnswerCapability
 from ovid_core.messages.models import AgentMessage, ToolReturnPart, pending_tool_calls
-from ovid_core.runtime.identifiers import ConversationId
+from ovid_core.runtime.identifiers import ConversationId, RunId
 from ovid_core.tools.deferred import (
+    DeferredToolAnswer,
     DeferredToolRequest,
     DeferredToolRequests,
-    DeferredToolResume,
     ToolCallApproved,
     ToolCallDenied,
     ToolCallReturned,
@@ -69,13 +70,41 @@ class StaticApprovalRecorder[Deps](AbstractCapability[Deps]):
         *,
         requests: PydanticDeferredToolRequests,
     ) -> DeferredToolResults | None:
-        for call in requests.approvals:
-            tool_def = ctx.tool_manager.get_tool_def(call.tool_name) if ctx.tool_manager is not None else None
-            metadata = tool_def.metadata if tool_def is not None and tool_def.kind == 'unapproved' else None
-            if metadata is not None and 'ovid_approval' in metadata:
-                self.approvals[call.tool_call_id] = ToolApproval.model_validate(metadata['ovid_approval'])
+        self.approvals.update(static_approvals(ctx, requests))
 
         return None
+
+
+def static_approvals[Deps](ctx: RunContext[Deps], requests: PydanticDeferredToolRequests) -> dict[str, ToolApproval]:
+    """Return the Ovid approval of each call that waits because its tool definition requires approval."""
+    approvals: dict[str, ToolApproval] = {}
+    for call in requests.approvals:
+        tool_def = ctx.tool_manager.get_tool_def(call.tool_name) if ctx.tool_manager is not None else None
+        metadata = tool_def.metadata if tool_def is not None and tool_def.kind == 'unapproved' else None
+        if metadata is not None and 'ovid_approval' in metadata:
+            approvals[call.tool_call_id] = ToolApproval.model_validate(metadata['ovid_approval'])
+
+    return approvals
+
+
+def adapt_deferred_answer_capability[Deps](source: DeferredToolAnswerCapability[Deps]) -> HandleDeferredToolCalls[Deps]:
+    async def answer(ctx: RunContext[Deps], requests: PydanticDeferredToolRequests) -> DeferredToolResults:
+        pending = deferred_requests_from_pydantic(requests, static_approvals(ctx, requests))
+        answers = await source.answerer(
+            pending,
+            conversation_id=ConversationId.model_validate(ctx.conversation_id),
+            run_id=RunId.model_validate(ctx.run_id),
+        )
+        pending.check_answers(answers)
+
+        return deferred_results_to_pydantic(answers)
+
+    return HandleDeferredToolCalls[Deps](
+        handler=answer,
+        id=source.id,
+        description=source.description,
+        defer_loading=source.defer_loading,
+    )
 
 
 def deferred_requests_from_pydantic(
@@ -97,9 +126,9 @@ def deferred_requests_from_pydantic(
     )
 
 
-def deferred_results_to_pydantic(resume: DeferredToolResume) -> DeferredToolResults:
+def deferred_results_to_pydantic(answers: Mapping[str, DeferredToolAnswer]) -> DeferredToolResults:
     results = DeferredToolResults()
-    for call_id, answer in resume.answers.items():
+    for call_id, answer in answers.items():
         if isinstance(answer, ToolCallApproved):
             results.approvals[call_id] = ToolApproved()
         elif isinstance(answer, ToolCallDenied):

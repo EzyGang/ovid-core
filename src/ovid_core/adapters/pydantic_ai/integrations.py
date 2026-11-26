@@ -18,10 +18,12 @@ from pydantic_ai.tools import ToolDefinition
 from pydantic_ai.toolsets import AbstractToolset
 from pydantic_core import to_jsonable_python
 
+from ovid_core.adapters.pydantic_ai._deferred_tools import adapt_deferred_answer_capability
 from ovid_core.adapters.pydantic_ai.capabilities import _pydantic_ai_capability
 from ovid_core.adapters.pydantic_ai.history import HistoryProcessorAdapter
 from ovid_core.adapters.pydantic_ai.skills import adapt_skills_capability
 from ovid_core.capabilities.base import BaseCapability
+from ovid_core.capabilities.deferred import DeferredToolAnswerCapability
 from ovid_core.capabilities.history import HistoryProcessorCapability
 from ovid_core.capabilities.integrations import (
     AnthropicCompactionCapabilityConfig,
@@ -48,6 +50,8 @@ def adapt_integration_capability[Deps](source: BaseCapability[Deps]) -> Abstract
 
     if isinstance(source, HistoryProcessorCapability):
         return HistoryProcessorAdapter(source)
+    if isinstance(source, DeferredToolAnswerCapability):
+        return adapt_deferred_answer_capability(source)
     if isinstance(source, ProviderCapability):
         return cast(AbstractCapability[Deps], _adapt_provider_capability(source))
     if isinstance(source, MCPServerCapability):

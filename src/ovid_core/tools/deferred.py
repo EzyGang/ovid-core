@@ -59,6 +59,20 @@ class DeferredToolRequests(BaseModel):
     def resume(self, answers: Mapping[str, DeferredToolAnswer]) -> DeferredToolResume:
         return DeferredToolResume(requests=self, answers=dict(answers))
 
+    def check_answers(self, answers: Mapping[str, DeferredToolAnswer]) -> None:
+        """Raise `DeferredToolAnswerError` when an answer names a call that is not pending or of another kind."""
+        kinds = {call.tool_call_id: call.kind for call in self.calls}
+        if unknown := sorted(answers.keys() - kinds.keys()):
+            raise DeferredToolAnswerError(f'Answers name tool calls that are not pending: {unknown}')
+
+        mismatched = sorted(
+            call_id
+            for call_id, answer in answers.items()
+            if (kinds[call_id] == 'approval') != isinstance(answer, ToolCallApproved | ToolCallDenied)
+        )
+        if mismatched:
+            raise DeferredToolAnswerError(f'Answers do not match the kind of pending tool calls: {mismatched}')
+
 
 class DeferredToolResume(BaseModel):
     """Answers for every pending call of one deferred run, checked against the calls when the model is built."""
@@ -68,18 +82,9 @@ class DeferredToolResume(BaseModel):
 
     @model_validator(mode='after')
     def validate_answers(self) -> Self:
-        kinds = {call.tool_call_id: call.kind for call in self.requests.calls}
-        if missing := sorted(kinds.keys() - self.answers.keys()):
+        pending = {call.tool_call_id for call in self.requests.calls}
+        if missing := sorted(pending - self.answers.keys()):
             raise DeferredToolAnswerError(f'Answers are missing for pending tool calls: {missing}')
-        if unknown := sorted(self.answers.keys() - kinds.keys()):
-            raise DeferredToolAnswerError(f'Answers name tool calls that are not pending: {unknown}')
-
-        mismatched = sorted(
-            call_id
-            for call_id, answer in self.answers.items()
-            if (kinds[call_id] == 'approval') != isinstance(answer, ToolCallApproved | ToolCallDenied)
-        )
-        if mismatched:
-            raise DeferredToolAnswerError(f'Answers do not match the kind of pending tool calls: {mismatched}')
+        self.requests.check_answers(self.answers)
 
         return self
