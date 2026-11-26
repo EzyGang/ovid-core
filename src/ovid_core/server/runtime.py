@@ -133,7 +133,12 @@ class _AgentServerRuntime:
         lifetime = self._active_runs.run(agent_id) if operation is None else nullcontext(operation)
         async with lifetime as active:
             async with self.session(
-                agent_id, request.conversation_id, context, operation=active, resume=request.resume
+                agent_id,
+                request.conversation_id,
+                context,
+                operation=active,
+                resume=request.resume,
+                client_request_id=request.client_request_id,
             ) as session:
                 resume = await _stored_resume(self._store, session.conversation_id, session.messages, request)
                 stream: AgentStream[Any] | None = None
@@ -168,6 +173,7 @@ class _AgentServerRuntime:
         *,
         operation: _ActiveRun | None = None,
         resume: bool = False,
+        client_request_id: str | None = None,
     ) -> AsyncGenerator[_AgentServerSession]:
         registration = self._registration(agent_id)
         if agent_id not in self._agent_limits:
@@ -189,6 +195,7 @@ class _AgentServerRuntime:
                     conversation_id,
                     admitted=operation is not None,
                     resume_limit=self._config.resume_restart_limit if resume else None,
+                    client_request_id=client_request_id,
                 )
                 deps = await registration.dependencies(context, authorization)
 

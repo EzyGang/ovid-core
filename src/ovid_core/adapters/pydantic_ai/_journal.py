@@ -47,7 +47,9 @@ class TranscriptJournalCapability[Deps](AbstractCapability[Deps]):
 
     async def before_run(self, ctx: RunContext[Deps]) -> None:
         del ctx
-        self._start = RunStartedEntry(run_id=self._run_id, at=datetime.now(UTC))
+        self._start = RunStartedEntry(
+            run_id=self._run_id, at=datetime.now(UTC), client_request_id=self._journal.client_request_id
+        )
 
     async def prepare_model_request(
         self,

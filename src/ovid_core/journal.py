@@ -20,6 +20,7 @@ class RunStartedEntry(BaseModel):
     kind: Literal['run_started'] = 'run_started'
     run_id: RunId
     at: datetime
+    client_request_id: str | None = None
 
 
 class StepCommittedEntry(BaseModel):
@@ -71,6 +72,7 @@ class JournalRun(BaseModel):
     run_id: RunId
     started_at: datetime
     outcome: RunEndOutcome | None = None
+    client_request_id: str | None = None
 
 
 class JournalToolCall(_ToolCallIntent):
@@ -112,7 +114,12 @@ class ConversationJournal(BaseModel):
         return cls(
             messages=messages,
             runs=tuple(
-                JournalRun(run_id=start.run_id, started_at=start.at, outcome=outcomes.get(start.run_id))
+                JournalRun(
+                    run_id=start.run_id,
+                    started_at=start.at,
+                    outcome=outcomes.get(start.run_id),
+                    client_request_id=start.client_request_id,
+                )
                 for start in starts
             ),
             tool_calls=tuple(
