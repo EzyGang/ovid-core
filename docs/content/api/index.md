@@ -18,7 +18,7 @@ Use the [guides](../getting-started.md) for task-oriented integration.
 | Tools, toolsets, hooks, capabilities, skills, and MCP | `ovid_core.tools.*`, `ovid_core.hooks.base`, `ovid_core.capabilities.*`, `ovid_core.skills`, `ovid_core.mcp.*` | [Tools and capabilities](extensions.md) |
 | Agent-to-agent Relay messaging | `ovid_core.relay` | [Tools and capabilities](extensions.md#relay) |
 | Phased todo state, persistence, service, and capability | `ovid_core.todo.*` | [Todo state and capability](todo.md) |
-| Conversation persistence | `ovid_core.persistence` | [Persistence](persistence.md) |
+| Conversation persistence, tool intent journal, and recovery | `ovid_core.persistence`, `ovid_core.journal`, `ovid_core.recovery` | [Persistence](persistence.md) |
 | ChatGPT Codex subscription authentication and models | `ovid_core.codex.*`, `ovid_core.adapters.pydantic_ai.codex` | [Codex subscription](codex.md) |
 | Native HTTP, SSE, stdio, and AG-UI servers | `ovid_core.server.*` | [Servers and transports](server.md) |
 | Pydantic AI and Starlette compatibility boundaries | `ovid_core.adapters.pydantic_ai.*`, `ovid_core.adapters.starlette.*` | [Pydantic AI adapters](adapters.md) |

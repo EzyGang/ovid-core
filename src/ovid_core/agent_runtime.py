@@ -8,6 +8,7 @@ from ovid_core.agent_definition import AgentDefinition, AgentModelSelector
 from ovid_core.errors import ModelResolutionError
 from ovid_core.messages.content import UserContent
 from ovid_core.messages.models import AgentMessage
+from ovid_core.persistence import RunJournal
 from ovid_core.routing.models import ResolvedModel
 from ovid_core.runtime.events import AgentEvent
 from ovid_core.runtime.identifiers import ConversationId, RunId
@@ -50,6 +51,7 @@ class AgentRuntime[Deps, Output](Protocol):
         run_id: RunId | None,
         conversation_id: ConversationId | None,
         usage_tracker: UsageTracker | None,
+        journal: RunJournal | None,
     ) -> AbstractAsyncContextManager[AgentStream[Output]]: ...
 
 
@@ -109,6 +111,7 @@ class OvidAgent[Deps, Output]:
         conversation_id: ConversationId | None = None,
         usage_tracker: UsageTracker | None = None,
         model: AgentModelSelector | None = None,
+        journal: RunJournal | None = None,
     ) -> AbstractAsyncContextManager[AgentStream[Output]]:
         return self._stream(
             prompt,
@@ -119,6 +122,7 @@ class OvidAgent[Deps, Output]:
             conversation_id=conversation_id,
             usage_tracker=usage_tracker,
             model=model,
+            journal=journal,
         )
 
     @asynccontextmanager
@@ -133,6 +137,7 @@ class OvidAgent[Deps, Output]:
         conversation_id: ConversationId | None,
         usage_tracker: UsageTracker | None,
         model: AgentModelSelector | None,
+        journal: RunJournal | None,
     ) -> AsyncGenerator[AgentStream[Output]]:
         runtime = await self._resolve_runtime(model)
 
@@ -144,6 +149,7 @@ class OvidAgent[Deps, Output]:
             run_id=run_id,
             conversation_id=conversation_id,
             usage_tracker=usage_tracker,
+            journal=journal,
         ) as stream:
             yield stream
 

@@ -81,7 +81,7 @@ async def _run(
     )
 
     return integration.streaming_response(
-        integration.stream(native_events, on_complete=partial(_persist_result, store))
+        integration.stream(native_events, on_complete=partial(_persist_result, store, journal=None))
     )
 
 
@@ -104,5 +104,5 @@ async def _native_events[Deps, Output](
                 yield event
         except (Exception, asyncio.CancelledError) as error:
             partial = _stopped_partial(integration.partial(), error, session.deadline)
-            await _wait_for_commit(_start_commit(store, partial), config.shutdown_grace_seconds)
+            await _wait_for_commit(_start_commit(store, partial, journal=None), config.shutdown_grace_seconds)
             raise

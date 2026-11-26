@@ -133,6 +133,36 @@ The stored outcome agrees with the error that the server sends for each stop tha
 
 For a request timeout, the partial also has `error_type='TimeoutError'`, the same value as the `run_failed` event.
 
+### Journaled runs
+
+When the store implements [`ConversationJournalStore`](persistence.md#conversationjournalstore), the native HTTP and stdio servers journal each admitted run.
+The server creates a `RunJournal` for the conversation and passes it to `OvidAgent.stream(..., journal=...)`.
+The run then commits each step and records each tool intent before the tool runs.
+At the end of the run, the server writes only the messages that the step commits do not hold, then `RunEndedEntry`.
+For a partial transcript, `RunEndedEntry.outcome` is the outcome of the partial, for example `cancelled` or `timeout`.
+A partial commit that fails leaves the run open, so the next load recovers it.
+AG-UI runs are not admitted, so the server does not journal them.
+
+### Recovery on load
+
+A process can stop without a commit, for example after a kill, an out-of-memory error, or a power loss.
+The native HTTP and stdio servers recover the conversation when they load it for an admitted run:
+
+1. The server admits the run, then it calls `load_journal`.
+2. When the journal has an open run, the server reads the pending deferred calls, if the store implements `DeferredToolRequestStore`.
+3. The server appends the entries of [`close_orphaned_tool_calls`](persistence.md#recovery) in one `append_entries` call.
+4. The server loads the history again and starts the run with it.
+
+Recovery runs before the server closes pending calls for a new prompt.
+Thus the model sees the recovery text, not the generic interrupted text.
+A run that a server closed with a partial commit has a `RunEndedEntry`, so recovery does not change it.
+Pydantic AI closes the tool calls of that partial on the next run, as for a store without the journal.
+A second load finds no open run and adds nothing.
+A run that is not admitted, such as an AG-UI run, does not recover, because an open run can belong to an active run.
+
+Recovery does not answer a pending deferred call.
+A resume of that call works after recovery.
+
 ## Registration and callbacks
 
 Import from `ovid_core.server.contracts`.

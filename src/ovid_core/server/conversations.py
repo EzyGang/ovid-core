@@ -7,7 +7,14 @@ from pydantic_core import to_jsonable_python
 
 from ovid_core.errors import DeferredToolAnswerError
 from ovid_core.messages.models import AgentMessage, pending_tool_calls
-from ovid_core.persistence import ConversationHistoryStore, ConversationStore, DeferredToolRequestStore
+from ovid_core.persistence import (
+    ConversationHistoryStore,
+    ConversationJournalStore,
+    ConversationStore,
+    DeferredToolRequestStore,
+    RunJournal,
+)
+from ovid_core.recovery import close_orphaned_tool_calls
 from ovid_core.runtime.identifiers import ConversationId
 from ovid_core.runtime.results import DeferredRunResult, PartialRunResult, RunResult, _with_ending
 from ovid_core.server.errors import _DeferredToolsUnavailableError, _server_error_from_exception
@@ -39,18 +46,55 @@ async def _stored_resume(
     return DeferredToolRequests(calls=calls).resume(answers)
 
 
-async def _persist_result(store: ConversationStore | None, result: RunResult[Any] | DeferredRunResult) -> None:
-    """Commit the messages first, then save or clear the pending calls, so a lost second write fails closed."""
+async def _open_history(
+    store: ConversationStore | None,
+    conversation_id: ConversationId,
+    *,
+    admitted: bool,
+) -> tuple[tuple[AgentMessage, ...], RunJournal | None]:
+    """Load the history, and create the journal of an admitted run when the store has a journal.
+
+    For an admitted run, the store first closes the runs that a stopped process left open.
+    A run that is not admitted must not do this, because the open run of an active run is not lost.
+    """
+    if store is None:
+        return (), None
+    if not (admitted and isinstance(store, ConversationJournalStore)):
+        return await store.load(conversation_id), None
+
+    journal = RunJournal(store=store, conversation_id=conversation_id)
+    loaded = await store.load_journal(conversation_id)
+    if all(run.outcome is not None for run in loaded.runs):
+        return loaded.messages, journal
+
+    pending = (
+        await store.load_deferred_requests(conversation_id) if isinstance(store, DeferredToolRequestStore) else None
+    )
+    await store.append_entries(conversation_id, close_orphaned_tool_calls(loaded, pending))
+
+    return await store.load(conversation_id), journal
+
+
+async def _persist_result(
+    store: ConversationStore | None,
+    result: RunResult[Any] | DeferredRunResult,
+    *,
+    journal: RunJournal | None,
+) -> None:
+    """Commit the messages first, then save or clear the pending calls, so a lost second write fails closed.
+
+    The journal entry that ends the run is the last write.
+    """
     if store is None:
         return
 
-    await _commit_messages(store, result)
-    if not isinstance(store, DeferredToolRequestStore):
-        return
-    if isinstance(result, DeferredRunResult):
+    await _commit_messages(store, result, journal)
+    if isinstance(store, DeferredToolRequestStore) and isinstance(result, DeferredRunResult):
         await store.save_deferred_requests(result.conversation_id, result.requests)
-    else:
+    elif isinstance(store, DeferredToolRequestStore):
         await store.clear_deferred_requests(result.conversation_id)
+    if journal is not None:
+        await journal.end('deferred' if isinstance(result, DeferredRunResult) else 'completed')
 
 
 def _stopped_partial(
@@ -67,12 +111,23 @@ def _stopped_partial(
     return _with_ending(partial, outcome='timeout', error_type=TimeoutError.__name__, message=failure.message)
 
 
-def _start_commit(store: ConversationStore | None, partial: PartialRunResult | None) -> asyncio.Future[None] | None:
+def _start_commit(
+    store: ConversationStore | None,
+    partial: PartialRunResult | None,
+    *,
+    journal: RunJournal | None,
+) -> asyncio.Future[None] | None:
     """Start the commit of a partial transcript. The pending deferred requests stay unchanged."""
     if store is None or partial is None:
         return None
 
-    return asyncio.ensure_future(_commit_messages(store, partial))
+    return asyncio.ensure_future(_commit_partial(store, partial, journal))
+
+
+async def _commit_partial(store: ConversationStore, partial: PartialRunResult, journal: RunJournal | None) -> None:
+    await _commit_messages(store, partial, journal)
+    if journal is not None:
+        await journal.end(partial.outcome)
 
 
 async def _wait_for_commit(commit: asyncio.Future[None] | None, timeout_seconds: float) -> bool:
@@ -97,11 +152,15 @@ async def _wait_for_commit(commit: asyncio.Future[None] | None, timeout_seconds:
 async def _commit_messages(
     store: ConversationStore,
     record: RunResult[Any] | DeferredRunResult | PartialRunResult,
+    journal: RunJournal | None,
 ) -> None:
+    """Write the messages of the record that the step commits of the journal do not hold."""
+    held = journal.messages if journal is not None else ()
+    messages = tuple(message for message in record.messages if message not in held)
     if isinstance(store, ConversationHistoryStore) and record.history:
-        await store.commit(record.conversation_id, record.messages, record.history)
+        await store.commit(record.conversation_id, messages, record.history)
     else:
-        await store.append(record.conversation_id, record.messages)
+        await store.append(record.conversation_id, messages)
 
 
 def _response_from_result(result: RunResult[Any] | DeferredRunResult) -> AgentRunResponse:

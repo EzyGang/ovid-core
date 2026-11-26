@@ -56,6 +56,8 @@ Thus the server rejects a resume, and a new prompt clears the record when it com
 
 On the next run, Pydantic AI can add a synthesized `interrupted` result to the interrupted request.
 A `ConversationHistoryStore` then receives that result in `history`.
+A [`ConversationJournalStore`](#conversationjournalstore) receives only the part of `partial.messages` that its step commits do not hold.
+[Step commits](#step-commits) describes this split.
 
 ## `DeferredToolRequestStore`
 
@@ -91,6 +93,138 @@ Thus a failure between the two writes cannot make a call run twice:
 
 A new prompt works in both conditions, and the completed run clears the record.
 A durable store can keep `requests.model_dump_json()` and read it with `DeferredToolRequests.model_validate_json`.
+
+## `ConversationJournalStore`
+
+`ConversationJournalStore` extends `ConversationHistoryStore`.
+A server that has a journal store records each step of a run and the intent of each tool call before the tool runs.
+After a process stops without a commit, the next load closes the tool calls that the process left open.
+
+```python
+async def append_entries(self, conversation_id: ConversationId, entries: Sequence[JournalEntry]) -> None: ...
+
+async def load_journal(self, conversation_id: ConversationId) -> ConversationJournal: ...
+```
+
+The protocol is optional and runtime-checkable.
+A store without it keeps the behavior that the sections above describe: one commit at the end of a run, or one partial commit when the run stops.
+
+### Durability rule
+
+`append_entries` must store all entries or none.
+It must return only when the entries are durable.
+A file store must flush and sync the file before it returns.
+The in-memory store returns when it holds the entries.
+
+A `StepCommittedEntry` adds its messages to the history that `load` returns.
+A later `commit` replaces that history, as for any `ConversationHistoryStore`.
+
+### Journal entries
+
+Import the entry models from `ovid_core.journal`.
+`JournalEntry` is a union of these models, discriminated by `kind`:
+
+| Entry | `kind` | Fields |
+| --- | --- | --- |
+| `RunStartedEntry` | `run_started` | `run_id`, `at` |
+| `StepCommittedEntry` | `step_committed` | `run_id`, `messages` (one or more) |
+| `ToolIntentEntry` | `tool_intent` | `run_id`, `tool_call_id`, `tool_name`, `arguments`, `effect`, `idempotency_key`, `started_at` |
+| `ToolSettledEntry` | `tool_settled` | `run_id`, `tool_call_id`, `status`, `outcome`, `ended_at` |
+| `RunEndedEntry` | `run_ended` | `run_id`, `outcome` |
+
+A durable store can keep `entry.model_dump_json()` and read it with `TypeAdapter(JournalEntry).validate_json`.
+
+`ToolIntentEntry` records a tool call before the tool runs:
+
+- `arguments` holds the arguments that the model sent, as a JSON object.
+- `effect` is the [`ToolEffect`](extensions.md) that `resolve_effect` gives for the tool definition. This includes passthrough Pydantic AI tools and MCP tools.
+- `idempotency_key` comes from `BaseTool.idempotency_key` for an Ovid tool. It is `None` for other tools and for arguments that are not valid.
+
+**Warning:** The journal stores tool arguments without redaction, the same as transcripts. Arguments can contain secrets.
+
+`ToolSettledEntry` records how the call ended:
+
+| End of the call | `status` | `outcome` |
+| --- | --- | --- |
+| The tool returned, or a capability skipped the call with a result | `completed` | `success` |
+| `ToolFailed`, or any other tool error | `failed` | `failed` |
+| `ModelRetry`, which includes arguments that are not valid | `failed` | `retried` |
+| Cancellation during the call | `failed` | `interrupted` |
+| `ApprovalRequired` or `CallDeferred` | `deferred` | `None` |
+
+A deferred call has no outcome because the model receives no result for it yet.
+
+`RunEndedEntry.outcome` is `completed`, `deferred`, a [`RunOutcome`](runtime.md#partialrunresult) of a partial transcript, or `lost`.
+
+### Step commits
+
+A journaled run writes its messages while it runs:
+
+1. Before each model request, the run commits the request and each earlier message that no step holds yet.
+2. After each step of the run graph, the run commits the new messages, for example the model response.
+3. Before each tool call, the run appends a `ToolIntentEntry` and waits until the store returns.
+4. After each tool call, the run appends a `ToolSettledEntry`.
+
+The first entry of a run is `RunStartedEntry`, in the same append as the first step.
+A run that adds no message writes no entry.
+The request that closes pending calls on a new prompt starts the first step.
+
+The run finds its new messages by content, from the end of the history.
+Thus a history processor that replaces messages with copies, or removes older messages, does not cause a second commit of a message.
+
+At the end of the run, the server writes only the messages of the result that the step commits do not hold, compared by content:
+
+- A completed or deferred run: `commit(conversation_id, (), result.history)`. This keeps the history that compaction or history processing gave.
+- A partial run: `commit(conversation_id, rest, partial.history)`. `rest` holds the interrupted response or request, when there is one, and the boundary response.
+
+Thus an append-only transcript built from step messages and `commit` messages holds each message once.
+The `RunEndedEntry` is the last write of a run, after the record of pending deferred calls.
+
+### `ConversationJournal`
+
+`load_journal` returns the history and the state of each run and tool call:
+
+```python
+class ConversationJournal(BaseModel):
+    messages: tuple[AgentMessage, ...]
+    runs: tuple[JournalRun, ...] = ()
+    tool_calls: tuple[JournalToolCall, ...] = ()
+
+    @classmethod
+    def from_entries(cls, messages: tuple[AgentMessage, ...], entries: Sequence[JournalEntry]) -> Self: ...
+```
+
+- `messages` is the history that `load` returns.
+- A `JournalRun` has `run_id`, `started_at`, and `outcome`. A run with `outcome=None` is open.
+- A `JournalToolCall` has the fields of its intent, and `status`, `outcome`, and `ended_at` from its settle entry.
+
+A tool call without a settle entry has `status='started'`.
+After a restart, its effect is unknown, as the Pydantic AI Harness tool-effect record defines.
+`from_entries` builds the journal from a history that already contains the step messages and from the entries in append order.
+
+### Recovery
+
+Import `close_orphaned_tool_calls` from `ovid_core.recovery`:
+
+```python
+def close_orphaned_tool_calls(
+    journal: ConversationJournal,
+    pending: DeferredToolRequests | None = None,
+) -> tuple[JournalEntry, ...]
+```
+
+The function returns the entries that close each open run.
+For each open run, it returns a `StepCommittedEntry` with one request, then `RunEndedEntry(outcome='lost')`.
+The request holds a `ToolReturnPart` with `outcome='interrupted'` for each tool call that the run left without a result:
+
+- A call with an intent for a tool whose effect is not `read`: `[Recovery: <tool> may have executed before the process stopped; its effect is UNKNOWN. Inspect current state before retrying.]`
+- A call with an intent for a `read` tool, or a call without an intent: `[Recovery: <tool> did not run.]`
+
+A call in `pending` waits for a deferred answer and stays open.
+The exception is a call that an open run started to execute after an approval or an answer. Recovery closes that call.
+A run without a tool call to close gets only its `RunEndedEntry`.
+
+[Recovery on load](server.md#recovery-on-load) describes when a server applies these entries.
 
 ## `MessageCodec`
 
@@ -139,6 +273,7 @@ loaded = await store.load(conversation_id)
 
 An unknown conversation loads as `()`. Empty append operations do nothing. `commit` replaces the active in-memory history.
 The store also implements `DeferredToolRequestStore` and keeps pending tool calls in memory.
+It also implements `ConversationJournalStore`. A step commit appends to the in-memory history.
 
 Use this store for tests and temporary applications. It has no durability or external concurrency control.
 

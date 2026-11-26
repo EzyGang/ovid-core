@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import Never
 
 from pydantic_ai import Agent, capture_run_messages
+from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.messages import ModelMessage
 from pydantic_ai.messages import UserContent as PydanticUserContent
 from pydantic_ai.tools import DeferredToolRequests as PydanticDeferredToolRequests
@@ -19,6 +20,7 @@ from ovid_core.adapters.pydantic_ai._deferred_tools import (
     deferred_results_to_pydantic,
     interrupted_calls,
 )
+from ovid_core.adapters.pydantic_ai._journal import TranscriptJournalCapability
 from ovid_core.adapters.pydantic_ai._usage_tracking import RunUsageRecorder, UsageTrackingCapability
 from ovid_core.adapters.pydantic_ai._user_content import user_content_to_pydantic
 from ovid_core.adapters.pydantic_ai.messages import message_to_pydantic
@@ -27,6 +29,7 @@ from ovid_core.agent_runtime import AgentRuntime, AgentStream
 from ovid_core.errors import AgentRunInputError, CredentialError
 from ovid_core.messages.content import UserContent
 from ovid_core.messages.models import AgentMessage
+from ovid_core.persistence import RunJournal
 from ovid_core.policy import AgentRunPolicy
 from ovid_core.runtime.identifiers import ConversationId, RunId
 from ovid_core.runtime.results import DeferredRunResult, RunResult
@@ -43,7 +46,7 @@ class _RunInput[Deps]:
     conversation_id: ConversationId
     recorder: RunUsageRecorder
     approvals: StaticApprovalRecorder[Deps]
-    usage: UsageTrackingCapability[Deps]
+    capabilities: tuple[AbstractCapability[Deps], ...]
     interrupted: InterruptedCalls | None
 
 
@@ -71,7 +74,7 @@ class PydanticAIAgentRuntime[Deps, Output](AgentRuntime[Deps, Output]):
         conversation_id: ConversationId | None,
         usage_tracker: UsageTracker | None,
     ) -> RunResult[Output] | DeferredRunResult:
-        run = self._run_input(prompt, resume, messages, run_id, conversation_id, usage_tracker)
+        run = self._run_input(prompt, resume, messages, run_id, conversation_id, usage_tracker, journal=None)
         try:
             async with asyncio.timeout(self._policy.timeout_seconds):
                 result = await self._agent.run(
@@ -83,7 +86,7 @@ class PydanticAIAgentRuntime[Deps, Output](AgentRuntime[Deps, Output]):
                     run_id=str(run.run_id),
                     conversation_id=str(run.conversation_id),
                     usage_limits=_usage_limits(self._policy),
-                    capabilities=(run.usage, run.approvals),
+                    capabilities=run.capabilities,
                 )
             normalized = result_from_pydantic(result, approvals=run.approvals.approvals, interrupted=run.interrupted)
             await run.recorder.record(normalized.usage)
@@ -102,6 +105,7 @@ class PydanticAIAgentRuntime[Deps, Output](AgentRuntime[Deps, Output]):
         run_id: RunId | None,
         conversation_id: ConversationId | None,
         usage_tracker: UsageTracker | None,
+        journal: RunJournal | None,
     ) -> AbstractAsyncContextManager[AgentStream[Output]]:
         return self._stream(
             prompt,
@@ -111,6 +115,7 @@ class PydanticAIAgentRuntime[Deps, Output](AgentRuntime[Deps, Output]):
             run_id=run_id,
             conversation_id=conversation_id,
             usage_tracker=usage_tracker,
+            journal=journal,
         )
 
     @asynccontextmanager
@@ -124,8 +129,9 @@ class PydanticAIAgentRuntime[Deps, Output](AgentRuntime[Deps, Output]):
         run_id: RunId | None,
         conversation_id: ConversationId | None,
         usage_tracker: UsageTracker | None,
+        journal: RunJournal | None,
     ) -> AsyncGenerator[AgentStream[Output]]:
-        run = self._run_input(prompt, resume, messages, run_id, conversation_id, usage_tracker)
+        run = self._run_input(prompt, resume, messages, run_id, conversation_id, usage_tracker, journal=journal)
         stream: PydanticAIStream[Output] | None = None
         with capture_run_messages() as captured:
             try:
@@ -140,7 +146,7 @@ class PydanticAIAgentRuntime[Deps, Output](AgentRuntime[Deps, Output]):
                         run_id=str(run.run_id),
                         conversation_id=str(run.conversation_id),
                         usage_limits=_usage_limits(self._policy),
-                        capabilities=(run.usage, run.approvals),
+                        capabilities=run.capabilities,
                     ) as events,
                 ):
                     stream = PydanticAIStream(
@@ -170,6 +176,8 @@ class PydanticAIAgentRuntime[Deps, Output](AgentRuntime[Deps, Output]):
         run_id: RunId | None,
         conversation_id: ConversationId | None,
         usage_tracker: UsageTracker | None,
+        *,
+        journal: RunJournal | None,
     ) -> _RunInput[Deps]:
         if prompt is None and resume is None:
             raise AgentRunInputError('Agent run requires a prompt or resume input')
@@ -178,6 +186,14 @@ class PydanticAIAgentRuntime[Deps, Output](AgentRuntime[Deps, Output]):
         interrupted = interrupted_calls(messages, conversation_identity) if resume is None else None
         history = messages if interrupted is None else (*messages, interrupted.closing)
         recorder = RunUsageRecorder(tracker=usage_tracker)
+        approvals = StaticApprovalRecorder[Deps]()
+        usage = UsageTrackingCapability[Deps](tracker=usage_tracker, recorder=recorder)
+        closing = interrupted.closing if interrupted is not None else None
+        journaling = (
+            ()
+            if journal is None
+            else (TranscriptJournalCapability[Deps](journal=journal, run_id=run_identity, closing=closing),)
+        )
 
         return _RunInput(
             prompt=prompt if prompt is None or isinstance(prompt, str) else user_content_to_pydantic(prompt),
@@ -186,8 +202,8 @@ class PydanticAIAgentRuntime[Deps, Output](AgentRuntime[Deps, Output]):
             run_id=run_identity,
             conversation_id=conversation_identity,
             recorder=recorder,
-            approvals=StaticApprovalRecorder[Deps](),
-            usage=UsageTrackingCapability[Deps](tracker=usage_tracker, recorder=recorder),
+            approvals=approvals,
+            capabilities=(usage, approvals, *journaling),
             interrupted=interrupted,
         )
 

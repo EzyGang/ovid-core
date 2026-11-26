@@ -209,6 +209,7 @@ def stream(
     run_id: RunId | None,
     conversation_id: ConversationId | None,
     usage_tracker: UsageTracker | None,
+    journal: RunJournal | None,
 ) -> AbstractAsyncContextManager[AgentStream[Output]]
 ```
 
@@ -243,6 +244,24 @@ The Ovid servers commit the partial for you, as [Persistence on failure](server.
 A custom `AgentRuntime` must accept both prompt types and the `resume` value.
 It must raise `AgentRunInputError` when `prompt` and `resume` are both `None`.
 A custom `AgentStream` that keeps no partial transcript returns `None` from `partial()`.
+
+`stream` also takes `journal`, a `RunJournal` from `ovid_core.persistence`.
+`OvidAgent.stream` accepts `journal=None` as the default and passes the value to its runtime.
+`PydanticAIAgentRuntime` adds the transcript journal capability to a run that has a journal.
+A custom `AgentRuntime` that wraps another `OvidAgent` must pass `journal` to it.
+The Ovid servers create the journal, as [Journaled runs](server.md#journaled-runs) describes:
+
+```python
+from ovid_core.persistence import RunJournal
+
+journal = RunJournal(store=store, conversation_id=conversation_id)
+async with agent.stream('Fix the tests.', deps=deps, conversation_id=conversation_id, journal=journal) as events:
+    async for event in events:
+        render(event)
+```
+
+`journal.messages` holds the run messages that the step commits stored.
+`await journal.end(outcome)` appends the `RunEndedEntry` of the run. It does nothing when the run wrote no entry.
 
 ### Deferred runs
 
