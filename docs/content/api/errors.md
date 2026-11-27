@@ -59,7 +59,7 @@ OvidCoreError
 | `PersistenceError` | Invalid or unsupported persisted message records. |
 | `ModelResolutionError` | Unknown selectors, alias collisions, provider construction, Codex catalog, or incompatible model settings. |
 | `AgentConstructionError` | Agent or adapter extension compilation failures, and invalid Agent Skills libraries at run start. |
-| `ExtensionCollisionError` | Duplicate capability, tool, or toolset IDs. |
+| `ExtensionCollisionError` | Duplicate capability, tool, or toolset IDs, and a tool name that two toolsets share. Server code `extension_collision`. |
 | `AgentRunError` | Normalized agent execution failures. |
 | `AgentTimeoutError` | Whole-run timeout. Catch this error as `AgentRunError` or built-in `TimeoutError`. |
 | `UsageLimitError` | Preflight or post-update aggregate usage limit violation. |

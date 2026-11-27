@@ -6,6 +6,7 @@ from ovid_core.errors import (
     ContextWindowError,
     CredentialError,
     DeferredToolAnswerError,
+    ExtensionCollisionError,
     NothingToResumeError,
     OvidCoreError,
     ProviderError,
@@ -105,6 +106,9 @@ def _ovid_error_response(error: OvidCoreError) -> ServerErrorResponse:
 
     if isinstance(error, ResumeLimitError):
         return ServerErrorResponse(code='resume_limit_exceeded', message=str(error))
+
+    if isinstance(error, ExtensionCollisionError):
+        return ServerErrorResponse(code='extension_collision', message=str(error))
 
     if isinstance(error, ProviderError):
         return ServerErrorResponse(

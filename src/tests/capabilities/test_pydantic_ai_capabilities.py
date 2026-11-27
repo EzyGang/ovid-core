@@ -3,7 +3,7 @@ from typing import Self, cast
 
 import pytest
 from pydantic_ai import RunContext
-from pydantic_ai.capabilities import AbstractCapability
+from pydantic_ai.capabilities import AbstractCapability, WrapperCapability
 from pydantic_ai.messages import ModelMessage, ModelResponse, TextPart
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 
@@ -45,11 +45,16 @@ def test_pydantic_ai_capability_preserves_source_and_metadata() -> None:
     assert adapt_integration_capability(capability) is source
 
 
-def test_pydantic_ai_capability_derives_non_deferred_id() -> None:
+def test_pydantic_ai_capability_derives_non_deferred_id_without_changing_the_source() -> None:
     source = RecordingCapability()
+    capability = pydantic_ai_capability(source)
+    adapted = adapt_integration_capability(capability)
 
-    assert pydantic_ai_capability(source).id == 'recording_capability'
-    assert source.id == 'recording_capability'
+    assert capability.id == 'recording_capability'
+    assert source.id is None
+    assert isinstance(adapted, WrapperCapability)
+    assert adapted.id == 'recording_capability'
+    assert adapted.wrapped is source
 
 
 def test_pydantic_ai_capability_rejects_invalid_values() -> None:
