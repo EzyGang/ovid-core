@@ -1,5 +1,6 @@
 import asyncio
 import sys
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -14,6 +15,7 @@ import tests.support.integration_consumer as consumer
 from ovid_core import AgentConstructionError, CredentialError
 from ovid_core.adapters.pydantic_ai import adapt_integration_capability, inspect_mcp_server
 from ovid_core.credentials import EnvironmentCredentialRef, EnvironmentCredentialResolver
+from ovid_core.hooks import Deny
 from ovid_core.mcp import (
     MCPHTTPTransportConfig,
     MCPServerCapability,
@@ -22,7 +24,9 @@ from ovid_core.mcp import (
     MCPValues,
     create_mcp_capability,
 )
+from ovid_core.messages import ToolReturnPart
 from tests.support.agent_helpers import agent_factory
+from tests.support.hook_consumer import DecisionHook
 
 
 _SERVER_PATH = Path(__file__).with_name('mcp_server.py')
@@ -64,6 +68,23 @@ async def test_stdio_mcp_resolves_credentials_filters_namespaces_and_executes() 
     assert 'true' in result.messages[-1].model_dump_json().lower()
     assert 'mcp-secret' not in repr(capability)
     assert 'mcp-secret' not in config.model_dump_json()
+
+
+async def test_agent_hook_denies_an_mcp_tool_call_and_sees_its_source_and_capability() -> None:
+    capability: MCPServerCapability[None] = await create_mcp_capability(
+        stdio_config(include_tools=('credential_loaded',), environment=MCPValues())
+    )
+    hook = DecisionHook[None](Deny(message='blocked'))
+    definition = replace(consumer.integration_definition((capability,)), hooks=(hook,))
+    agent = await agent_factory({'primary': TestModel(call_tools=['server_credential_loaded'])}).build(definition)
+
+    result = await agent.run('Check the credential.', deps=None)
+
+    returns = [part for message in result.messages for part in message.parts if isinstance(part, ToolReturnPart)]
+    assert [(part.outcome, part.content) for part in returns] == [('denied', 'blocked')]
+    assert [(call.tool_name, call.source, call.capability_id, call.tool_id) for call in hook.calls] == [
+        ('server_credential_loaded', 'mcp', 'test-mcp', None)
+    ]
 
 
 async def test_mcp_inspection_launches_server_and_reports_effective_tools() -> None:

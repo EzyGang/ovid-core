@@ -145,7 +145,9 @@ Capabilities can add these values:
 - Hooks
 - Model settings
 
-The compiler also adds direct toolsets and hooks.
+The compiler also adds direct toolsets and the agent hooks.
+The agent hooks apply to every tool, and capability hooks apply only to the tools of their capability.
+[Tool hooks](extensions.md#tool-hooks) describes the rules.
 
 ### Ovid tool approval
 

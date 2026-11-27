@@ -6,7 +6,7 @@ from typing import Self, cast
 
 from ovid_core import BaseModel, ToolExecutionError
 from ovid_core.capabilities import BaseCapability, CapabilityContributions, CapabilityModelSettings
-from ovid_core.hooks import BaseToolHook
+from ovid_core.hooks import BaseToolHook, ToolCall
 from ovid_core.runtime import RunContext
 from ovid_core.tools import BaseTool, BaseToolset, ToolApproval, ToolExecutionContext, ToolResult
 
@@ -120,32 +120,27 @@ class RecordingHook(BaseToolHook[Dependencies]):
     def __init__(self) -> None:
         self.events: list[str] = []
 
-    async def before_tool(
-        self,
-        context: ToolExecutionContext[Dependencies],
-        tool_id: str,
-        arguments: BaseModel,
-    ) -> None:
-        del context, arguments
-        self.events.append(f'before:{tool_id}')
+    async def before_tool(self, context: ToolExecutionContext[Dependencies], call: ToolCall) -> None:
+        del context
+        self.events.append(f'before:{call.tool_id}')
 
     async def after_tool(
         self,
         context: ToolExecutionContext[Dependencies],
-        tool_id: str,
+        call: ToolCall,
         result: ToolResult,
     ) -> None:
         del context, result
-        self.events.append(f'after:{tool_id}')
+        self.events.append(f'after:{call.tool_id}')
 
     async def on_tool_error(
         self,
         context: ToolExecutionContext[Dependencies],
-        tool_id: str,
+        call: ToolCall,
         error: ToolExecutionError,
     ) -> None:
         del context, error
-        self.events.append(f'error:{tool_id}')
+        self.events.append(f'error:{call.tool_id}')
 
 
 def arithmetic_capability(tool: AddTool, toolset: TrackingToolset, hook: RecordingHook) -> BaseCapability[Dependencies]:

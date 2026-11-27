@@ -23,6 +23,9 @@ from ovid_core.tools.deferred import (
 from ovid_core.tools.models import ToolApproval
 
 
+HOOK_APPROVAL_KEY = 'ovid_hook_approval'
+
+
 @dataclass(frozen=True, slots=True)
 class InterruptedCalls:
     """The history before a new prompt and the request that closes its pending calls as interrupted.
@@ -111,19 +114,25 @@ def deferred_requests_from_pydantic(
     requests: PydanticDeferredToolRequests,
     approvals: Mapping[str, ToolApproval],
 ) -> DeferredToolRequests:
-    return DeferredToolRequests(
-        calls=tuple(
+    calls: list[DeferredToolRequest] = []
+    for call in (*requests.approvals, *requests.calls):
+        metadata = requests.metadata.get(call.tool_call_id)
+        approval = approvals.get(call.tool_call_id)
+        if metadata is not None and HOOK_APPROVAL_KEY in metadata:
+            approval = ToolApproval.model_validate(metadata[HOOK_APPROVAL_KEY])
+            metadata = approval.metadata or None
+        calls.append(
             DeferredToolRequest(
                 tool_call_id=call.tool_call_id,
                 tool_name=call.tool_name,
                 arguments=call.args_as_dict(),
                 kind=requests.kind(call.tool_call_id),
-                approval=approvals.get(call.tool_call_id),
-                metadata=requests.metadata.get(call.tool_call_id),
+                approval=approval,
+                metadata=metadata,
             )
-            for call in (*requests.approvals, *requests.calls)
         )
-    )
+
+    return DeferredToolRequests(calls=tuple(calls))
 
 
 def deferred_results_to_pydantic(answers: Mapping[str, DeferredToolAnswer]) -> DeferredToolResults:

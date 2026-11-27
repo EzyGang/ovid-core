@@ -17,11 +17,9 @@ from pydantic_core import SchemaValidator, core_schema
 
 from ovid_core.adapters.pydantic_ai._instruction_sources import PydanticInstruction, pydantic_instructions
 from ovid_core.adapters.pydantic_ai._tool_context import run_context_from_pydantic
-from ovid_core.adapters.pydantic_ai._tool_execution import execute_tool
-from ovid_core.adapters.pydantic_ai._user_content import user_content_to_pydantic
+from ovid_core.adapters.pydantic_ai._tool_execution import execute_tool, tool_result_to_pydantic
 from ovid_core.capabilities.base import BaseCapability, CapabilityModelSettings
 from ovid_core.errors import ExtensionCollisionError, ToolExecutionError
-from ovid_core.hooks.base import BaseToolHook
 from ovid_core.policy import AgentRetryPolicy
 from ovid_core.runtime.context import RunContext
 from ovid_core.tools.base import BaseTool, BaseToolset
@@ -39,8 +37,8 @@ class _BoundToolsetTool[Deps](ToolsetTool[Deps]):
 @dataclass(kw_only=True)
 class PydanticAIToolsetAdapter[Deps](AbstractToolset[Deps]):
     source: BaseToolset[Deps]
-    hooks: tuple[BaseToolHook[Deps], ...] = ()
     tool_approval: ToolApproval | None = None
+    capability_id: str | None = None
     deferred_capability_id: str | None = None
     retries: AgentRetryPolicy = AgentRetryPolicy()
     _listed: dict[str, BaseTool[Deps, Any, Any]] = field(default_factory=dict, init=False, repr=False, compare=False)
@@ -80,6 +78,7 @@ class PydanticAIToolsetAdapter[Deps](AbstractToolset[Deps]):
                 tool_def=_tool_definition(
                     source_tool,
                     tool_approval=self.tool_approval,
+                    capability_id=self.capability_id,
                     deferred_capability_id=self.deferred_capability_id,
                 ),
                 max_retries=self.retries.tools,
@@ -99,10 +98,11 @@ class PydanticAIToolsetAdapter[Deps](AbstractToolset[Deps]):
         if not isinstance(tool, _BoundToolsetTool) or tool.toolset is not self:
             raise ToolExecutionError(f'Tool {name!r} is not available for this model step')
 
-        result = await execute_tool(name, tool.source_tool, tool_args, ctx, self.hooks, self.retries)
-        content = [result.content, *user_content_to_pydantic(result.files)] if result.files else result.content
+        return tool_result_to_pydantic(await execute_tool(name, tool.source_tool, tool_args, ctx, self.retries))
 
-        return ToolReturn(return_value=content, metadata=result.metadata or None)
+    def listed_tool(self, name: str) -> BaseTool[Deps, Any, Any] | None:
+        """Return the tool of the latest listing with the given wire name."""
+        return self._listed.get(name)
 
     def idempotency_key(self, name: str, arguments: dict[str, Any]) -> str | None:
         """Return the idempotency key of a call to a tool of the latest listing.
@@ -185,6 +185,7 @@ def _tool_definition(
     tool: BaseTool[Any, Any, Any],
     *,
     tool_approval: ToolApproval | None,
+    capability_id: str | None,
     deferred_capability_id: str | None,
 ) -> ToolDefinition:
     presentation = tool.presentation
@@ -193,6 +194,8 @@ def _tool_definition(
         'ovid_approval': approval.model_dump(mode='json'),
         'ovid_effect': tool.effect.model_dump(mode='json'),
     }
+    if capability_id is not None:
+        metadata['ovid_capability_id'] = capability_id
     if presentation.input_format != 'json' or presentation.grammar is not None:
         metadata['ovid_input_format'] = presentation.input_format
     if presentation.grammar is not None:

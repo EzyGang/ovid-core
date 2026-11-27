@@ -13,7 +13,6 @@ from ovid_core.adapters.pydantic_ai.tools import (
     _StaticToolset,
 )
 from ovid_core.capabilities.base import BaseCapability
-from ovid_core.hooks.base import BaseToolHook
 from ovid_core.policy import AgentRetryPolicy
 from ovid_core.tools.base import BaseToolset
 from ovid_core.tools.models import ToolApproval
@@ -28,7 +27,6 @@ class PydanticAIExtensions[Deps]:
 def adapt_agent_extensions[Deps](
     capabilities: Sequence[BaseCapability[Deps]],
     toolsets: Sequence[BaseToolset[Deps]],
-    hooks: tuple[BaseToolHook[Deps], ...],
     *,
     tool_approval: ToolApproval | None = None,
     retries: AgentRetryPolicy = AgentRetryPolicy(),
@@ -38,8 +36,8 @@ def adapt_agent_extensions[Deps](
     adapted_toolsets = [
         PydanticAIToolsetAdapter(
             source=source,
-            hooks=(*hooks, *capability.contributions.hooks),
             tool_approval=tool_approval,
+            capability_id=capability.id,
             deferred_capability_id=capability.id if capability.defer_loading else None,
             retries=retries,
         )
@@ -47,8 +45,7 @@ def adapt_agent_extensions[Deps](
         for source in _capability_toolsets(capability)
     ]
     adapted_toolsets.extend(
-        PydanticAIToolsetAdapter(source=source, hooks=hooks, tool_approval=tool_approval, retries=retries)
-        for source in toolsets
+        PydanticAIToolsetAdapter(source=source, tool_approval=tool_approval, retries=retries) for source in toolsets
     )
     combined = _combine_toolsets(tuple(adapted_toolsets))
 

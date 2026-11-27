@@ -5,7 +5,7 @@ from typing import Any
 
 from ovid_core import AgentDefinition, AgentRunPolicy, BaseModel, ObservabilityConfig
 from ovid_core.capabilities import BaseCapability, CapabilityContributions
-from ovid_core.hooks import BaseToolHook
+from ovid_core.hooks import BaseToolHook, ToolCall
 from ovid_core.routing import ModelRef, ModelRouteRef
 from ovid_core.runtime import RunContext
 from ovid_core.tools import BaseTool, BaseToolset, ToolExecutionContext, ToolResult
@@ -87,23 +87,17 @@ class ConsumerToolset(BaseToolset[AgentDependencies]):
 
 
 class RecordingHook(BaseToolHook[AgentDependencies]):
-    async def before_tool(
-        self,
-        context: ToolExecutionContext[AgentDependencies],
-        tool_id: str,
-        arguments: BaseModel,
-    ) -> None:
-        del arguments
-        context.run.deps.events.append(f'before:{tool_id}')
+    async def before_tool(self, context: ToolExecutionContext[AgentDependencies], call: ToolCall) -> None:
+        context.run.deps.events.append(f'before:{call.tool_id}')
 
     async def after_tool(
         self,
         context: ToolExecutionContext[AgentDependencies],
-        tool_id: str,
+        call: ToolCall,
         result: ToolResult,
     ) -> None:
         del result
-        context.run.deps.events.append(f'after:{tool_id}')
+        context.run.deps.events.append(f'after:{call.tool_id}')
 
 
 def structured_definition(

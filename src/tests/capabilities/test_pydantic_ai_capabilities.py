@@ -68,7 +68,7 @@ def test_pydantic_ai_capability_id_collides_with_ovid_capability() -> None:
     upstream = pydantic_ai_capability(RecordingCapability(id='shared'))
 
     with pytest.raises(ExtensionCollisionError, match="Duplicate capability ID: 'shared'"):
-        adapt_agent_extensions((BaseCapability[None](id='shared'), upstream), (), ())
+        adapt_agent_extensions((BaseCapability[None](id='shared'), upstream), ())
 
 
 async def test_pydantic_ai_capability_runs_with_full_lifecycle() -> None:

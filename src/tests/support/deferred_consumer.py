@@ -8,7 +8,7 @@ from pydantic_ai.models.function import AgentInfo, DeltaToolCall, DeltaToolCalls
 from ovid_core import AgentDefinition, AgentRunPolicy, BaseModel, OvidAgent, ToolExecutionError
 from ovid_core.capabilities import BaseCapability
 from ovid_core.errors import ToolApprovalRequired, ToolDeferred
-from ovid_core.hooks import BaseToolHook
+from ovid_core.hooks import BaseToolHook, ToolCall
 from ovid_core.messages import AgentMessage, ToolReturnPart
 from ovid_core.routing import ModelRef
 from ovid_core.server import AgentRegistration
@@ -81,32 +81,26 @@ class EventHook(BaseToolHook[AgentDependencies]):
     def __init__(self) -> None:
         self.events: list[str] = []
 
-    async def before_tool(
-        self,
-        context: ToolExecutionContext[AgentDependencies],
-        tool_id: str,
-        arguments: BaseModel,
-    ) -> None:
-        del arguments
-        self.events.append(f'before:{tool_id}:{context.approved}')
+    async def before_tool(self, context: ToolExecutionContext[AgentDependencies], call: ToolCall) -> None:
+        self.events.append(f'before:{call.tool_id}:{context.approved}')
 
     async def after_tool(
         self,
         context: ToolExecutionContext[AgentDependencies],
-        tool_id: str,
+        call: ToolCall,
         result: ToolResult,
     ) -> None:
         del result
-        self.events.append(f'after:{tool_id}:{context.approved}')
+        self.events.append(f'after:{call.tool_id}:{context.approved}')
 
     async def on_tool_error(
         self,
         context: ToolExecutionContext[AgentDependencies],
-        tool_id: str,
+        call: ToolCall,
         error: ToolExecutionError,
     ) -> None:
         del context, error
-        self.events.append(f'error:{tool_id}')
+        self.events.append(f'error:{call.tool_id}')
 
 
 class ScriptedModel:

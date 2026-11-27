@@ -57,7 +57,7 @@ The Pydantic AI adapter:
 2. The adapter validates model arguments as `ReadTextArgs`.
 3. The adapter sends run dependencies and identities through `ToolExecutionContext`.
 4. The adapter applies approval and timeout policy.
-5. The adapter calls the hooks.
+5. The tool hooks run before and after the call.
 6. The adapter validates the returned `ToolResult`.
 7. The adapter converts the result to upstream tool-return content.
 8. The adapter returns validation, execution, and timeout failures to the model as tool results.
@@ -323,26 +323,39 @@ Pass application toolsets through `AgentDefinition.toolsets`, or contribute them
 ## Add common hooks
 
 ```python
-from ovid_core.hooks.base import BaseToolHook
+from ovid_core.hooks import BaseToolHook, Deny, ToolCall, ToolDecision
+from ovid_core.tools import ToolResult
 
 
 class ToolAuditHook(BaseToolHook[AppDeps]):
-    async def before_tool(self, context, tool_id, arguments) -> None:
-        await context.run.deps.audit.started(
-            run_id=str(context.run.run_id),
-            tool_id=tool_id,
-        )
+    async def before_tool(self, context, call: ToolCall) -> ToolDecision | None:
+        if call.source == 'mcp' and call.tool_name.startswith('admin_'):
+            return Deny(message='Admin tools are not available.')
 
-    async def after_tool(self, context, tool_id, result) -> None:
-        await context.run.deps.audit.completed(
-            run_id=str(context.run.run_id),
-            tool_id=tool_id,
-        )
+        await context.run.deps.audit.started(run_id=str(context.run.run_id), tool_name=call.tool_name)
+        return None
+
+    async def after_tool(self, context, call: ToolCall, result: ToolResult) -> ToolResult | None:
+        await context.run.deps.audit.completed(run_id=str(context.run.run_id), tool_name=call.tool_name)
+        return None
 ```
 
-Pass hooks directly through `AgentDefinition.hooks` when they apply to the entire agent. Contribute them from one capability when they apply only to that capability's toolsets.
+Hooks run for every tool of the agent: Ovid tools, MCP tools, and tools from a Pydantic AI capability passthrough.
 
-`on_tool_error` receives normalized `ToolExecutionError` one time for each failed tool execution. Hooks should avoid logging raw arguments or results when those values may contain user or secret content.
+Pass hooks directly through `AgentDefinition.hooks` when they apply to the entire agent.
+Contribute them from one capability when they apply only to the tools of that capability.
+
+A hook can change a call:
+
+- `before_tool` returns `Proceed`, `Deny`, or `RequireApproval` to replace the arguments, block the call, or ask for approval.
+- `after_tool` returns a `ToolResult` to replace the result.
+- `on_tool_error` returns a `ToolResult` to recover from a failure.
+
+A hook that raises an exception does not let the call continue.
+An exception in `before_tool` denies the call.
+[Tool hooks](../api/extensions.md#tool-hooks) gives all rules.
+
+Hooks should avoid logging raw arguments or results when those values may contain user or secret content.
 
 ## Add provider-native capabilities
 

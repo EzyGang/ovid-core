@@ -199,7 +199,7 @@ capabilities = (
 
 The adapter passes the same capability instance to Pydantic AI. Upstream instructions, tools, ordering, deferred loading, run state, and lifecycle hooks keep their normal behavior. A deferred capability needs an explicit ID.
 
-Upstream tools remain Pydantic AI tools. They do not gain Ovid approvals, Ovid hooks, Ovid result validation, service binding, or Ovid timeouts. Test any capability that changes models, messages, events, or durable execution through Ovid's public run and stream APIs.
+Upstream tools remain Pydantic AI tools. They do not gain Ovid approvals, Ovid result validation, service binding, or Ovid timeouts. Ovid tool hooks apply to them. Test any capability that changes models, messages, events, or durable execution through Ovid's public run and stream APIs.
 
 Use Ovid capability types when you need the complete Ovid contract. See [Tools and capabilities](docs/content/api/extensions.md#pydantic-ai-capability-passthrough) for the boundary details.
 

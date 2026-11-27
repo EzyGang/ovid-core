@@ -4,8 +4,10 @@ from typing import Any
 from pydantic import ValidationError
 from pydantic_ai import RunContext as PydanticRunContext
 from pydantic_ai.exceptions import ApprovalRequired, CallDeferred, ModelRetry, ToolFailed
+from pydantic_ai.messages import ToolReturn
 
 from ovid_core.adapters.pydantic_ai._tool_context import tool_context_from_pydantic
+from ovid_core.adapters.pydantic_ai._user_content import user_content_to_pydantic
 from ovid_core.errors import (
     ToolApprovalRequired,
     ToolDeferred,
@@ -14,7 +16,6 @@ from ovid_core.errors import (
     ToolTimeoutError,
     ToolValidationError,
 )
-from ovid_core.hooks.base import BaseToolHook
 from ovid_core.models import BaseModel
 from ovid_core.policy import AgentRetryPolicy
 from ovid_core.tools.base import BaseTool
@@ -26,7 +27,6 @@ async def execute_tool[Deps](
     tool: BaseTool[Deps, Any, Any],
     raw_arguments: dict[str, Any],
     ctx: PydanticRunContext[Deps],
-    hooks: tuple[BaseToolHook[Deps], ...],
     retries: AgentRetryPolicy,
 ) -> ToolResult:
     context = tool_context_from_pydantic(ctx)
@@ -35,15 +35,10 @@ async def execute_tool[Deps](
     deadline = asyncio.timeout(tool.timeout_seconds)
     validating_result = False
     try:
-        for hook in hooks:
-            await hook.before_tool(context, tool.id, arguments)
         async with deadline:
             output = await tool.execute(context, arguments)
         validating_result = True
-        result = tool.result_type.model_validate(output)
-        validating_result = False
-        for hook in hooks:
-            await hook.after_tool(context, tool.id, result)
+        return tool.result_type.model_validate(output)
     except ApprovalRequired, CallDeferred:
         raise
     except (ToolApprovalRequired, ToolDeferred) as error:
@@ -52,15 +47,27 @@ async def execute_tool[Deps](
         if returning and isinstance(error, (ModelRetry, ToolFailed)):
             raise
         failure, reply = _classified_failure(name, tool, error, deadline.expired(), validating_result, retries)
-    else:
-        return result
 
-    for hook in hooks:
-        await hook.on_tool_error(context, tool.id, failure)
     if not returning:
         raise failure
 
     raise reply from failure
+
+
+def tool_result_to_pydantic(result: ToolResult) -> ToolReturn[Any]:
+    """Send `content` and `files` to the model, and keep `metadata` out of band."""
+    content = [result.content, *user_content_to_pydantic(result.files)] if result.files else result.content
+
+    return ToolReturn(return_value=content, metadata=result.metadata or None)
+
+
+def invalid_arguments_message(name: str, error: ValidationError, limit: int) -> str:
+    lines = '\n'.join(
+        f'{".".join(str(item) for item in detail["loc"]) or "arguments"}: {detail["msg"]}'
+        for detail in error.errors(include_url=False)
+    )
+
+    return _truncated(f'Invalid arguments for tool {name!r}:\n{lines}', limit)
 
 
 def _upstream_deferral(error: ToolApprovalRequired | ToolDeferred) -> ApprovalRequired | CallDeferred:
@@ -82,12 +89,7 @@ def _validated_arguments(
         if retries.tool_failures == 'raise':
             raise ToolValidationError(f'Invalid arguments for tool {tool.id!r}') from error
 
-        lines = '\n'.join(
-            f'{".".join(str(item) for item in detail["loc"]) or "arguments"}: {detail["msg"]}'
-            for detail in error.errors(include_url=False)
-        )
-        message = f'Invalid arguments for tool {name!r}:\n{lines}'
-        raise ModelRetry(_truncated(message, retries.error_max_chars)) from error
+        raise ModelRetry(invalid_arguments_message(name, error, retries.error_max_chars)) from error
 
 
 def _classified_failure(

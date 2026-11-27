@@ -5,7 +5,7 @@ from typing import cast
 
 import pytest
 from pydantic import JsonValue, ValidationError
-from pydantic_ai.exceptions import ModelRetry, ToolFailed
+from pydantic_ai.exceptions import ModelRetry, ToolFailed, ToolFailedError
 from pydantic_ai.messages import ModelMessage, ModelResponse, TextPart, ToolCallPart
 from pydantic_ai.models.function import AgentInfo, DeltaToolCall, FunctionModel
 from pydantic_ai.models.test import TestModel
@@ -25,7 +25,7 @@ from ovid_core import (
     ToolValidationError,
     UsageLimitError,
 )
-from ovid_core.hooks import BaseToolHook
+from ovid_core.hooks import BaseToolHook, ToolCall
 from ovid_core.messages import ToolReturnPart
 from ovid_core.routing import ModelRef
 from ovid_core.runtime import AgentEvent, RunResult
@@ -72,17 +72,17 @@ class FailTool(BaseTool[AgentDependencies, FailArguments, ToolResult]):
 class ErrorHook(BaseToolHook[AgentDependencies]):
     def __init__(self) -> None:
         self.errors: list[ToolExecutionError] = []
-        self.tool_ids: list[str] = []
+        self.tool_ids: list[str | None] = []
 
     async def on_tool_error(
         self,
         context: ToolExecutionContext[AgentDependencies],
-        tool_id: str,
+        call: ToolCall,
         error: ToolExecutionError,
     ) -> None:
         del context
         self.errors.append(error)
-        self.tool_ids.append(tool_id)
+        self.tool_ids.append(call.tool_id)
 
 
 class CallingModel:
@@ -177,6 +177,7 @@ async def test_each_failure_kind_returns_its_result_under_the_wire_name_and_hook
         (ToolTimeoutError, "Tool 'consumer_fail' timed out", TimeoutError),
         (ToolTimeoutError, "Tool 'consumer_fail' timed out", TimeoutError),
         (ToolExecutionError, "Tool 'consumer_fail' failed", ValidationError),
+        (ToolExecutionError, "Tool 'consumer_fail' failed", ToolFailedError),
     ]
     assert set(hook.tool_ids) == {'consumer_fail'}
     assert 'private result' not in str(tool_returns(result))
