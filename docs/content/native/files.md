@@ -332,6 +332,64 @@ Every successful mutation:
 - renders bounded final source in `post_edit_sources`
 - authorizes only those final lines actually returned
 
+## Recover interrupted edits
+
+A Hashline or patch edit can change several files.
+A lost process can stop the edit after some files changed.
+Give the session a state directory to make these edits recoverable.
+
+```python
+workspace = NativeWorkspaceSession(
+    root=Path('/workspace/project'),
+    state_dir=Path('/home/user/.ovid/workspaces/<root-digest>'),
+)
+reports = await workspace.recover()
+```
+
+The first journalled edit creates the state directory with `blobs/` and `mutations/`.
+Without `state_dir`, the session does not journal edits, and `recover()` returns an empty tuple.
+
+Before the first file changes, each Hashline and patch edit does these steps:
+
+1. It writes the bytes of each changed file to `blobs/<sha256>`. Edits share a blob when the bytes are equal.
+2. It writes one record to `mutations/<id>.record`. For each file, the record keeps the path, operation, destination, and the normalized digests before and after the edit.
+3. It syncs each new blob and the record to disk.
+
+After each file changes, the edit appends one progress line to the record without a sync.
+Recovery uses the file digests, not the progress lines.
+When the edit ends, it deletes the record and each blob that no other record names.
+An edit that fails in a live process also deletes its record.
+`WorkspacePartialCommitError` then reports the changed and pending paths.
+
+Call `recover()` once when the workspace opens, before the first edit.
+It takes the exclusive workspace write lock, thus no live edit can run.
+For each file of each leftover record, recovery applies the first rule that matches:
+
+- A Hashline remove or move left the original in a `.ovid-hashline-*` folder, and the path is empty: recovery moves the original back.
+- The file has the digest from before the edit: the edit did not change the file, and recovery does nothing.
+- The file has the digest from after the edit: recovery writes the pre-image back. For a created file, recovery deletes the file.
+- The file has other content: this is a conflict, and recovery does not change the file.
+
+Then recovery deletes the record, its blobs, and the `.ovid-hashline-*` folders that the record names.
+It does not touch other `.ovid-hashline-*` folders.
+No record stays after a conflict, thus a later open does not report the same conflict again.
+
+`recover()` returns one `WorkspaceRecoveryReport` for each leftover record:
+
+- `mutation_id`: the ID of the record
+- `restored`: the paths that recovery returned to their pre-images
+- `conflicts`: the paths that changed after the crash and that recovery did not change
+
+The report contains paths only.
+It never contains file content.
+
+The journal has these limits:
+
+- Recovery never rolls back an external change. The user must resolve each conflict.
+- The journal covers Hashline and patch edits only. Complete-file writes, replace edits, and AST rewrites are not journalled.
+- Shell commands are not journalled.
+- Each edit writes at most one blob for each changed file. It syncs each new blob and the record once.
+
 ## Restore observations after a restart
 
 The observation ledger is in memory.
