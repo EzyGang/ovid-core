@@ -5,6 +5,7 @@ from pydantic_ai.models import Model, ModelSelectionContext
 
 from ovid_core.adapters.pydantic_ai._agent_runtime import PydanticAIAgentRuntime
 from ovid_core.adapters.pydantic_ai._instruction_sources import pydantic_instructions
+from ovid_core.adapters.pydantic_ai._tool_collisions import OvidToolCollisionsCapability
 from ovid_core.adapters.pydantic_ai._tool_hooks import OvidToolHooksCapability
 from ovid_core.adapters.pydantic_ai.extensions import adapt_agent_extensions
 from ovid_core.adapters.pydantic_ai.models import _resolve_model
@@ -45,6 +46,7 @@ class DefaultAgentCompiler:
                     max_delay=provider_retry.max_delay_seconds,
                 ),
                 *((_RouteFallback[Deps](resolved.handle, runtime),) if isinstance(runtime, _Route) else ()),
+                OvidToolCollisionsCapability[Deps](),
             )
             if resolved.handle.resolve is not None:
 

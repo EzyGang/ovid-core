@@ -7,11 +7,10 @@ from pydantic import JsonValue, ValidationError
 from pydantic_ai import AgentModelSettings
 from pydantic_ai import RunContext as PydanticRunContext
 from pydantic_ai.capabilities import AbstractCapability
-from pydantic_ai.exceptions import UserError
 from pydantic_ai.messages import ToolReturn
 from pydantic_ai.models import ModelSettings
 from pydantic_ai.tools import ToolDefinition
-from pydantic_ai.toolsets import AbstractToolset, CombinedToolset
+from pydantic_ai.toolsets import AbstractToolset
 from pydantic_ai.toolsets.abstract import ToolsetTool
 from pydantic_core import SchemaValidator, core_schema
 
@@ -128,14 +127,6 @@ class _StaticToolset[Deps](BaseToolset[Deps]):
         return self._tools
 
 
-class _CollisionCheckedToolset[Deps](CombinedToolset[Deps]):
-    async def get_tools(self, ctx: PydanticRunContext[Deps]) -> dict[str, ToolsetTool[Deps]]:
-        try:
-            return await super().get_tools(ctx)
-        except UserError as error:
-            raise ExtensionCollisionError('Capabilities contribute conflicting tool IDs') from error
-
-
 class PydanticAICapabilityAdapter[Deps](AbstractCapability[Deps]):
     def __init__(self, source: BaseCapability[Deps]) -> None:
         self.id = source.id
@@ -168,17 +159,6 @@ def _unique_tools[Deps](tools: Sequence[BaseTool[Deps, Any, Any]]) -> dict[str, 
         result[name] = tool
 
     return result
-
-
-def _combine_toolsets[Deps](
-    adapters: tuple[PydanticAIToolsetAdapter[Deps], ...],
-) -> AbstractToolset[Deps] | None:
-    if not adapters:
-        return None
-    if len(adapters) == 1:
-        return adapters[0]
-
-    return _CollisionCheckedToolset(adapters)
 
 
 def _tool_definition(

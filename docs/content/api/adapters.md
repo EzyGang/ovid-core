@@ -176,6 +176,9 @@ During execution, the adapter:
 - preserves cancellation
 
 Duplicate tool or extension IDs raise `ExtensionCollisionError`.
+`DefaultAgentCompiler` also adds a capability that checks the tool names of the whole agent toolset when Pydantic AI lists
+the tools for a model step. A tool name that two toolsets share raises `ExtensionCollisionError`. This check includes the
+tools of [Pydantic AI capability passthrough](extensions.md#pydantic-ai-capability-passthrough).
 
 ## Tool hooks capability
 

@@ -5,13 +5,9 @@ from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.toolsets import AbstractToolset
 
 from ovid_core.adapters.pydantic_ai._extension_validation import validate_extension_ids
+from ovid_core.adapters.pydantic_ai._tool_collisions import _combine_toolsets
 from ovid_core.adapters.pydantic_ai.integrations import adapt_integration_capability
-from ovid_core.adapters.pydantic_ai.tools import (
-    PydanticAICapabilityAdapter,
-    PydanticAIToolsetAdapter,
-    _combine_toolsets,
-    _StaticToolset,
-)
+from ovid_core.adapters.pydantic_ai.tools import PydanticAICapabilityAdapter, PydanticAIToolsetAdapter, _StaticToolset
 from ovid_core.capabilities.base import BaseCapability
 from ovid_core.policy import AgentRetryPolicy
 from ovid_core.tools.base import BaseToolset

@@ -332,7 +332,7 @@ async def test_dynamic_tool_collisions_and_empty_capabilities_are_stable() -> No
         ),
         (),
     ).toolsets[0]
-    with pytest.raises(ExtensionCollisionError, match='conflicting tool IDs'):
+    with pytest.raises(ExtensionCollisionError, match="Tool name 'add' comes from capability 'conflicting'"):
         await conflicting.get_tools(context)
 
     empty = adapt_agent_extensions((BaseCapability(id='empty'),), ())

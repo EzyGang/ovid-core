@@ -601,8 +601,10 @@ All capability IDs, toolset IDs, and effective tool wire names must be unique. C
 
 ## Pydantic AI capability passthrough
 
-Import `pydantic_ai_capability` from `ovid_core.adapters.pydantic_ai`. It accepts a Pydantic AI
-`AbstractCapability` and returns an Ovid `BaseCapability` that the default compiler recognizes:
+`pydantic_ai_capability` is the supported path for Pydantic AI and Pydantic AI Harness capabilities.
+`AgentDefinition.capabilities` takes only Ovid capabilities. Import `pydantic_ai_capability` from
+`ovid_core.adapters.pydantic_ai`. It accepts a Pydantic AI `AbstractCapability` and returns an Ovid `BaseCapability` that
+the default compiler recognizes:
 
 ```python
 from pydantic_ai_harness.planning import Planning
@@ -617,13 +619,23 @@ capabilities = (
 )
 ```
 
-The default Pydantic AI compiler passes the exact source capability instance to Pydantic AI. Its instructions, toolsets,
-native tools, model settings, deferred loading, ordering, `for_agent`, `for_run`, and lifecycle hooks keep their upstream
-behavior. This also lets Pydantic AI Harness capabilities run beside Ovid Native capabilities.
+The default Pydantic AI compiler passes the source capability to Pydantic AI. Its instructions, toolsets, native tools,
+model settings, deferred loading, ordering, `for_agent`, `for_run`, and lifecycle hooks keep their upstream behavior. This
+also lets Pydantic AI Harness capabilities run beside Ovid Native capabilities.
 
-An always-available capability without an explicit ID receives a stable snake-case class ID on both the port and source.
-Deferred capabilities require an explicit upstream ID because message history must refer to a stable value. Explicit IDs
-must be non-empty and trimmed. Ovid rejects collisions between passthrough and Ovid capability IDs.
+The descriptor of the returned capability lists the static instruction strings of the source capability. It counts the
+instruction functions in `dynamic_instructions`.
+
+An always-available capability without an explicit ID receives a stable snake-case class ID. Ovid does not change the
+source capability. `pydantic_ai_capability` wraps it in an upstream `WrapperCapability` that has the generated ID, and the
+tools of the source capability carry that ID as their capability ID. Deferred capabilities require an explicit upstream
+ID because message history must refer to a stable value. Explicit IDs must be non-empty and trimmed. Ovid rejects
+collisions between passthrough and Ovid capability IDs.
+
+Ovid does not rename tools. A tool name that a passthrough capability shares with another tool raises
+`ExtensionCollisionError` when Pydantic AI lists the tools for a model step. The message names the tool and both sources.
+To resolve the clash, set `wire_name` on the Ovid tool, set the MCP `namespace`, or use the upstream toolset methods
+`.prefixed()` and `.renamed()` or the upstream capability method `.prefix_tools()`.
 
 Passthrough does not convert upstream tools into Ovid `BaseTool` values. Ovid approval metadata,
 tool-result validation, service requirements, and Ovid tool timeout policy do not apply to those upstream tools. The
