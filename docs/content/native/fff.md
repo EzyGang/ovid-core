@@ -37,10 +37,12 @@ definition = AgentDefinition[AppDependencies, str](
 )
 ```
 
-`FffCapability` is a deferred capability with the ID `native_fff`.
+By default, `FffCapability` is a deferred capability with the ID `native_fff`.
 The model cannot see or call the FFF tools at the start of a run.
 The model must first call the `load_capability` tool with the ID `native_fff`.
 Pydantic AI refuses an earlier call and tells the model to load the capability.
+`FffCapability(defer_loading=False)` makes the FFF tools ready at the start of a run.
+Use it when FFF is the primary search, so that the model does not spend a request on `load_capability`.
 
 After the load, `FffCapability` contributes these essential-read tools:
 

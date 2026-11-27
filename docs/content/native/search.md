@@ -45,6 +45,7 @@ definition = AgentDefinition[AppDependencies, str](
 | `grep` | 30 seconds | `read`, `safe` | Search UTF-8 file content with literal, Rust regex, or PCRE2 matching |
 
 `SearchCapability(workspace='default')` selects the named binding. Its constructor does not accept a root or provider.
+`SearchCapability(defer_loading=True)` hides both tools until the model calls `load_capability` with the ID `native_search`.
 
 Both tools use normal read approval metadata. Omitting `SearchCapability` contributes neither tool.
 The Effect column shows the `ToolEffect` of each tool.
