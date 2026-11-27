@@ -5,6 +5,7 @@ Files use the same `NativeWorkspaceSession` as native search, FFF, and AST opera
 
 Installation does not activate file access.
 Applications must bind a workspace service and add `WorkspaceFilesCapability` explicitly.
+`WorkspaceFilesCapability(defer_loading=True)` hides the file tools until the model calls `load_capability` with the ID `native_files`.
 
 ## Activate the files capability
 

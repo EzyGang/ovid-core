@@ -4,10 +4,11 @@
 
 ## Agent tools
 
-`AstCapability` is a deferred capability with the ID `native_ast`.
+By default, `AstCapability` is a deferred capability with the ID `native_ast`.
 The model cannot see or call the AST tools at the start of a run.
 The model must first call the `load_capability` tool with the ID `native_ast`.
 Pydantic AI refuses an earlier call and tells the model to load the capability.
+`AstCapability(defer_loading=False)` makes the three tools ready at the start of a run.
 
 After the load, `AstCapability` contributes three tools:
 
