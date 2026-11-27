@@ -131,9 +131,11 @@ The notices come in this order, and each one appears only when it applies:
 - `Incomplete: the scan file limit was reached.` or `Incomplete: the search timed out.`
 - `More files may match: continue with file_offset=N.` when the result supplies `next_file_offset`.
 
-The tool result `metadata` still holds the full structured result under `result`, for user interfaces.
+In Hashline mode, the tool result `metadata` holds the full structured result under `result`, for user interfaces.
 Ovid Core never sends `metadata` to the model.
 In the plain presentation, the model receives the full structured result as JSON content, without notice lines.
+In both presentations, `metadata` holds the receipts of the editable lines under `observations`.
+Refer to [Restore observations after a restart](files.md#restore-observations-after-a-restart).
 
 Pattern modes:
 
