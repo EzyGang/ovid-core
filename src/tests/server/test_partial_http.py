@@ -82,13 +82,18 @@ async def test_native_http_partial_commit_finishes_before_next_run_on_conversati
         following = await _post(client, AgentRunRequest(prompt='Again.', conversation_id=conversation_id))
 
     assert busy == [
-        {'kind': 'server_error', 'code': 'conversation_busy', 'message': 'Conversation already has an active run'}
+        {
+            'kind': 'server_error',
+            'code': 'conversation_busy',
+            'message': 'Conversation already has an active run',
+            'run_id': failed[-2]['run_id'],
+        }
     ]
     assert [event['kind'] for event in failed][-2:] == ['run_failed', 'server_error']
     assert failed[-2]['persisted'] is True
     assert following[-1]['output'] == 'done'
     assert len(requests) == 2
-    assert '[Run ended: failed: Agent run failed]' in str(requests[-1])
+    assert '[Run ended: failed: Provider request failed (unavailable)]' in str(requests[-1])
 
 
 @pytest.mark.parametrize('store_type', [InMemoryConversationStore, AppendOnlyStore])
@@ -109,8 +114,7 @@ async def test_ag_ui_persists_partial_transcript(store_type: Callable[[], Conver
         ('request', 'complete', ('user_prompt:Write.',)),
         ('response', 'complete', ('call:c1',)),
         ('request', 'complete', ('return:c1:success',)),
-        ('response', 'interrupted', ()),
-        ('response', 'interrupted', ('text:[Run ended: failed: Agent run failed]',)),
+        ('response', 'interrupted', ('text:[Run ended: failed: Provider request failed (unavailable)]',)),
     ]
 
 

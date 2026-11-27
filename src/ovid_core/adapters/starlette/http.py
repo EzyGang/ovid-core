@@ -19,6 +19,7 @@ _SERVER_ERROR_STATUS = {
     'forbidden': HTTPStatus.FORBIDDEN,
     'timeout': HTTPStatus.GATEWAY_TIMEOUT,
     'agent_run_failed': HTTPStatus.BAD_GATEWAY,
+    'provider_error': HTTPStatus.BAD_GATEWAY,
 }
 
 

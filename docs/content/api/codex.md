@@ -244,6 +244,21 @@ The model owns its HTTP client after successful construction.
 The factory uses it for the model catalog and for model requests.
 Without it, the factory uses `httpx2.AsyncHTTPTransport()`.
 
+The factory sends backend error responses through a sanitizing transport.
+An error response keeps its HTTP status and these headers:
+
+- `retry-after`
+- `retry-after-ms`
+- `x-request-id`
+- each `x-ratelimit-*` header
+
+The transport replaces the body with `{"error": {"code": ..., "type": ..., "message": ...}}`.
+It keeps only string `code`, `type`, and `message` values from the error object of the original body.
+It replaces bearer tokens, JWTs, and `sk-` keys with `[redacted]`, and it truncates each value to 500 characters.
+When the original body has no error object, the message only states the status class, for example `Codex backend returned a 5xx status`.
+Pydantic AI uses the kept fields and headers to classify the error and to read the retry wait.
+A network failure keeps its `httpx2` exception class, but the transport replaces its message and removes its cause.
+
 `load_instruction_catalog(http_client=..., backend_url=...)` from `ovid_core.codex` loads the same catalog through an `httpx2.AsyncClient`.
 
 The factory rejects stateful Responses API settings, including:

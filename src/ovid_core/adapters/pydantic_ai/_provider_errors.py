@@ -1,4 +1,4 @@
-from pydantic_ai.exceptions import ModelAPIError, ModelHTTPError
+from pydantic_ai.exceptions import ModelAPIError, ModelContextWindowExceededError, ModelHTTPError
 
 from ovid_core.policy import ProviderFailureKind
 
@@ -24,6 +24,8 @@ def provider_failure_kind(error: BaseException) -> ProviderFailureKind:
 
 
 def is_context_window_error(error: BaseException) -> bool:
+    if isinstance(error, ModelContextWindowExceededError):
+        return True
     if not isinstance(error, ModelHTTPError) or error.status_code not in (400, 413):
         return False
 

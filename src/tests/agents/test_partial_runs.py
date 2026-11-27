@@ -6,11 +6,14 @@ from pydantic_ai.exceptions import ModelAPIError
 from pydantic_ai.messages import ModelMessage
 from pydantic_ai.models.function import AgentInfo, DeltaToolCall, DeltaToolCalls
 
-from ovid_core import AgentRunError, AgentRunPolicy
+from ovid_core import AgentRunPolicy, ProviderError
 from ovid_core.errors import AgentTimeoutError
 from tests.support.agent_consumer import AgentDependencies
 from tests.support.deferred_consumer import SafeTool
 from tests.support.partial_consumer import registration, shape
+
+
+_FAILED = 'Provider request failed (unavailable)'
 
 
 async def test_stream_partial_drops_unparsable_calls_of_interrupted_response() -> None:
@@ -22,18 +25,18 @@ async def test_stream_partial_drops_unparsable_calls_of_interrupted_response() -
 
     agent = (await registration(stream, (SafeTool(),))).agent
 
-    with pytest.raises(AgentRunError, match='Agent run failed'):
+    with pytest.raises(ProviderError, match='Provider request failed'):
         async with agent.stream('Go.', deps=AgentDependencies(prefix='partial')) as events:
             async for _ in events:
                 pass
 
     partial = events.partial()
     assert partial is not None
-    assert (partial.outcome, partial.error_type, partial.message) == ('failed', 'AgentRunError', 'Agent run failed')
+    assert (partial.outcome, partial.error_type, partial.message) == ('failed', 'ProviderError', _FAILED)
     assert shape(partial.messages) == [
         ('request', 'complete', ('user_prompt:Go.',)),
         ('response', 'interrupted', ('call:c1',)),
-        ('response', 'interrupted', ('text:[Run ended: failed: Agent run failed]',)),
+        ('response', 'interrupted', (f'text:[Run ended: failed: {_FAILED}]',)),
     ]
     assert partial.history == partial.messages
     assert partial.usage.request_count == 1

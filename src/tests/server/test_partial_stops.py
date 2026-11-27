@@ -109,7 +109,7 @@ async def test_commit_past_grace_keeps_conversation_busy_until_thread_write_ends
     ]
     assert busy[-1]['code'] == 'conversation_busy'
     assert following[-1]['output'] == 'done'
-    assert '[Run ended: failed: Agent run failed]' in str(requests[-1])
+    assert '[Run ended: failed: Provider request failed (unavailable)]' in str(requests[-1])
 
 
 async def _post(client: httpx2.AsyncClient, request: AgentRunRequest) -> list[dict[str, Any]]:

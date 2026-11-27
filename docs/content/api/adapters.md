@@ -84,6 +84,14 @@ Compilation maps:
 
 Invalid runtime values or construction failures raise `AgentConstructionError`.
 
+The compiler adds the Pydantic AI `RetryOnModelErrors` capability to each agent.
+The capability uses the values of `AgentDefinition.policy.provider_retry` and the default Pydantic AI transient error types.
+It sets the provider SDK retry count to `0` for each request, so that only one retry layer runs.
+The Codex subscription client also has an SDK retry count of `0`.
+For a route, the compiler gives the first candidate to the agent and adds the Pydantic AI `ModelFallback` capability with the other candidates.
+Each candidate gets `max_attempts` attempts of its own.
+The request moves to the next candidate only after the retries of the current candidate end, or at once after an eligible failure that is not transient.
+
 ## Extension adaptation
 
 Import from `ovid_core.adapters.pydantic_ai.extensions`.
@@ -339,7 +347,9 @@ def compile_fallback_model(
 
 The function returns one handle without a change.
 
-For multiple handles, the function creates a Pydantic AI `FallbackModel`.
+For multiple handles, the function creates a Pydantic AI `FallbackModel` that keeps the candidates in order.
+`DefaultAgentCompiler` does not run this model in an agent.
+It runs the first candidate and moves to the other candidates with the `ModelFallback` capability and the same fallback policy.
 The new handle reports capabilities that all candidates support.
 For handles with resolvers, the compiler selects current candidate models before each new logical request.
 It creates a replacement `FallbackModel` only when a candidate changes.

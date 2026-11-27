@@ -8,10 +8,12 @@ from ovid_core.errors import (
     DeferredToolAnswerError,
     NothingToResumeError,
     OvidCoreError,
+    ProviderError,
     ResumeLimitError,
     TransportError,
 )
-from ovid_core.server.models import ServerErrorResponse
+from ovid_core.runtime.identifiers import RunId
+from ovid_core.server.models import ProviderErrorDetails, ServerErrorResponse
 
 
 class _UnknownAgentError(TransportError):
@@ -31,7 +33,18 @@ class _CommandExecutionError(TransportError):
 
 
 class _ConversationBusyError(TransportError):
-    pass
+    def __init__(self, run_id: RunId) -> None:
+        super().__init__('Conversation already has an active run')
+        self.run_id = run_id
+
+
+class _DuplicateRequestError(TransportError):
+    """Refuse a client request ID that an earlier run of the conversation already used."""
+
+    def __init__(self, run_id: RunId, *, resumable: bool) -> None:
+        message = 'Client request ID was already used'
+        super().__init__(f'{message} by a run that did not finish. Send a resume request.' if resumable else message)
+        self.run_id = run_id
 
 
 class _DeferredToolsUnavailableError(TransportError):
@@ -68,7 +81,10 @@ def _ovid_error_response(error: OvidCoreError) -> ServerErrorResponse:
         return ServerErrorResponse(code='forbidden', message='Request is not authorized')
 
     if isinstance(error, _ConversationBusyError):
-        return ServerErrorResponse(code='conversation_busy', message='Conversation already has an active run')
+        return ServerErrorResponse(code='conversation_busy', message=str(error), run_id=error.run_id)
+
+    if isinstance(error, _DuplicateRequestError):
+        return ServerErrorResponse(code='duplicate_request', message=str(error), run_id=error.run_id)
 
     if isinstance(error, _DeferredToolsUnavailableError):
         return ServerErrorResponse(
@@ -89,6 +105,18 @@ def _ovid_error_response(error: OvidCoreError) -> ServerErrorResponse:
 
     if isinstance(error, ResumeLimitError):
         return ServerErrorResponse(code='resume_limit_exceeded', message=str(error))
+
+    if isinstance(error, ProviderError):
+        return ServerErrorResponse(
+            code='provider_error',
+            message=str(error),
+            provider=ProviderErrorDetails(
+                failure_kind=error.failure_kind,
+                status_code=error.status_code,
+                provider_code=error.provider_code,
+                retry_after_seconds=error.retry_after_seconds,
+            ),
+        )
 
     if isinstance(error, AgentRunError):
         return ServerErrorResponse(code='agent_run_failed', message=str(error))

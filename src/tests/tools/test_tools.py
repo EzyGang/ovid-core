@@ -230,7 +230,7 @@ async def test_capabilities_compile_contributions_and_execute_through_real_agent
     result = await agent.run('Add values', deps=Dependencies(prefix='agent'))
 
     assert requests[0].instructions == 'Use arithmetic when needed.'
-    assert requests[0].model_settings == {'temperature': 0}
+    assert requests[0].model_settings == {'temperature': 0, 'max_retries': 0}
     assert tool.context is not None
     assert tool.context.run.run_id == result.run_id
     assert tool.context.run.conversation_id == result.conversation_id

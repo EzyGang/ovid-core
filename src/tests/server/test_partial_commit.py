@@ -41,7 +41,7 @@ async def test_stdio_commit_failure_keeps_run_error_and_reports_not_persisted(mo
 
     frames = await stdio_session(agent, store, _run('r1', 'Write.'), 'r1')
 
-    assert failure(frames, 'r1') == ([False], 'agent_run_failed')
+    assert failure(frames, 'r1') == ([False], 'provider_error')
     assert 'private' not in str(frames)
     assert shape(await store.load(_CONVERSATION_ID)) == [('request', 'complete', ('user_prompt:Write.',))]
     assert [run.outcome for run in (await store.load_journal(_CONVERSATION_ID)).runs] == [None]
@@ -106,5 +106,5 @@ async def test_stdio_cancel_during_partial_commit_waits_for_the_commit(mocker: M
 
     frames = await stdio_session(agent, store, _run('r1', 'Write.'), entered, release_after_cancel, cancel, 'r1')
 
-    assert failure(frames, 'r1') == ([True], 'agent_run_failed')
-    assert shape(await store.load(_CONVERSATION_ID))[-1] == boundary('failed: Agent run failed')
+    assert failure(frames, 'r1') == ([True], 'provider_error')
+    assert shape(await store.load(_CONVERSATION_ID))[-1] == boundary('failed: Provider request failed (unavailable)')

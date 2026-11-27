@@ -62,10 +62,17 @@ class ConversationJournalStore(ConversationHistoryStore, Protocol):
 class RunJournal:
     """Append the journal entries of one run, and keep the messages that its step commits hold."""
 
-    def __init__(self, *, store: ConversationJournalStore, conversation_id: ConversationId) -> None:
+    def __init__(
+        self,
+        *,
+        store: ConversationJournalStore,
+        conversation_id: ConversationId,
+        client_request_id: str | None = None,
+    ) -> None:
         self._store = store
         self._conversation_id = conversation_id
         self._run_id: RunId | None = None
+        self.client_request_id = client_request_id
         self.messages: tuple[AgentMessage, ...] = ()
 
     async def append(self, *entries: JournalEntry) -> None:

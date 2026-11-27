@@ -126,7 +126,7 @@ Import the entry models from `ovid_core.journal`.
 
 | Entry | `kind` | Fields |
 | --- | --- | --- |
-| `RunStartedEntry` | `run_started` | `run_id`, `at` |
+| `RunStartedEntry` | `run_started` | `run_id`, `at`, `client_request_id` (optional) |
 | `StepCommittedEntry` | `step_committed` | `run_id`, `messages` (one or more) |
 | `ToolIntentEntry` | `tool_intent` | `run_id`, `tool_call_id`, `tool_name`, `arguments`, `effect`, `idempotency_key`, `started_at` |
 | `ToolSettledEntry` | `tool_settled` | `run_id`, `tool_call_id`, `status`, `outcome`, `ended_at` |
@@ -206,8 +206,11 @@ class ConversationJournal(BaseModel):
 ```
 
 - `messages` is the history that `load` returns.
-- A `JournalRun` has `run_id`, `started_at`, and `outcome`. A run with `outcome=None` is open.
+- A `JournalRun` has `run_id`, `started_at`, `outcome`, and `client_request_id`. A run with `outcome=None` is open.
 - A `JournalToolCall` has the fields of its intent, and `status`, `outcome`, and `ended_at` from its settle entry.
+
+`client_request_id` is `None` when the request had no key. An entry that a version without this field wrote loads with `None`.
+The server finds a [client request ID](server.md#client-request-ids) only with this protocol.
 
 A tool call without a settle entry has `status='started'`.
 After a restart, its effect is unknown, as the Pydantic AI Harness tool-effect record defines.

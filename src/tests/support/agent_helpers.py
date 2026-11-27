@@ -9,6 +9,9 @@ from ovid_core.mcp import MCPServerConfig
 from ovid_core.routing import ModelCapabilities, ModelHandle, ModelRuntime
 
 
+RETRY_SLEEP = 'pydantic_ai.capabilities.retry_on_model_errors._agent_graph_sleep'
+
+
 class RuntimeFactory:
     def __init__(self, runtimes: dict[str, ModelRuntime]) -> None:
         self.runtimes = runtimes

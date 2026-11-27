@@ -1,13 +1,44 @@
 from collections.abc import Sequence
 from typing import cast
 
-from pydantic_ai.models import Model
+from pydantic_ai import RunContext
+from pydantic_ai.capabilities import ModelFallback
+from pydantic_ai.models import Model, ModelRequestContext
 from pydantic_ai.models.fallback import FallbackModel
 
 from ovid_core.adapters.pydantic_ai._provider_errors import should_fallback
 from ovid_core.adapters.pydantic_ai.models import _resolve_model
 from ovid_core.errors import ModelResolutionError
 from ovid_core.routing.models import ModelCapabilities, ModelHandle
+
+
+class _Route(FallbackModel):
+    def __init__(self, models: Sequence[Model]) -> None:
+        super().__init__(models[0], *models[1:], fallback_on=should_fallback)
+
+
+class _RouteFallback[Deps](ModelFallback[Deps]):
+    """Attempt the later candidates of a route inside the agent run, so that provider retries see each candidate."""
+
+    def __init__(self, handle: ModelHandle, route: _Route) -> None:
+        super().__init__(*route.models[1:], fallback_on=should_fallback)
+        self._handle = handle
+        self._resolved_step: int | None = None
+
+    async def prepare_model_request(
+        self,
+        ctx: RunContext[Deps],
+        request_context: ModelRequestContext,
+    ) -> ModelRequestContext:
+        if self._handle.resolve is not None and ctx.run_step != self._resolved_step:
+            self._resolved_step = ctx.run_step
+            self.models = list(cast(_Route, await _resolve_model(self._handle)).models[1:])
+
+        return await super().prepare_model_request(ctx, request_context)
+
+
+def _route_primary(model: Model) -> Model:
+    return model.models[0] if isinstance(model, _Route) else model
 
 
 def compile_fallback_model(*, model_id: str, handles: Sequence[ModelHandle]) -> ModelHandle:
@@ -17,7 +48,7 @@ def compile_fallback_model(*, model_id: str, handles: Sequence[ModelHandle]) -> 
     native_models = [cast(Model, handle.runtime) for handle in handles]
     if not all(isinstance(model, Model) for model in native_models):
         raise ModelResolutionError('Resolved model is not compatible with the Pydantic AI adapter')
-    runtime = FallbackModel(native_models[0], *native_models[1:], fallback_on=should_fallback)
+    runtime = _Route(native_models)
     context_window = None
     if all(handle.context_window is not None for handle in handles):
         context_window = min(cast(int, handle.context_window) for handle in handles)
@@ -26,7 +57,7 @@ def compile_fallback_model(*, model_id: str, handles: Sequence[ModelHandle]) -> 
         nonlocal native_models, runtime
         current_models = [await _resolve_model(handle) for handle in handles]
         if any(current is not previous for current, previous in zip(current_models, native_models, strict=True)):
-            runtime = FallbackModel(current_models[0], *current_models[1:], fallback_on=should_fallback)
+            runtime = _Route(current_models)
             native_models = current_models
         return runtime
 

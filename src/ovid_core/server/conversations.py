@@ -16,7 +16,7 @@ from ovid_core.persistence import (
 from ovid_core.recovery import close_orphaned_tool_calls, restart_count
 from ovid_core.runtime.identifiers import ConversationId
 from ovid_core.runtime.results import DeferredRunResult, PartialRunResult, RunResult, _with_ending
-from ovid_core.server.errors import _DeferredToolsUnavailableError, _server_error_from_exception
+from ovid_core.server.errors import _DeferredToolsUnavailableError, _DuplicateRequestError, _server_error_from_exception
 from ovid_core.server.models import AgentRunRequest, AgentRunResponse
 from ovid_core.tools.deferred import DeferredToolRequests, DeferredToolResume, InterruptedRunResume
 
@@ -56,11 +56,13 @@ async def _open_history(
     *,
     admitted: bool,
     resume_limit: int | None,
+    client_request_id: str | None,
 ) -> tuple[tuple[AgentMessage, ...], RunJournal | None]:
     """Load the history, and create the journal of an admitted run when the store has a journal.
 
     For an admitted run, the store first closes the runs that a stopped process left open.
     A run that is not admitted must not do this, because the open run of an active run is not lost.
+    The client request ID check comes first, so a duplicate request wins over the resume checks.
     A resume request gives its restart limit. Its checks run before the recovery, which then keeps safe calls open.
     """
     if store is None:
@@ -71,8 +73,11 @@ async def _open_history(
             await _check_resume(store, conversation_id, messages, restarts=0, limit=resume_limit)
         return messages, None
 
-    journal = RunJournal(store=store, conversation_id=conversation_id)
+    journal = RunJournal(store=store, conversation_id=conversation_id, client_request_id=client_request_id)
     loaded = await store.load_journal(conversation_id)
+    used = next((run for run in loaded.runs if client_request_id and run.client_request_id == client_request_id), None)
+    if used is not None:
+        raise _DuplicateRequestError(used.run_id, resumable=used.outcome not in ('completed', 'deferred'))
     if resume_limit is not None:
         await _check_resume(store, conversation_id, loaded.messages, restarts=restart_count(loaded), limit=resume_limit)
     if all(run.outcome is not None for run in loaded.runs):

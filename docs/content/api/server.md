@@ -25,6 +25,7 @@ Import from `ovid_core.server.models`.
 - `answers`: a non-empty object that maps a pending tool call ID to an answer, or `null`.
 - `conversation_id`: optional.
 - `resume`: `true` to continue an interrupted run. The default is `false`.
+- `client_request_id`: an optional key from 1 to 128 characters. A client sends the same key again when it retries the same request. [Client request IDs](#client-request-ids) describes the check.
 
 A request needs a `prompt`, `answers`, or both, unless it sets `resume`.
 A request with `resume` cannot contain a `prompt` or `answers`.
@@ -61,6 +62,17 @@ Thus a client that never pauses a run receives the same completed result as befo
 `HealthResponse.status` is `ok` or `not_ready`.
 
 `ServerErrorResponse` has non-empty `code` and `message`. `ServerErrorSSEEvent` adds `kind='server_error'`.
+The errors `conversation_busy` and `duplicate_request` also have `run_id`. Other errors do not have this key.
+
+A `ProviderError` uses the code `provider_error` and the HTTP status 502.
+Its response also has a `provider` object, a `ProviderErrorDetails` value with these fields:
+
+- `failure_kind`: the `ProviderFailureKind` value.
+- `status_code`: the provider HTTP status, or `null`.
+- `provider_code`: the error code that the provider sent, or `null`.
+- `retry_after_seconds`: the wait that the provider asked for, or `null`.
+
+Other error responses have no `provider` key.
 
 ### Deferred tool calls
 
@@ -101,7 +113,8 @@ The `requests` of the result and the stored record contain only the calls that s
 The client answers only these calls when it continues the run.
 
 The server admits one active run for each conversation.
-A second run on a conversation with an active run returns `conversation_busy`.
+A second run on a conversation with an active run returns `conversation_busy` with the `run_id` of the active run.
+While a partial commit keeps the conversation admitted, `run_id` is the run of that commit.
 This rule applies to a new prompt and to a resume.
 Runs on different conversations run at the same time.
 
@@ -203,6 +216,26 @@ Thus a call runs again only when its journal intent and its current tool both ha
 A conversation without an interrupted run returns `nothing_to_resume`.
 For example, an empty conversation or a conversation whose last run completed has no interrupted run.
 A resume that stops again gets its own partial commit and journal outcome.
+
+### Client request IDs
+
+A client can retry a request after it lost the response.
+Send the same `client_request_id` with the retry, so that the server does not run the request again.
+The server reads the key only when the store implements [`ConversationJournalStore`](persistence.md#conversationjournalstore).
+A store without the journal cannot find the key, so the server ignores it.
+
+The server stores the key in the `RunStartedEntry` of the run.
+After it admits a run, the server looks for the key in the runs of the same conversation.
+This check comes before the resume checks and before recovery, so nothing is written for a duplicate request.
+
+| Earlier run with the same key | Response |
+| --- | --- |
+| Completed or deferred | `duplicate_request` with the `run_id` of that run. The model is not called. |
+| Lost, or stopped with a partial commit | `duplicate_request` with the `run_id` of that run. The message tells the client to send a `resume` request. |
+| Active | `conversation_busy` with the `run_id` of the active run. |
+
+A key in a different conversation does not count.
+A run that wrote no journal entry did not store its key.
 
 ## Registration and callbacks
 

@@ -107,7 +107,8 @@ The router:
 6. Compiles multiple handles into a Pydantic AI fallback model.
 
 Unknown model or route names raise `ModelResolutionError`.
-Provider SDK retries finish inside one candidate.
+Provider retries finish inside one candidate.
+A transient failure is retried on the same candidate up to `ProviderRetryPolicy.max_attempts` times.
 
 The fallback model moves to the next candidate only after an applicable final failure.
 

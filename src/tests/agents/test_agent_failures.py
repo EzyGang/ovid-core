@@ -28,6 +28,7 @@ from ovid_core import (
     ContextWindowError,
     ExtensionCollisionError,
     OvidAgent,
+    ProviderError,
     UsageLimitError,
 )
 from ovid_core.adapters.pydantic_ai._agent_errors import normalize_run_error
@@ -117,7 +118,7 @@ async def test_run_cancellation_timeout_limits_and_failures_are_stable() -> None
 
     failing_factory = agent_factory({'primary': FunctionModel(failing_request, model_name='failing')})
     failing_agent = await failing_factory.build(consumer.waiting_definition(tool=WaitTool()))
-    with pytest.raises(AgentRunError, match='Agent run failed') as error:
+    with pytest.raises(ProviderError, match=r'^Provider request failed \(unavailable\)$') as error:
         await failing_agent.run('Fail.', deps=AgentDependencies(prefix='failure'))
     assert 'provider-secret' not in str(error.value)
 
