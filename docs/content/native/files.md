@@ -110,6 +110,7 @@ Each requested target has its own diagnostic text, thus one bad target does not 
 A read of several targets ends with `[N of M targets failed]` when at least one target failed.
 A file that is too large to edit has the notice `[Not editable: N bytes exceeds the LIMIT-byte edit limit]` after its lines.
 The tool result `metadata` still holds the full structured result of each target, for user interfaces.
+Its `observations` list holds the receipt of each editable file that the result rendered.
 Ovid Core never sends `metadata` to the model.
 By default, a different failure of a native tool does not stop the run.
 Ovid Core returns the failure to the model as a `failed` tool result that contains the exception type and text.
@@ -282,6 +283,7 @@ The output of every edit mode has these sections, in this order:
 
 The tool result `metadata` still holds the full structured edit result, for user interfaces.
 This includes each change, the generations, the matching strategy, and the source presentation.
+The `observations` list holds the receipt of each rendered post-edit source.
 Ovid Core never sends `metadata` to the model.
 
 ## Change mode and policy live
@@ -330,6 +332,48 @@ Every successful mutation:
 - renders bounded final source in `post_edit_sources`
 - authorizes only those final lines actually returned
 
+## Restore observations after a restart
+
+The observation ledger is in memory.
+A new workspace session starts with an empty ledger.
+Thus, after a restart, an old `[path#TAG]` anchor fails with "observation was not retained".
+Read, `grep`, FFF `grep`, `multi_grep`, `ast_grep`, and edit results keep their receipts in the tool result `metadata`.
+The key is `observations`, and it holds a list of objects with these fields:
+
+- `path`: the normalized workspace path
+- `tag`: the four-hex tag
+- `content_sha256`: the full SHA-256 digest of the normalized file
+- `visible_ranges`: the inclusive line ranges that the result rendered
+- `complete_presentation`: `True` when the receipt covered the full file
+
+Source tools write this key in the Hashline and the plain presentations.
+
+```python
+from ovid_native.files.rehydration import receipts_from_tool_results
+
+requests = receipts_from_tool_results(part.metadata for part in tool_returns)
+report = await workspace.observations.rehydrate(requests)
+```
+
+Give the metadata values in transcript order.
+`receipts_from_tool_results` reads plain JSON and ignores values without a valid `observations` list.
+For a result that was stored before tool metadata moved out of the content, the caller gives the `metadata` object from the stored envelope.
+
+`rehydrate` processes the newest requests first.
+For each request, it reads the file under the normal path and read policy.
+It records the receipt only when the current digest is equal to `content_sha256`.
+It authorizes only the lines in `visible_ranges`.
+A complete presentation stays complete only when these lines cover the full file.
+
+`WorkspaceRehydrationReport` has three counts:
+
+- `restored`: requests that the ledger now authorizes
+- `stale`: requests for a changed, missing, or unreadable file, or for a line that the file no longer has
+- `skipped`: requests that the ledger cannot keep without an eviction
+
+Processing stops at the first skipped request, and all older requests are also skipped.
+A stale request records nothing, thus an edit with its anchor still fails.
+Hashline named registers stay in process memory, and `rehydrate` does not restore them.
 
 ## Custom providers and plugins
 
