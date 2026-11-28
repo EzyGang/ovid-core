@@ -348,6 +348,7 @@ reports = await workspace.recover()
 
 The first journalled edit creates the state directory with `blobs/` and `mutations/`.
 Without `state_dir`, the session does not journal edits, and `recover()` returns an empty tuple.
+Command process records use `processes/` in the same state directory. See [Reap orphaned processes](command.md#reap-orphaned-processes).
 
 Before the first file changes, each Hashline and patch edit does these steps:
 
