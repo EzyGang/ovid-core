@@ -26,6 +26,7 @@ nav = [
     { "Workspace search" = "native/search.md" },
     { "Warm indexed FFF search" = "native/fff.md" },
     { "AST search and rewrites" = "native/ast.md" },
+    { "Write your own capability" = "native/extend.md" },
   ] },
   { "Public API" = [
     { "Overview" = "api/index.md" },
